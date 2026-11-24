@@ -33,10 +33,12 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
 
 ## Browser demo (for sharing and feedback)
 
-`web-demo/` is a playable **web version** of Steps 1-2 built with Three.js: animated 3D characters,
-sunset lighting (HDR sky, ACES film colour, glow on computers), a textured Indian street block
-(shops, signboards, kerbs, zebra crossings, water tanks, wires), cars + auto-rickshaws +
-Navapur Police SUVs, police chases with officers on foot, mini-map, compass, sounds.
+`web-demo/` is a playable **web version** built with Three.js:
+- **Story:** Chapter 1 (5 missions with timers, win/fail, coins + stars, cutscenes with Ravi) and Free Roam.
+- **Combat:** realistic animated people, pistol + SMG (aim, fire, reload, switch), police who arrest at 1 star and shoot at 2+, 5-star wanted level.
+- **Cars and city:** steal any car (even police SUVs) and drive with drift/handbrake; street life (chai stall, street dancer, bus stop, fruit cart, crowds that flee); Indian street detail.
+- **Settings:** sensitivity, button size, difficulty, graphics level, sound.
+
 The **Unity project stays the real game** - the demo is for feedback and promotion.
 
 - Live (temporary Hostinger domain): https://worldly-mediumturquoise-anteater-68.hostingersite.com

@@ -206,6 +206,7 @@ export class Car {
     this.overtake = 0; this.ignoreCars = 0; this.blocked = 0;
     this.sensorT = Math.random() * 0.1; this.yieldT = 0; this.yielding = false;
     this.obstacle = null; this.obstacleGap = Infinity;
+    this.health = 100; this.wrecked = false;
   }
 
   get net() { return this.game.network; }
@@ -263,7 +264,27 @@ export class Car {
 
   stopSpeed(d) { return d <= 0 ? 0 : Math.sqrt(2 * this.brake * 0.7 * d); }
 
+  // Bullets and crashes damage cars. A wrecked car smokes and stops.
+  takeDamage(amount) {
+    if (this.wrecked) return;
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.wrecked = true; this.hold = true; this.pursuing = false;
+      if (this.isPolice) this.state = 'patrol';
+    }
+  }
+
   update(dt) {
+    if (this.health < 45) {
+      this.smokeT = (this.smokeT || 0) - dt;
+      if (this.smokeT <= 0) {
+        this.smokeT = this.wrecked ? 0.06 : 0.15;
+        const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+        this.game.fx.smoke(this.x + fx * (this.halfL - 0.6), 1.2, this.z + fz * (this.halfL - 0.6), this.wrecked);
+      }
+    }
+    if (this.playerControlled || this.parked) return;   // the player is driving / left it parked (see driving.js)
+    if (this.wrecked) { this.speed = 0; return; }
     const N = this.net.nodes;
     let desired = this.cruise;
     let aimX, aimZ;
@@ -404,7 +425,18 @@ export function randomCarColor() { return pick(CAR_COLORS); }
 // ---------------------------------------------------------------------------
 // Pedestrians: walk round the blocks, keep left, run from police chases.
 // ---------------------------------------------------------------------------
-const CLOTHES = [0xe8e2d0, 0xc0392b, 0x2e5aa8, 0xe6a817, 0x4f8f4f, 0x8e3a85, 0x4a4a50, 0xe07a9a, 0xd35400, 0x16a085, 0xf5f0e6];
+export const CLOTHES = [0xe8e2d0, 0xc0392b, 0x2e5aa8, 0xe6a817, 0x4f8f4f, 0x8e3a85, 0x4a4a50, 0xe07a9a, 0xd35400, 0x16a085, 0xf5f0e6];
+export const TROUSERS = [0x2b2f3a, 0x3d3227, 0x1f2a44, 0x4b4b4b, 0x6b5a42, 0xd8d0c0];
+
+// A random city person: realistic man (any clothes) or woman.
+export function randomPersonRig(castShadow) {
+  if (Math.random() < 0.62) {
+    return new CharacterRig('man', {
+      top: pick(CLOTHES), bottom: pick(TROUSERS), hideBeard: Math.random() < 0.5, hideHat: Math.random() < 0.7, castShadow,
+    });
+  }
+  return new CharacterRig('woman', { castShadow, tint: pick([0xffffff, 0xf2e6da, 0xe8f0ff, 0xfff0f0]) });
+}
 
 export function buildLoops() {
   const loops = [];
@@ -431,21 +463,43 @@ export class Pedestrian {
     this.walk = 1.1 + Math.random() * 0.5;
     this.side = 0.5 + Math.random() * 0.4;   // keep left
     this.panic = 0; this.wait = 0; this.senseT = Math.random() * 0.2; this.blocked = false;
-    this.rig = new CharacterRig('citizen', pick(CLOTHES), game.shadows);
+    this.rig = randomPersonRig(game.shadows);
     this.mesh = this.rig.root;
     game.scene.add(this.mesh);
     this.speed = 0;
+    this.health = 40; this.dead = false; this.groundY = FOOT_TOP;
+  }
+
+  // Run away from danger (gunshots, police chase).
+  panicFrom(x, z) {
+    if (this.dead) return;
+    if (this.panic <= 0) this.fleeFrom(x, z);
+    this.panic = 6;
+  }
+
+  takeDamage(amount, byPlayer, fromX = this.x, fromZ = this.z) {
+    if (this.dead) return;
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.dead = true; this.deadT = 0;
+      this.rig.die(this.x - fromX, this.z - fromZ);
+      if (byPlayer) this.game.dispatch.crime('kill_ped', this.x, this.z);
+      this.game.alarm(this.x, this.z, 30);
+    }
   }
 
   point(i) { const n = this.loop.length; return this.loop[((i % n) + n) % n]; }
 
   update(dt) {
     const g = this.game, P = g.player;
-
-    if (g.dispatch.active && dist(this.x, this.z, P.x, P.z) < 14) {
-      if (this.panic <= 0) this.fleeFrom(P.x, P.z);
-      this.panic = 5;
+    if (this.dead) {
+      this.deadT += dt;
+      this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
+      if (this.deadT > 25) this.respawnElsewhere();
+      return;
     }
+
+    if (g.dispatch.active && dist(this.x, this.z, P.x, P.z) < 14) this.panicFrom(P.x, P.z);
     this.panic -= dt;
     const panicking = this.panic > 0;
 
@@ -482,6 +536,20 @@ export class Pedestrian {
     this.mesh.rotation.y = this.yaw;
     this.rig.setMotion(this.speed);
     this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
+  }
+
+  // Quietly come back as a new person on the far side of the loop (keeps the streets busy).
+  respawnElsewhere() {
+    const g = this.game, cam = g.camera.position;
+    const i = Math.floor(Math.random() * this.loop.length);
+    const p = this.point(i);
+    if (dist(p[0], p[1], cam.x, cam.z) < 40) { this.deadT = 15; return; }
+    g.scene.remove(this.mesh);
+    this.rig = randomPersonRig(g.shadows);
+    this.mesh = this.rig.root;
+    g.scene.add(this.mesh);
+    this.x = p[0]; this.z = p[1]; this.target = i + this.dir;
+    this.dead = false; this.health = 40; this.panic = 0;
   }
 
   fleeFrom(px, pz) {

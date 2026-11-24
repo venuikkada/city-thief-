@@ -38,8 +38,74 @@ export class GameAudio {
     this.siren = ctx.createGain(); this.siren.gain.value = 0;
     osc.connect(bp).connect(this.siren).connect(this.master);
     osc.start(); lfo.start();
+
+    // Shared noise buffer for gunshots / crashes.
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 0.6, ctx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    this.noiseBuf = nb;
+
+    // Car engine (player car): two detuned saws through a low-pass filter.
+    this.engOsc1 = ctx.createOscillator(); this.engOsc1.type = 'sawtooth'; this.engOsc1.frequency.value = 45;
+    this.engOsc2 = ctx.createOscillator(); this.engOsc2.type = 'square'; this.engOsc2.frequency.value = 45.7;
+    this.engFilter = ctx.createBiquadFilter(); this.engFilter.type = 'lowpass'; this.engFilter.frequency.value = 500;
+    this.engGain = ctx.createGain(); this.engGain.gain.value = 0;
+    this.engOsc1.connect(this.engFilter); this.engOsc2.connect(this.engFilter);
+    this.engFilter.connect(this.engGain).connect(this.master);
+    this.engOsc1.start(); this.engOsc2.start();
+
     this.enabled = true;
     this.lastHorn = 0;
+  }
+
+  // Short burst of filtered noise (used for shots, impacts, crashes).
+  burst(volume, freqFrom, freqTo, length, type = 'lowpass') {
+    if (!this.enabled || volume <= 0.01) return;
+    const ctx = this.ctx, now = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = type;
+    f.frequency.setValueAtTime(freqFrom, now);
+    f.frequency.exponentialRampToValueAtTime(Math.max(40, freqTo), now + length);
+    const gn = ctx.createGain();
+    gn.gain.setValueAtTime(volume, now);
+    gn.gain.exponentialRampToValueAtTime(0.001, now + length);
+    src.connect(f).connect(gn).connect(this.master);
+    src.start(now); src.stop(now + length + 0.05);
+  }
+
+  thump(volume, freq, length) {
+    if (!this.enabled || volume <= 0.01) return;
+    const ctx = this.ctx, now = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(freq, now); o.frequency.exponentialRampToValueAtTime(freq * 0.4, now + length);
+    const gn = ctx.createGain(); gn.gain.setValueAtTime(volume, now); gn.gain.exponentialRampToValueAtTime(0.001, now + length);
+    o.connect(gn).connect(this.master); o.start(now); o.stop(now + length + 0.05);
+  }
+
+  gunshot(type, volume = 1) {
+    if (type === 'smg') { this.burst(0.5 * volume, 4200, 500, 0.11); this.thump(0.35 * volume, 140, 0.08); }
+    else { this.burst(0.65 * volume, 3500, 300, 0.22); this.thump(0.5 * volume, 110, 0.14); }
+  }
+  reload() { this.burst(0.25, 2500, 1800, 0.05, 'bandpass'); setTimeout(() => this.burst(0.3, 1800, 1200, 0.06, 'bandpass'), 450); }
+  click() { this.burst(0.2, 3000, 2500, 0.03, 'bandpass'); }
+  ping() { this.burst(0.18, 5000, 3000, 0.08, 'bandpass'); }
+  hurt() { this.thump(0.4, 90, 0.18); }
+  crash(k) { this.burst(0.7 * k, 1800, 120, 0.45); this.thump(0.6 * k, 70, 0.3); }
+
+  engine(on) {
+    if (!this.enabled) return;
+    this.engGain.gain.setTargetAtTime(on ? 0.06 : 0, this.ctx.currentTime, 0.15);
+    this.engineOn = on;
+  }
+
+  engineLevel(speed01, throttle) {
+    if (!this.enabled || !this.engineOn) return;
+    const t = this.ctx.currentTime;
+    const f = 42 + speed01 * 120 + throttle * 18;
+    this.engOsc1.frequency.setTargetAtTime(f, t, 0.08);
+    this.engOsc2.frequency.setTargetAtTime(f * 1.015, t, 0.08);
+    this.engFilter.frequency.setTargetAtTime(400 + speed01 * 900 + throttle * 300, t, 0.08);
+    this.engGain.gain.setTargetAtTime(0.045 + throttle * 0.04 + speed01 * 0.03, t, 0.1);
   }
 
   // distance = metres to the nearest chasing police car (Infinity = none).

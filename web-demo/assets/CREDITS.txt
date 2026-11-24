@@ -1,15 +1,17 @@
 City Thief - browser demo: third-party assets
 
-Characters and animations (vikram.glb, citizen.glb)
-  Source: three.js example models (Soldier.glb, Xbot.glb), https://github.com/mrdoob/three.js
-  Characters and animations made with Adobe Mixamo; used under the Mixamo terms
-  (free to use in games and projects; not to be redistributed as standalone assets).
+People
+  man.glb   - sample avatar from the three.js examples (readyplayer.me.glb), https://github.com/mrdoob/three.js
+              (Ready Player Me avatar; clothes recoloured and mesh simplified for phones)
+  woman.glb - "Michelle" character from the three.js examples (Adobe Mixamo), simplified for phones
+  anim_soldier.glb - Idle / Walk / Run animations from the three.js "Soldier" example (Adobe Mixamo)
+  Mixamo content is used under the Mixamo terms (free to use in games; not redistributed as standalone assets).
+  NOTE: these are demo placeholders. The Play Store game should use its own licensed characters.
 
-Sky lighting (sunset_1k.hdr)
-  "Venice Sunset" HDRI from Poly Haven (polyhaven.com), CC0 / public domain.
+Sky lighting
+  sunset_1k.hdr - "Venice Sunset" HDRI from Poly Haven (polyhaven.com), CC0 / public domain.
 
-3D engine: three.js (MIT licence) - see js/vendor/THREE-LICENSE.txt
+Libraries: three.js (MIT), meshoptimizer decoder (MIT).
 
-Everything else (city, buildings, cars, auto-rickshaw, police SUV, textures,
-shop signs, sounds) is generated in code for this project.
-All names, places and police forces are fictional.
+Everything else (city, buildings, cars, auto-rickshaws, police SUVs, guns, textures, shop signs,
+missions, sounds) is made in code for this project. All names, places and police forces are fictional.

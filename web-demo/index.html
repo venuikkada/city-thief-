@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d0e11">
-  <meta name="description" content="City Thief - browser demo. Escape the Navapur Metro Police on foot. Free, no login.">
+  <meta name="description" content="City Thief - free browser demo. Steal cars, fight the Navapur police, play 5 story missions. No login.">
   <title>City Thief - Browser Demo</title>
   <link rel="stylesheet" href="css/game.css">
   <script type="importmap">
@@ -13,55 +13,145 @@
 </head>
 <body>
   <div id="game"></div>
-
-  <!-- Touch layer: joystick (left) and drag-to-look (anywhere else) -->
   <div id="touch-layer"></div>
   <div id="stick-base" class="hidden"><div id="stick-knob"></div><div id="stick-sprint">SPRINT</div></div>
+  <div id="hurt" class="hidden"></div>
 
-  <!-- HUD -->
-  <div id="hud" class="hidden">
+  <!-- ===================== HUD ===================== -->
+  <div id="hud" class="hidden foot">
     <div id="map-wrap">
-      <canvas id="minimap" width="170" height="170"></canvas>
+      <canvas id="minimap"></canvas>
       <div id="stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
     </div>
-    <canvas id="compass" width="420" height="38"></canvas>
+    <canvas id="compass"></canvas>
     <div id="fps">-- FPS</div>
     <div id="status"></div>
     <div id="big-msg" class="hidden"></div>
-    <div id="objective"><b>OBJECTIVE</b><br>Call the cops, then escape on foot. Sprint and hide in the courtyards behind the buildings.</div>
+
+    <div id="mission-panel">
+      <div id="mission-title">FREE ROAM</div>
+      <div id="objective-text">Explore Navapur. Steal cars, call the cops, find the SMG.</div>
+      <div id="timer" class="hidden">2:30</div>
+    </div>
+    <div id="money">&#8377; 0</div>
+
+    <button id="btn-weapon" class="hud-btn panel foot-only" aria-label="Switch weapon">
+      <span id="weapon-name">PISTOL</span><span id="ammo">12 / 48</span><span class="tiny">TAP TO SWITCH</span>
+    </button>
+    <div id="reloading" class="hidden">RELOADING</div>
+
+    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="hitmarker" class="hidden"></div>
+    <div id="speedo" class="car-only">0<span>km/h</span></div>
+    <div id="car-health" class="car-only"><div id="car-health-fill"></div></div>
+    <div id="health"><div id="health-fill"></div></div>
+    <div id="subtitle" class="hidden"></div>
+
     <button id="btn-pause" class="hud-btn small" aria-label="Pause">
       <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
     </button>
-    <div id="crosshair" class="hidden"></div>
-    <div id="health"><div id="health-fill"></div></div>
+    <button id="btn-callcops" class="hud-btn small red free-only" aria-label="Call cops"><span>CALL<br>COPS</span></button>
 
-    <button id="btn-callcops" class="hud-btn round red" aria-label="Call cops">
-      <svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-6 6v6h12V9a6 6 0 0 0-6-6zm-8 14h16v3H4z"/></svg><span>CALL COPS</span>
+    <!-- On foot -->
+    <button id="btn-fire" class="hud-btn round fire foot-only" aria-label="Fire">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg><span>FIRE</span>
     </button>
-    <button id="btn-aim" class="hud-btn round" aria-label="Aim">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg><span>AIM</span>
+    <button id="btn-fire-l" class="hud-btn round foot-only" aria-label="Fire (left)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg>
     </button>
-    <button id="btn-jump" class="hud-btn round big" aria-label="Jump">
+    <button id="btn-aim" class="hud-btn round foot-only" aria-label="Aim">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="#fff"/></svg><span>AIM</span>
+    </button>
+    <button id="btn-reload" class="hud-btn round foot-only" aria-label="Reload">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4v4h-4" /></svg><span>RELOAD</span>
+    </button>
+    <button id="btn-jump" class="hud-btn round foot-only" aria-label="Jump">
       <svg viewBox="0 0 24 24"><path d="M12 4l7 8h-4v8H9v-8H5z"/></svg><span>JUMP</span>
     </button>
-    <button id="btn-crouch" class="hud-btn round" aria-label="Crouch">
+    <button id="btn-crouch" class="hud-btn round foot-only" aria-label="Crouch">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><path d="M8 10h6l3 5-2 1-2-3-1 3 3 5h-2.5l-3-4-2 4H5l3-6z"/></svg><span>CROUCH</span>
     </button>
+    <button id="btn-enter" class="hud-btn round context hidden" aria-label="Enter car">
+      <svg viewBox="0 0 24 24"><path d="M5 16l1.5-5a2 2 0 0 1 2-1.5h7a2 2 0 0 1 2 1.5L19 16v3h-2v-1.5H7V19H5z"/></svg><span>ENTER</span>
+    </button>
+    <button id="btn-pickup" class="hud-btn round context hidden" aria-label="Pick up">
+      <svg viewBox="0 0 24 24"><path d="M12 3l-5 5h3v6h4V8h3zM5 17h14v3H5z"/></svg><span>PICK UP</span>
+    </button>
+
+    <!-- In car -->
+    <button id="btn-gas" class="hud-btn round fire car-only" aria-label="Accelerate"><svg viewBox="0 0 24 24"><path d="M12 4l7 9h-4v7H9v-7H5z"/></svg><span>GAS</span></button>
+    <button id="btn-brake" class="hud-btn round car-only" aria-label="Brake or reverse"><svg viewBox="0 0 24 24"><path d="M12 20l-7-9h4V4h6v7h4z"/></svg><span>BRAKE</span></button>
+    <button id="btn-handbrake" class="hud-btn round car-only" aria-label="Handbrake"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M12 8v5"/><circle cx="12" cy="16" r="0.8" fill="#fff"/></svg><span>DRIFT</span></button>
+    <button id="btn-horn" class="hud-btn round car-only" aria-label="Horn"><svg viewBox="0 0 24 24"><path d="M4 10h3l6-4v12l-6-4H4zM16 9a4 4 0 0 1 0 6"/></svg><span>HORN</span></button>
+    <button id="btn-cam" class="hud-btn small car-only" aria-label="Camera"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3" fill="#222"/></svg></button>
+    <button id="btn-exit" class="hud-btn round car-only" aria-label="Exit car"><svg viewBox="0 0 24 24"><path d="M10 4h9v16h-9v-3h2v1h5V6h-5v1h-2zM4 12l4-4v3h7v2H8v3z"/></svg><span>EXIT</span></button>
   </div>
 
-  <!-- Start / pause screen -->
-  <div id="start-screen" class="hidden">
-    <div class="panel">
+  <!-- Cutscene letterbox -->
+  <div id="letterbox" class="hidden"><div class="bar top"></div><div class="bar bottom"></div><button id="btn-skip">SKIP &#9658;</button></div>
+
+  <!-- ===================== SCREENS ===================== -->
+  <div id="menu" class="screen hidden">
+    <div class="panel left">
       <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
-      <p class="tag">NAVAPUR &middot; BROWSER DEMO</p>
-      <p>You are <b>Vikram</b>, a small-time thief. Call the cops, then escape the
-        <b>Navapur Metro Police</b> on foot.</p>
-      <div class="help">
-        <div><b>Phone:</b> left thumb = move (push to the edge to <b>sprint</b>), drag anywhere = look.</div>
-        <div><b>Computer:</b> W A S D move &middot; Shift sprint &middot; Space jump &middot; C crouch &middot; Q aim &middot; P call cops &middot; drag mouse = look.</div>
+      <p class="tag">NAVAPUR &middot; CHAPTER 1: STREET ESCAPE</p>
+      <div class="menu-buttons">
+        <button class="big-btn" id="btn-story">STORY MISSIONS</button>
+        <button class="big-btn alt" id="btn-free">FREE ROAM</button>
+        <button class="big-btn alt" id="btn-settings">SETTINGS</button>
       </div>
-      <button id="btn-play">PLAY</button>
-      <p class="small-note">Free &middot; no login &middot; best with sound. All names, places and police are fictional.</p>
+      <p class="coins">&#8377; <span id="menu-coins">0</span> earned &middot; best with sound &#128266;</p>
+      <p class="small-note">Free &middot; no login &middot; all names, places and police are fictional.</p>
+    </div>
+  </div>
+
+  <div id="missions-screen" class="screen hidden">
+    <div class="panel wide">
+      <h2>CHAPTER 1 &mdash; STREET ESCAPE</h2>
+      <div id="mission-list"></div>
+      <button class="big-btn alt small" data-back>BACK</button>
+    </div>
+  </div>
+
+  <div id="settings-screen" class="screen hidden">
+    <div class="panel wide">
+      <h2>SETTINGS</h2>
+      <label>Look sensitivity <input type="range" id="set-look" min="0.3" max="2.5" step="0.05"></label>
+      <label>Aim sensitivity <input type="range" id="set-aim" min="0.2" max="1.5" step="0.05"></label>
+      <label>Button size <input type="range" id="set-btn" min="0.8" max="1.3" step="0.05"></label>
+      <label class="row">Invert look (up/down) <input type="checkbox" id="set-invert"></label>
+      <label class="row">Sound <input type="checkbox" id="set-sound"></label>
+      <label class="row">Difficulty
+        <select id="set-diff"><option value="0.7">Easy</option><option value="1">Normal</option><option value="1.3">Hard</option></select></label>
+      <label class="row">Graphics
+        <select id="set-gfx"><option value="low">Low (old phones)</option><option value="medium">Medium (phones)</option><option value="high">High (computers)</option></select></label>
+      <p class="small-note">Computer: click the game to capture the mouse. WASD move, Shift sprint, Space jump/drift, C crouch, R reload, Q switch gun, E enter/exit car, G pick up, H horn, V car camera, right-click aim, left-click fire, Esc release mouse.</p>
+      <button class="big-btn alt small" data-back>BACK</button>
+    </div>
+  </div>
+
+  <div id="pause-screen" class="screen hidden">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <div class="menu-buttons">
+        <button class="big-btn" id="btn-resume">RESUME</button>
+        <button class="big-btn alt" id="btn-restart">RESTART MISSION</button>
+        <button class="big-btn alt" id="btn-pause-settings">SETTINGS</button>
+        <button class="big-btn alt" id="btn-quit">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result-screen" class="screen hidden">
+    <div class="panel">
+      <h2 id="result-title">MISSION PASSED</h2>
+      <div id="result-stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
+      <p id="result-text"></p>
+      <div class="menu-buttons">
+        <button class="big-btn" id="btn-next">NEXT MISSION</button>
+        <button class="big-btn alt" id="btn-retry">RETRY</button>
+        <button class="big-btn alt" id="btn-result-menu">MAIN MENU</button>
+      </div>
     </div>
   </div>
 

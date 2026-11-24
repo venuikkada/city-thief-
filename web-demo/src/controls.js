@@ -1,80 +1,109 @@
 // Touch + mouse + keyboard input (PUBG-style).
-// Left part of the screen: floating joystick (push to the edge = sprint).
-// Anywhere else: drag to look. Buttons on the right.
+// Phone: left side = floating joystick (push to the edge to sprint), drag anywhere else = look.
+// Buttons for on foot and in car. Fire buttons also turn the camera when you drag them.
+// Computer: click the game to capture the mouse. Mouse = look, left click = fire, right click = aim.
 const NONE = null;
 
 export class Controls {
   constructor() {
-    this.move = { x: 0, y: 0 };
-    this.sprint = false;
-    this.lookX = 0; this.lookY = 0;
-    this.jumpPressed = false; this.crouchPressed = false; this.aimPressed = false; this.callCopsPressed = false;
-    this.pending = { jump: false, crouch: false, aim: false, callCops: false };
-    this.keys = new Set();
     this.enabled = false;
-
+    this.keys = new Set();
+    this.held = {};
+    this.pending = {};
+    this.lookX = 0; this.lookY = 0;
     this.stickId = NONE; this.lookId = NONE;
     this.stickCx = 0; this.stickCy = 0; this.stickVec = { x: 0, y: 0 }; this.stickEdge = false;
     this.lastLook = { x: 0, y: 0 };
+    this.mouseFire = false;
+    this.isTouch = matchMedia('(pointer: coarse)').matches;
 
     this.base = document.getElementById('stick-base');
     this.knob = document.getElementById('stick-knob');
-    const layer = document.getElementById('touch-layer');
+    const layer = this.layer = document.getElementById('touch-layer');
     layer.addEventListener('pointerdown', (e) => this.down(e));
     layer.addEventListener('pointermove', (e) => this.moveEv(e));
     layer.addEventListener('pointerup', (e) => this.up(e));
     layer.addEventListener('pointercancel', (e) => this.up(e));
 
-    this.button('btn-jump', 'jump');
-    this.button('btn-crouch', 'crouch');
-    this.button('btn-aim', 'aim', true);
-    this.button('btn-callcops', 'callCops');
+    // name, held-type?, drag-to-look?
+    const buttons = [
+      ['btn-fire', 'fire', true, true], ['btn-fire-l', 'fire', true, true], ['btn-aim', 'aim', false, true],
+      ['btn-reload', 'reload'], ['btn-jump', 'jump'], ['btn-crouch', 'crouch'], ['btn-weapon', 'switch'],
+      ['btn-enter', 'enter'], ['btn-pickup', 'pickup'], ['btn-callcops', 'callCops'],
+      ['btn-gas', 'gas', true], ['btn-brake', 'brake', true], ['btn-handbrake', 'handbrake', true],
+      ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
+    ];
+    for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
     window.addEventListener('keydown', (e) => {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        if (k === ' ') this.pending.jump = true;
-        if (k === 'c') this.pending.crouch = true;
-        if (k === 'q') this.pending.aim = true;
-        if (k === 'p') this.pending.callCops = true;
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim' };
+        if (map[k]) this.pending[map[k]] = true;
       }
       this.keys.add(k);
-      if ([' ', 'arrowup', 'arrowdown'].includes(k)) e.preventDefault();
+      if ([' ', 'arrowup', 'arrowdown', 'tab'].includes(k)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.mouseFire = false; });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Mouse capture (computers).
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === layer && this.enabled) this.addLook(e.movementX * 0.9, e.movementY * 0.9);
+    });
+    document.addEventListener('mousedown', (e) => {
+      if (document.pointerLockElement !== layer || !this.enabled) return;
+      if (e.button === 0) { this.mouseFire = true; this.pending.fire = true; }
+      if (e.button === 2) this.pending.aim = true;
+    });
+    document.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseFire = false; });
   }
 
-  // Buttons: tap = action. "dragLooks": dragging on it also turns the camera.
-  button(id, name, dragLooks = false) {
+  lockMouse() {
+    if (this.isTouch || !this.layer.requestPointerLock) return;
+    try {
+      const r = this.layer.requestPointerLock();
+      if (r && r.catch) r.catch(() => { /* needs a real click: fine */ });
+    } catch (e) { /* fine */ }
+  }
+
+  button(id, name, isHeld, dragLooks) {
     const el = document.getElementById(id);
+    if (!el) return;
     let pid = NONE, last = null;
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (pid !== NONE) return;
+      if (pid !== NONE || !this.enabled) return;
       pid = e.pointerId; last = { x: e.clientX, y: e.clientY };
-      el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
       el.classList.add('pressed');
       this.pending[name] = true;
+      if (isHeld) this.held[name] = (this.held[name] || 0) + 1;
     });
     el.addEventListener('pointermove', (e) => {
       if (e.pointerId !== pid || !dragLooks) return;
       this.addLook(e.clientX - last.x, e.clientY - last.y);
       last = { x: e.clientX, y: e.clientY };
     });
-    const release = (e) => { if (e.pointerId !== pid) return; pid = NONE; el.classList.remove('pressed'); };
+    const release = (e) => {
+      if (e.pointerId !== pid) return;
+      pid = NONE; el.classList.remove('pressed');
+      if (isHeld) this.held[name] = Math.max(0, (this.held[name] || 1) - 1);
+    };
     el.addEventListener('pointerup', release);
     el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
   }
 
   down(e) {
     if (!this.enabled) return;
+    if (!this.isTouch && document.pointerLockElement !== this.layer && e.pointerType === 'mouse') { this.lockMouse(); }
     e.preventDefault();
     const w = window.innerWidth, h = window.innerHeight;
     const inStickZone = e.clientX < w * 0.42 && e.clientY > h * 0.3;
-    e.target.setPointerCapture(e.pointerId);
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
     if (inStickZone && this.stickId === NONE) {
       this.stickId = e.pointerId;
       this.stickCx = e.clientX; this.stickCy = e.clientY;
@@ -111,41 +140,49 @@ export class Controls {
     const raw = Math.hypot(dx, dy);
     if (raw > 1) { dx /= raw; dy /= raw; }
     this.knob.style.transform = `translate(${dx * radius}px, ${dy * radius}px)`;
-    const len = Math.min(raw, 1);
-    const dead = 0.08;
+    const len = Math.min(raw, 1), dead = 0.08;
     if (len < dead) this.stickVec = { x: 0, y: 0 };
     else {
       const s = (len - dead) / (1 - dead);
-      this.stickVec = { x: (dx / len) * s, y: (-dy / len) * s };   // screen up = forward
+      this.stickVec = { x: (dx / len) * s, y: (-dy / len) * s };
     }
     this.stickEdge = raw >= 0.97;
     this.knob.classList.toggle('sprint', this.stickEdge);
   }
 
-  // Finger movement scaled to a 1080p-high screen, so it feels the same on every phone.
   addLook(dx, dy) {
     const s = 1080 / Math.max(1, window.innerHeight);
     this.lookX += dx * s; this.lookY += dy * s;
   }
 
-  // Called once per frame: collects everything for this frame.
+  releaseAll() {
+    this.held = {}; this.pending = {}; this.mouseFire = false;
+    this.stickVec = { x: 0, y: 0 }; this.stickEdge = false; this.stickId = NONE; this.lookId = NONE;
+    this.base.classList.add('hidden');
+  }
+
+  // Called once per frame.
   poll() {
     let mx = this.stickVec.x, my = this.stickVec.y, sprint = this.stickEdge;
     const k = this.keys;
     const kx = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     const ky = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
-    if (kx || ky) { const l = Math.hypot(kx, ky); mx = kx / l; my = ky / l; }
+    if (kx || ky) { const l = Math.hypot(kx, ky) || 1; mx = kx / l; my = ky / l; }
     if (k.has('shift')) sprint = true;
-
-    this.move = { x: mx, y: my };
-    this.sprint = sprint;
-    this.look = { x: this.lookX, y: this.lookY };
+    const h = (n) => (this.held[n] || 0) > 0;
+    const p = this.pending;
+    const out = {
+      move: { x: mx, y: my }, sprint,
+      look: { x: this.lookX, y: this.lookY },
+      fire: h('fire') || this.mouseFire, firePressed: !!p.fire,
+      aimPressed: !!p.aim, crouchPressed: !!p.crouch, jumpPressed: !!p.jump,
+      reloadPressed: !!p.reload, switchPressed: !!p.switch, enterPressed: !!p.enter,
+      pickupPressed: !!p.pickup, callCopsPressed: !!p.callCops, camPressed: !!p.cam,
+      gas: h('gas') || k.has('w') || k.has('arrowup'), brake: h('brake') || k.has('s') || k.has('arrowdown'),
+      handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
+    };
     this.lookX = 0; this.lookY = 0;
-    this.jumpPressed = this.pending.jump;
-    this.crouchPressed = this.pending.crouch;
-    this.aimPressed = this.pending.aim;
-    this.callCopsPressed = this.pending.callCops;
-    this.pending = { jump: false, crouch: false, aim: false, callCops: false };
-    return this;
+    this.pending = {};
+    return out;
   }
 }
