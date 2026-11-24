@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { LINES, HALF_ROAD, LANE_OFF, STOP_BACK, FOOT_W, FOOT_TOP, ROAD_TOP, ROAD_W } from './world.js';
 import { clamp, lerp, moveTowards, rotateTowards, yawOf, dist, DEG, pick } from './util.js';
-import { BOX, part, mergeParts, vertexColorMaterial } from './mesh.js';
+import { makeVehicle, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles.js';
+import { CharacterRig } from './characters.js';
 
 const LIGHT_COLORS = [0x22ff44, 0xffcc11, 0xff2222];
 
@@ -13,7 +14,7 @@ class Signal {
   constructor(offset) {
     this.offset = offset;
     this.green = 10; this.yellow = 2.5; this.allRed = 1.5;
-    this.mats = [new THREE.MeshLambertMaterial({ color: 0x444444 }), new THREE.MeshLambertMaterial({ color: 0x444444 })];
+    this.mats = [new THREE.MeshBasicMaterial({ color: 0x333333, toneMapped: false }), new THREE.MeshBasicMaterial({ color: 0x333333, toneMapped: false })];
     this.shown = [-1, -1];
   }
   light(axis, t) {
@@ -28,8 +29,7 @@ class Signal {
       const l = this.light(a, t);
       if (l === this.shown[a]) continue;
       this.shown[a] = l;
-      this.mats[a].color.setHex(LIGHT_COLORS[l]);
-      this.mats[a].emissive.setHex(LIGHT_COLORS[l]).multiplyScalar(0.6);
+      this.mats[a].color.setHex(LIGHT_COLORS[l]).multiplyScalar(2.5);   // brighter than white = glows
     }
   }
 }
@@ -135,7 +135,7 @@ export function buildNetwork(world, scene) {
   }
 
   // 2) Turns in each crossing + traffic lights where 3 or more roads meet.
-  const headGeo = new THREE.BoxGeometry(0.45, 0.7, 0.45);
+  const lampGeo = new THREE.BoxGeometry(0.36, 0.36, 0.5);
   for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
     const ins = incoming[idx(i, j)], outs = outgoing[idx(i, j)];
     let signal = null, sIndex = -1;
@@ -163,12 +163,13 @@ export function buildNetwork(world, scene) {
         const lx = a.dz, lz = -a.dx;
         const px = node.x + lx * (HALF_ROAD - LANE_OFF + 0.7) - a.dx * 0.5;
         const pz = node.z + lz * (HALF_ROAD - LANE_OFF + 0.7) - a.dz * 0.5;
-        world.addBox(px, FOOT_TOP + 1.6, pz, 0.15, 3.2, 0.15, world.mat.pole);
-        const head = new THREE.Mesh(headGeo, signal.mats[axis]);
-        head.position.set(px, FOOT_TOP + 3.5, pz);
-        scene.add(head);
+        world.addBox(px, FOOT_TOP + 1.9, pz, 0.14, 3.8, 0.14, 0x2b2d31);
+        world.addBox(px, FOOT_TOP + 4.0, pz, 0.5, 1.2, 0.5, 0x1b1c1f);   // signal housing
+        const lamp = new THREE.Mesh(lampGeo, signal.mats[axis]);
+        lamp.position.set(px, FOOT_TOP + 4.0, pz);
+        scene.add(lamp);
         world.addBox(node.x + a.dx * 0.3, ROAD_TOP + 0.004, node.z + a.dz * 0.3,
-          Math.abs(a.dx) > 0.5 ? 0.4 : ROAD_W * 0.45, 0.008, Math.abs(a.dx) > 0.5 ? ROAD_W * 0.45 : 0.4, world.mat.white);
+          Math.abs(a.dx) > 0.5 ? 0.4 : ROAD_W * 0.45, 0.01, Math.abs(a.dx) > 0.5 ? ROAD_W * 0.45 : 0.4, 0xf2f2f2);
       }
     }
   }
@@ -176,61 +177,26 @@ export function buildNetwork(world, scene) {
 }
 
 // ---------------------------------------------------------------------------
-// Car meshes (simple shapes)
-// ---------------------------------------------------------------------------
-export const CAR_SPECS = [
-  { name: 'Hatchback', l: 3.8, w: 1.7, bh: 0.72, ch: 0.66, cl: 0.55, cs: -0.2 },
-  { name: 'Sedan', l: 4.5, w: 1.78, bh: 0.68, ch: 0.6, cl: 0.45, cs: -0.15 },
-  { name: 'SUV', l: 4.6, w: 1.9, bh: 0.88, ch: 0.75, cl: 0.62, cs: -0.3 },
-  { name: 'Pickup', l: 5.2, w: 1.9, bh: 0.85, ch: 0.72, cl: 0.3, cs: 0.9 },
-];
-export const POLICE_SPEC = { name: 'Police', l: 4.7, w: 1.8, bh: 0.72, ch: 0.6, cl: 0.45, cs: -0.1 };
-const CAR_COLORS = [0xf2f2f2, 0xc0c2c7, 0x202022, 0xb31a1a, 0x264da6, 0xf2bf1a, 0x33734d, 0x804d33];
-
-const WHEEL = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 10);
-const carGeoCache = new Map();
-
-// One merged mesh per car: body, glass, roof and wheels together (1 draw call).
-// "extra" adds more parts (police stripe).
-export function makeCarMesh(spec, colorHex, castShadow, extra = null) {
-  const key = spec.name + colorHex + (extra ? 'x' : '');
-  let geo = carGeoCache.get(key);
-  if (!geo) {
-    const clear = 0.28;
-    const parts = [
-      part(BOX, colorHex, 0, clear + spec.bh / 2, 0, spec.w, spec.bh, spec.l),
-      part(BOX, 0x1f2933, 0, clear + spec.bh + spec.ch / 2, spec.cs, spec.w * 0.86, spec.ch, spec.l * spec.cl),
-      part(BOX, colorHex, 0, clear + spec.bh + spec.ch + 0.03, spec.cs, spec.w * 0.88, 0.06, spec.l * spec.cl * 0.92),
-    ];
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      parts.push(part(WHEEL, 0x111111, sx * (spec.w / 2 - 0.12), 0.33, sz * (spec.l / 2 - 0.8), 1, 1, 1, 0, 0, Math.PI / 2));
-    }
-    if (extra) parts.push(...extra());
-    geo = mergeParts(parts);
-    carGeoCache.set(key, geo);
-  }
-  const mesh = new THREE.Mesh(geo, vertexColorMaterial);
-  mesh.castShadow = castShadow;
-  return mesh;
-}
-
-// ---------------------------------------------------------------------------
 // AI car: follows lanes, stops at red lights, brakes for anything ahead,
 // pulls over for police chases. Police cars reuse it with extra orders.
 // ---------------------------------------------------------------------------
 export class Car {
-  constructor(game, spec, colorHex, extraParts = null) {
+  constructor(game, type, colorHex) {
     this.game = game;
     this.isCar = true;
-    this.spec = spec;
-    this.halfL = spec.l / 2;
-    this.halfW = spec.w / 2;
+    this.type = type;
+    const size = VEHICLE_SIZE[type];
+    this.halfL = size.l / 2;
+    this.halfW = size.w / 2;
     this.rLong = this.halfL;
     this.rLat = this.halfW;
-    this.mesh = makeCarMesh(spec, colorHex, !game.lowQuality, extraParts);
+    this.vehicle = makeVehicle(type, colorHex, game.shadows);
+    this.mesh = this.vehicle.group;
     game.scene.add(this.mesh);
 
-    this.cruise = 11; this.accel = 3.5; this.brake = 8; this.corner = 6;
+    // Autos are slower; everyone varies a little.
+    this.cruise = (type === 'auto' ? 8.5 : 11) * (0.9 + Math.random() * 0.2);
+    this.accel = type === 'auto' ? 2.6 : 3.5; this.brake = 8; this.corner = 6;
     this.obeySignals = true; this.pursuing = false; this.hold = false;
     this.x = 0; this.z = 0; this.yaw = 0; this.speed = 0;
     this.prev = -1; this.target = -1; this.upcoming = [];
@@ -346,6 +312,11 @@ export class Car {
     const blockedByCar = this.obstacle && this.obstacle.isCar;
     this.blocked = this.obstacle && this.speed < 0.5 ? this.blocked + dt : 0;
     if (blockedByCar && this.blocked > 6) { this.ignoreCars = 1.5; this.blocked = 0; }   // break rare deadlocks
+    // Someone standing in front of the car: honk (Indian traffic!).
+    if (this.obstacle === this.game.player && this.blocked > 1) {
+      const cam = this.game.camera.position;
+      this.game.audio.horn(1 - dist(this.x, this.z, cam.x, cam.z) / 50);
+    }
     if (this.ignoreCars > 0) this.ignoreCars -= dt;
 
     if (this.pursuing) {
@@ -427,12 +398,13 @@ export class Car {
   }
 }
 
+export function randomTrafficType() { return pick(TRAFFIC_TYPES); }
 export function randomCarColor() { return pick(CAR_COLORS); }
 
 // ---------------------------------------------------------------------------
 // Pedestrians: walk round the blocks, keep left, run from police chases.
 // ---------------------------------------------------------------------------
-const CLOTHES = [0xe6e6d9, 0xcc4033, 0x3359b3, 0xf2b326, 0x599959, 0x8c3380, 0x4d4d52, 0xf28099];
+const CLOTHES = [0xe8e2d0, 0xc0392b, 0x2e5aa8, 0xe6a817, 0x4f8f4f, 0x8e3a85, 0x4a4a50, 0xe07a9a, 0xd35400, 0x16a085, 0xf5f0e6];
 
 export function buildLoops() {
   const loops = [];
@@ -447,28 +419,6 @@ export function buildLoops() {
   return loops;
 }
 
-const PERSON_BODY = new THREE.CapsuleGeometry(0.25, 1.05, 3, 8);
-const PERSON_HEAD = new THREE.SphereGeometry(0.13, 8, 6);
-const personCache = new Map();
-
-// One merged mesh per person (body + head [+ cap]).
-export function makePersonMesh(clothesHex, castShadow, capHex) {
-  const key = clothesHex + '_' + capHex;
-  let geo = personCache.get(key);
-  if (!geo) {
-    const parts = [
-      part(PERSON_BODY, clothesHex, 0, 0.8, 0),
-      part(PERSON_HEAD, 0x8c6145, 0, 1.62, 0),
-    ];
-    if (capHex !== undefined) parts.push(part(BOX, capHex, 0, 1.76, 0.03, 0.3, 0.08, 0.34));
-    geo = mergeParts(parts);
-    personCache.set(key, geo);
-  }
-  const mesh = new THREE.Mesh(geo, vertexColorMaterial);
-  mesh.castShadow = castShadow;
-  return mesh;
-}
-
 export class Pedestrian {
   constructor(game, loop, startPos, target, dir) {
     this.game = game;
@@ -481,8 +431,10 @@ export class Pedestrian {
     this.walk = 1.1 + Math.random() * 0.5;
     this.side = 0.5 + Math.random() * 0.4;   // keep left
     this.panic = 0; this.wait = 0; this.senseT = Math.random() * 0.2; this.blocked = false;
-    this.mesh = makePersonMesh(pick(CLOTHES), !game.lowQuality);
+    this.rig = new CharacterRig('citizen', pick(CLOTHES), game.shadows);
+    this.mesh = this.rig.root;
     game.scene.add(this.mesh);
+    this.speed = 0;
   }
 
   point(i) { const n = this.loop.length; return this.loop[((i % n) + n) % n]; }
@@ -523,10 +475,13 @@ export class Pedestrian {
     } else this.wait = 0;
 
     this.yaw = rotateTowards(this.yaw, yawOf(tx - this.x, tz - this.z), 6.3 * dt);
-    this.x += Math.sin(this.yaw) * speed * dt;
-    this.z += Math.cos(this.yaw) * speed * dt;
+    this.speed = moveTowards(this.speed, speed, 6 * dt);
+    this.x += Math.sin(this.yaw) * this.speed * dt;
+    this.z += Math.cos(this.yaw) * this.speed * dt;
     this.mesh.position.set(this.x, FOOT_TOP, this.z);
     this.mesh.rotation.y = this.yaw;
+    this.rig.setMotion(this.speed);
+    this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
   }
 
   fleeFrom(px, pz) {

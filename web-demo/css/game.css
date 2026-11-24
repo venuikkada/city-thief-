@@ -1,0 +1,165 @@
+/* City Thief browser demo - clean, thumb-friendly HUD (shooter-game style) */
+:root {
+  --bg: #0d0e11;
+  --panel: rgba(10, 11, 14, 0.78);
+  --text: #f3f3f3;
+  --muted: #c4c7ce;
+  --accent: #ffc531;
+  --red: #e0301e;
+  --btn: rgba(0, 0, 0, 0.28);
+  --btn-border: rgba(255, 255, 255, 0.55);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: "Segoe UI", Roboto, "Noto Sans", system-ui, sans-serif;
+  touch-action: none; user-select: none; -webkit-user-select: none; overscroll-behavior: none;
+}
+
+#game, #touch-layer { position: fixed; inset: 0; }
+#game canvas { display: block; width: 100%; height: 100%; }
+#touch-layer { z-index: 2; }
+.hidden { display: none !important; }
+
+/* ---------- Joystick ---------- */
+#stick-base {
+  position: fixed; z-index: 3; pointer-events: none;
+  width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.08), rgba(255,255,255,0.16));
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 18px rgba(0,0,0,0.35);
+}
+#stick-knob {
+  position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.9); box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+#stick-knob.sprint { background: var(--accent); box-shadow: 0 0 16px rgba(255, 197, 49, 0.8); }
+#stick-sprint {
+  position: absolute; left: 50%; top: -30px; transform: translateX(-50%);
+  font-size: 11px; font-weight: 800; letter-spacing: 1px; color: rgba(255,255,255,0.75);
+}
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+
+#map-wrap { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 12px; }
+#minimap {
+  display: block; width: 150px; height: 150px; border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.6); box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+}
+#stars { margin-top: 6px; display: flex; gap: 3px; justify-content: center; font-size: 20px; text-shadow: 0 1px 3px #000; }
+#stars span { color: rgba(255,255,255,0.28); }
+#stars span.on { color: var(--accent); }
+#stars.blink span.on { animation: blink 0.6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+#compass {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 300px; height: 27px;
+}
+#fps { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 600; opacity: 0.8; }
+
+#status {
+  position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+  width: min(90vw, 640px); text-align: center;
+  font-size: 16px; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 2px 3px #000, 0 0 2px #000;
+}
+#big-msg {
+  position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+  font-size: clamp(30px, 6.5vw, 64px); font-weight: 900; font-style: italic; letter-spacing: 1px; white-space: nowrap;
+  text-shadow: 0 3px 8px #000, 0 0 3px #000;
+  animation: pop 0.35s ease-out;
+}
+@keyframes pop { from { transform: translate(-50%, -50%) scale(1.4); opacity: 0; } }
+
+#objective {
+  position: absolute; right: max(66px, calc(env(safe-area-inset-right) + 66px)); top: 12px;
+  width: min(30vw, 260px); padding: 7px 10px; border-left: 3px solid var(--accent);
+  background: linear-gradient(90deg, rgba(0,0,0,0.55), rgba(0,0,0,0.25));
+  font-size: 12px; line-height: 1.35; color: var(--muted);
+}
+#objective b { color: var(--accent); letter-spacing: 1px; font-size: 11px; }
+
+#crosshair {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border: 2px solid rgba(255,255,255,0.9); border-radius: 50%;
+}
+#crosshair::after { content: ''; position: absolute; left: 8px; top: 8px; width: 2px; height: 2px; background: #fff; }
+
+#health {
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  width: min(34vw, 300px); height: 8px; border-radius: 4px; background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.4); overflow: hidden;
+}
+#health-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #e9e9e9, #ffffff); }
+
+.hud-btn {
+  position: absolute; pointer-events: auto; color: #fff; font-family: inherit;
+  background: var(--btn); border: 2px solid var(--btn-border); touch-action: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.hud-btn svg { width: 26px; height: 26px; fill: #fff; stroke: #fff; }
+.hud-btn span { font-size: 9px; font-weight: 800; letter-spacing: 0.5px; }
+.hud-btn.round { width: 66px; height: 66px; border-radius: 50%; }
+.hud-btn.round.big { width: 78px; height: 78px; }
+.hud-btn.small { width: 44px; height: 44px; border-radius: 10px; }
+.hud-btn.small svg { width: 20px; height: 20px; }
+.hud-btn.active { background: rgba(255, 197, 49, 0.45); border-color: var(--accent); }
+.hud-btn.pressed { transform: scale(0.9); background: rgba(255,255,255,0.25); }
+.hud-btn.red { background: rgba(170, 20, 15, 0.55); border-color: rgba(255, 130, 120, 0.85); }
+
+#btn-pause    { right: max(12px, env(safe-area-inset-right)); top: 12px; }
+#btn-jump     { right: max(28px, calc(env(safe-area-inset-right) + 28px)); bottom: 100px; }
+#btn-crouch   { right: max(120px, calc(env(safe-area-inset-right) + 120px)); bottom: 30px; }
+#btn-aim      { right: max(34px, calc(env(safe-area-inset-right) + 34px)); bottom: 196px; }
+#btn-callcops { right: max(122px, calc(env(safe-area-inset-right) + 122px)); bottom: 150px; }
+
+/* ---------- Start + loading screens ---------- */
+#start-screen, #rotate-hint, #loading {
+  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+#start-screen { background: linear-gradient(90deg, rgba(5,6,9,0.85) 0%, rgba(5,6,9,0.55) 45%, rgba(5,6,9,0.05) 100%); justify-content: center; align-items: flex-start; padding-left: max(5vw, env(safe-area-inset-left)); }
+#start-screen .panel { width: min(92vw, 470px); max-height: 94vh; overflow: auto; padding: 8px 4px; }
+.logo { font-weight: 900; font-style: italic; font-size: clamp(38px, 8vw, 64px); line-height: 0.9; letter-spacing: 2px; text-shadow: 0 4px 16px rgba(0,0,0,0.6); }
+.logo span { display: inline-block; margin-right: 10px; }
+.logo .thief { color: var(--accent); }
+.tag { margin: 6px 0 12px; color: var(--accent); font-size: 12px; letter-spacing: 3px; font-weight: 700; }
+#start-screen p { margin: 8px 0; font-size: 15px; line-height: 1.45; }
+#start-screen .help { font-size: 13px; color: var(--muted); display: grid; gap: 6px; margin: 12px 0 16px; }
+#btn-play {
+  font: inherit; font-size: 22px; font-weight: 900; font-style: italic; letter-spacing: 2px;
+  padding: 14px 48px; border: none; cursor: pointer; color: #141414;
+  background: linear-gradient(180deg, #ffd65a, #f0a90e);
+  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0 100%);
+}
+.small-note { font-size: 12px !important; color: var(--muted); }
+
+#loading { z-index: 11; background: radial-gradient(circle at 50% 40%, #2a2016, #07080a 70%); gap: 18px; }
+#load-track { width: min(70vw, 360px); height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; }
+#load-bar { width: 0; height: 100%; background: var(--accent); transition: width 0.2s; }
+#load-text { color: var(--muted); font-size: 14px; }
+
+#rotate-hint { display: none; z-index: 12; background: #07080a; font-size: 20px; font-weight: 700; text-align: center; padding: 20px; }
+@media (orientation: portrait) and (pointer: coarse) { #rotate-hint { display: flex; } }
+
+/* Short phone screens (landscape) */
+@media (max-height: 430px) {
+  #minimap { width: 118px; height: 118px; }
+  #stars { font-size: 16px; }
+  #objective { font-size: 10.5px; width: min(28vw, 220px); padding: 5px 8px; }
+  #status { font-size: 13px; top: 40px; }
+  .hud-btn.round { width: 58px; height: 58px; }
+  .hud-btn.round.big { width: 68px; height: 68px; }
+  .hud-btn svg { width: 22px; height: 22px; }
+  #btn-jump { bottom: 86px; }
+  #btn-aim { bottom: 168px; }
+  #btn-callcops { bottom: 128px; right: max(104px, calc(env(safe-area-inset-right) + 104px)); }
+  #btn-crouch { right: max(104px, calc(env(safe-area-inset-right) + 104px)); bottom: 24px; }
+  #compass { width: 240px; height: 22px; }
+}

@@ -106,7 +106,7 @@ export class Controls {
   }
 
   updateStick(x, y) {
-    const radius = 70;
+    const radius = 75;
     let dx = (x - this.stickCx) / radius, dy = (y - this.stickCy) / radius;
     const raw = Math.hypot(dx, dy);
     if (raw > 1) { dx /= raw; dy /= raw; }

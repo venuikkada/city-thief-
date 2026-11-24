@@ -1,0 +1,15 @@
+City Thief - browser demo: third-party assets
+
+Characters and animations (vikram.glb, citizen.glb)
+  Source: three.js example models (Soldier.glb, Xbot.glb), https://github.com/mrdoob/three.js
+  Characters and animations made with Adobe Mixamo; used under the Mixamo terms
+  (free to use in games and projects; not to be redistributed as standalone assets).
+
+Sky lighting (sunset_1k.hdr)
+  "Venice Sunset" HDRI from Poly Haven (polyhaven.com), CC0 / public domain.
+
+3D engine: three.js (MIT licence) - see js/vendor/THREE-LICENSE.txt
+
+Everything else (city, buildings, cars, auto-rickshaw, police SUV, textures,
+shop signs, sounds) is generated in code for this project.
+All names, places and police forces are fictional.

@@ -1,6 +1,7 @@
 // Vikram on foot (port of the Unity PlayerMotor) and the third-person camera.
 import * as THREE from 'three';
 import { clamp, lerp, moveTowards, rotateTowards, yawOf, DEG, pushOutOfBox } from './util.js';
+import { CharacterRig } from './characters.js';
 
 export class Player {
   constructor(game, x, z, yaw) {
@@ -18,18 +19,9 @@ export class Player {
     this.runSpeed = 4.6; this.sprintSpeed = 6.8; this.crouchSpeed = 1.7; this.aimSpeed = 2.4;
     this.accel = 16; this.decel = 24;
 
-    const mat = new THREE.MeshLambertMaterial({ color: 0x2659d9 });
-    this.mesh = new THREE.Group();
-    this.body = new THREE.Mesh(new THREE.CapsuleGeometry(0.33, 1.14, 4, 10), mat);
-    this.body.position.y = 0.9;
-    this.body.castShadow = !game.lowQuality;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), new THREE.MeshLambertMaterial({ color: 0x8c6145 }));
-    head.position.y = 1.0;
-    this.body.add(head);
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.35), new THREE.MeshLambertMaterial({ color: 0xffd126 }));
-    nose.position.set(0, 0.45, 0.3);
-    this.body.add(nose);
-    this.mesh.add(this.body);
+    this.rig = new CharacterRig('hero', undefined, game.shadows);
+    this.mesh = this.rig.root;
+    this.crouchBlend = 0;
     game.scene.add(this.mesh);
     this.sync();
   }
@@ -81,6 +73,7 @@ export class Player {
     }
 
     // Move + gravity.
+    const startX = this.x, startZ = this.z;
     this.x += this.vx * dt;
     this.z += this.vz * dt;
     this.vy = Math.max(this.vy - 22 * dt, -40);
@@ -96,6 +89,10 @@ export class Player {
       if (d < min && d > 0.0001) { this.x += (dx / d) * (min - d); this.z += (dz / d) * (min - d); }
     }
 
+    // Walked into a wall? Keep only the speed we really moved (no running on the spot).
+    const realVx = (this.x - startX) / dt, realVz = (this.z - startZ) / dt;
+    if (realVx * realVx + realVz * realVz < this.vx * this.vx + this.vz * this.vz) { this.vx = realVx; this.vz = realVz; }
+
     // Ground: footpaths are a small step up (taken automatically).
     const ground = g.world.groundAt(this.x, this.z);
     if (this.y <= ground) { this.y = ground; if (this.vy < 0) this.vy = 0; this.grounded = true; }
@@ -108,15 +105,18 @@ export class Player {
     if (face !== null) this.yaw = rotateTowards(this.yaw, face, (this.aiming ? 1080 : 720) * DEG * dt);
 
     this.height = moveTowards(this.height, this.crouching ? 1.15 : 1.8, 5 * dt);
-    this.sync();
+    // Real speed after bumping into walls (so feet do not slide).
+    this.sync(dt);
   }
 
-  sync() {
+  sync(dt = 0) {
     this.mesh.position.set(this.x, this.y, this.z);
     this.mesh.rotation.y = this.yaw;
-    const k = this.height / 1.8;
-    this.body.scale.y = k;
-    this.body.position.y = 0.9 * k;
+    if (dt > 0) {
+      this.crouchBlend = moveTowards(this.crouchBlend, this.crouching ? 1 : 0, 5 * dt);
+      this.rig.setMotion(Math.hypot(this.vx, this.vz), this.crouchBlend);
+      this.rig.update(dt, 0);
+    }
   }
 }
 

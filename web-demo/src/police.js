@@ -1,9 +1,9 @@
 // Navapur Metro Police (fictional): dispatch, patrol cars and officers on foot.
 // Same rules as the Unity Step 2 code.
 import * as THREE from 'three';
-import { Car, POLICE_SPEC, makePersonMesh } from './traffic.js';
-import { dist, rotateTowards, yawOf, pushOutOfBox } from './util.js';
-import { BOX, part } from './mesh.js';
+import { Car } from './traffic.js';
+import { CharacterRig } from './characters.js';
+import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards } from './util.js';
 
 // Can a police unit at (ex, ez) facing (fx, fz) see the player?
 export function canSee(world, ex, ez, fx, fz, target, range, fovDeg, closeRange = 8) {
@@ -80,26 +80,15 @@ export class Dispatch {
 // ---------------------------------------------------------------------------
 export class PoliceCar extends Car {
   constructor(game) {
-    // White car with a blue stripe (stripe merged into the car mesh).
-    const s0 = POLICE_SPEC;
-    super(game, s0, 0xeeeef2, () => [part(BOX, 0x142e8c, 0, 0.28 + s0.bh / 2, 0, s0.w + 0.02, 0.2, s0.l * 0.98)]);
+    super(game, 'police', 0xffffff);
     this.isPolice = true;
     this.state = 'patrol';
     this.patrolSpeed = 9; this.pursuitSpeed = 16;
     this.cruise = this.patrolSpeed;
     this.officer = null;
     this.repathT = 0; this.sightT = Math.random() * 0.2; this.flashT = 0; this.flash = false; this.waitT = 0;
-
-    // Lightbar (separate so it can flash).
-    const s = POLICE_SPEC, clear = 0.28, roof = clear + s.bh + s.ch;
-    const box = BOX;
-    this.redMat = new THREE.MeshLambertMaterial({ color: 0x404046 });
-    this.blueMat = new THREE.MeshLambertMaterial({ color: 0x404046 });
-    const red = new THREE.Mesh(box, this.redMat);
-    red.position.set(-0.3, roof + 0.12, s.cs); red.scale.set(0.45, 0.14, 0.26);
-    const blue = new THREE.Mesh(box, this.blueMat);
-    blue.position.set(0.3, roof + 0.12, s.cs); blue.scale.set(0.45, 0.14, 0.26);
-    this.mesh.add(red, blue);
+    this.redMat = this.vehicle.red;
+    this.blueMat = this.vehicle.blue;
   }
 
   beginPursuit() {
@@ -125,11 +114,10 @@ export class PoliceCar extends Car {
     if (this.state === 'waiting') { this.state = 'patrol'; this.hold = false; }
   }
 
+  // Bright (above 1.0) colours glow with bloom; dark when off.
   setLights(r, b) {
-    this.redMat.color.setHex(r ? 0xff1a1a : 0x404046);
-    this.redMat.emissive.setHex(r ? 0xaa0000 : 0x000000);
-    this.blueMat.color.setHex(b ? 0x2a5cff : 0x404046);
-    this.blueMat.emissive.setHex(b ? 0x0022aa : 0x000000);
+    if (r) this.redMat.color.setRGB(6, 0.3, 0.25); else this.redMat.color.setHex(0x551111);
+    if (b) this.blueMat.color.setRGB(0.3, 0.8, 7); else this.blueMat.color.setHex(0x111a55);
   }
 
   update(dt) {
@@ -182,9 +170,11 @@ export class Officer {
     this.x = x; this.z = z; this.yaw = yaw;
     this.rLong = 0.35; this.rLat = 0.35; this.radius = 0.35;
     this.returning = false; this.catchT = 0; this.sightT = 0; this.avoidSide = 1;
-    this.mesh = makePersonMesh(0x9e875c, !game.lowQuality, 0x1f2438);
+    this.rig = new CharacterRig('police', 0xb39b68, game.shadows);   // khaki uniform
+    this.mesh = this.rig.root;
     game.scene.add(this.mesh);
     this.isOfficer = true;
+    this.speed = 0;
   }
 
   remove() {
@@ -220,8 +210,10 @@ export class Officer {
     let want = yawOf(gx - this.x, gz - this.z);
     want = this.avoid(want);
     if (speed > 0) this.yaw = rotateTowards(this.yaw, want, 9.4 * dt);
-    this.x += Math.sin(this.yaw) * speed * dt;
-    this.z += Math.cos(this.yaw) * speed * dt;
+    this.speed = moveTowards(this.speed, speed, 10 * dt);
+    const bx = this.x, bz = this.z;
+    this.x += Math.sin(this.yaw) * this.speed * dt;
+    this.z += Math.cos(this.yaw) * this.speed * dt;
 
     // Do not walk through walls or cars.
     g.world.resolveCircle(this, this.radius);
@@ -229,6 +221,9 @@ export class Officer {
 
     this.mesh.position.set(this.x, g.world.groundAt(this.x, this.z), this.z);
     this.mesh.rotation.y = this.yaw;
+    const real = dist(bx, bz, this.x, this.z) / Math.max(dt, 1e-4);   // real speed after walls
+    this.rig.setMotion(Math.min(real, this.speed + 0.1));
+    this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
   }
 
   // Straight way blocked? Try angles to the side; remember which side worked.
