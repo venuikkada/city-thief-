@@ -53,7 +53,7 @@ city-thief-/                      <- Unity project root (this repo)
 │       │   ├── Garage/           buy and upgrade cars, coins               (Step 7)
 │       │   ├── Audio/            engine, guns, sirens, music manager       (Step 7)
 │       │   └── Environment/      day/night, rain                           (Step 7-8)
-│       ├── Editor/               one-click scene builders (only in editor, not in APK)
+│       ├── Editor/               one-click scene builders + shared BuilderUtils (not in APK)
 │       ├── Scenes/
 │       ├── Prefabs/
 │       ├── Art/ (Models, Materials, Textures, Animations)
@@ -62,7 +62,8 @@ city-thief-/                      <- Unity project root (this repo)
 │       └── Localization/         Hindi / Telugu labels later
 ├── Docs/
 │   ├── GAME_PLAN.md              story, chapters, wanted system, vehicles
-│   └── STEP1_REVIEW.md           how to test Step 1 + checklist
+│   ├── STEP1_REVIEW.md           how to test Step 1 + checklist
+│   └── STEP2_REVIEW.md           how to test Step 2 + checklist
 └── README.md
 ```
 
@@ -89,13 +90,13 @@ Commit those too, so the project opens the same way on any computer.
 
 | Step | What | Status |
 |---|---|---|
-| 1 | Core movement and camera on foot (joystick + drag-to-look) | **Done - ready for review** |
-| 2 | One city block with traffic and police | Next |
-| 3 | Car driving with PUBG-style vehicle controls | |
+| 1 | Core movement and camera on foot (joystick + drag-to-look) | Done |
+| 2 | One city block with traffic and police | **Done - ready for review** |
+| 3 | Car driving with PUBG-style vehicle controls | Next |
 | 4 | Shooting and wanted stars | |
 | 5 | Missions 1-10 (Chapter 1) | |
 | 6 | Bike, then boat, then highway (Chapters 2-4) | |
 | 7 | Garage, menus, settings, and sound | |
 | 8 | Optimisation and APK build | |
 
-See `Docs/STEP1_REVIEW.md` to test Step 1.
+How to test each step: `Docs/STEP1_REVIEW.md`, `Docs/STEP2_REVIEW.md`.

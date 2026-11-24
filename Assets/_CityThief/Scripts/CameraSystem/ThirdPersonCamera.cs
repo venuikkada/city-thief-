@@ -43,8 +43,8 @@ namespace CityThief.CameraSystem
         [Header("Wall collision")]
         [SerializeField] float collisionRadius = 0.22f;
         [SerializeField] float minDistance = 0.4f;
-        [Tooltip("Layers the camera bumps into. The player is on 'Ignore Raycast' so it is skipped.")]
-        [SerializeField] LayerMask collisionMask = ~(1 << 2);
+        [Tooltip("Layers the camera bumps into: only the world (not people or cars).")]
+        [SerializeField] LayerMask collisionMask = ProjectLayers.CameraCollisionMask;
 
         public float Yaw => yaw;
         public float Pitch => pitch;
