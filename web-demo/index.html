@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111317">
+  <meta name="description" content="City Thief - browser demo. Escape the Navapur Metro Police on foot. Free, no login.">
+  <title>City Thief - Browser Demo</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./js/vendor/three.module.min.js", "three/addons/": "./js/vendor/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- Touch layer: joystick (left) and drag-to-look (anywhere else) -->
+  <div id="touch-layer"></div>
+  <div id="stick-base" class="hidden"><div id="stick-knob"></div></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <canvas id="minimap" width="250" height="250"></canvas>
+    <div id="fps">-- FPS</div>
+    <div id="status"></div>
+    <div id="big-msg" class="hidden"></div>
+    <div id="objective">OBJECTIVE: Tap CALL COPS, then escape on foot. Sprint and hide in the courtyards behind the buildings.</div>
+    <button id="btn-pause" class="hud-btn small" aria-label="Pause">II</button>
+
+    <button id="btn-callcops" class="hud-btn round red">CALL<br>COPS</button>
+    <button id="btn-aim" class="hud-btn round">AIM</button>
+    <button id="btn-jump" class="hud-btn round">JUMP</button>
+    <button id="btn-crouch" class="hud-btn round">CROUCH</button>
+  </div>
+
+  <!-- Start / pause screen -->
+  <div id="start-screen">
+    <div class="panel">
+      <h1>CITY THIEF</h1>
+      <p class="tag">Browser demo &middot; Step 2 build</p>
+      <p>You are <b>Vikram</b>, a small-time thief in Navapur. Call the cops, then escape the
+        <b>Navapur Metro Police</b> on foot.</p>
+      <div class="help">
+        <div><b>Phone:</b> left thumb = move (push to the edge to <b>sprint</b>), drag anywhere = look.</div>
+        <div><b>Computer:</b> W A S D move, Shift sprint, Space jump, C crouch, Q aim, P call cops, mouse drag = look.</div>
+      </div>
+      <button id="btn-play">TAP TO PLAY</button>
+      <p class="small-note">Free &middot; works offline once loaded &middot; no login. All names, places and police are fictional.</p>
+    </div>
+  </div>
+
+  <div id="rotate-hint">Turn your phone sideways to play</div>
+  <div id="loading">Loading Navapur...</div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

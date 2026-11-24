@@ -1,0 +1,140 @@
+/* City Thief browser demo - simple, big, thumb-friendly UI */
+:root {
+  --bg: #111317;
+  --panel: rgba(12, 14, 18, 0.86);
+  --text: #f3f3f3;
+  --muted: #b9bcc4;
+  --accent: #ffcc2e;
+  --red: #d8261c;
+  --btn: rgba(20, 20, 24, 0.5);
+  --btn-border: rgba(255, 255, 255, 0.35);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+}
+
+#game, #touch-layer { position: fixed; inset: 0; }
+#game canvas { display: block; width: 100%; height: 100%; }
+#touch-layer { z-index: 2; }
+
+.hidden { display: none !important; }
+
+/* ---------- Joystick ---------- */
+#stick-base {
+  position: fixed; z-index: 3; pointer-events: none;
+  width: 140px; height: 140px; margin: -70px 0 0 -70px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+#stick-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 62px; height: 62px; margin: -31px 0 0 -31px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+#stick-knob.sprint { background: rgba(255, 204, 46, 0.95); }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+
+#minimap {
+  position: absolute; left: max(12px, env(safe-area-inset-left)); top: 12px;
+  width: 130px; height: 130px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+#fps { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 600; }
+
+#status {
+  position: absolute; top: 30px; left: 50%; transform: translateX(-50%);
+  width: min(90vw, 620px); text-align: center;
+  font-size: 17px; font-weight: 800; text-shadow: 0 2px 3px #000, 0 0 2px #000;
+}
+
+#big-msg {
+  position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+  font-size: clamp(30px, 7vw, 64px); font-weight: 900; white-space: nowrap;
+  text-shadow: 0 3px 6px #000, 0 0 3px #000;
+}
+
+#objective {
+  position: absolute; right: max(64px, calc(env(safe-area-inset-right) + 64px)); top: 12px;
+  width: min(36vw, 300px);
+  padding: 8px 10px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 12.5px; line-height: 1.35; color: var(--muted);
+}
+
+.hud-btn {
+  position: absolute; pointer-events: auto;
+  color: #fff; font-weight: 800; font-family: inherit;
+  background: var(--btn); border: 2px solid var(--btn-border);
+  touch-action: none;
+}
+.hud-btn.round { width: 70px; height: 70px; border-radius: 50%; font-size: 12px; line-height: 1.1; }
+.hud-btn.small { width: 44px; height: 44px; border-radius: 8px; font-size: 16px; }
+.hud-btn.active { background: rgba(255, 204, 46, 0.55); border-color: var(--accent); }
+.hud-btn.pressed { transform: scale(0.9); }
+.hud-btn.red { background: rgba(160, 15, 15, 0.6); border-color: rgba(255, 120, 110, 0.7); }
+
+#btn-pause    { right: max(12px, env(safe-area-inset-right)); top: 12px; }
+#btn-jump     { right: max(24px, calc(env(safe-area-inset-right) + 24px)); bottom: 104px; }
+#btn-crouch   { right: max(112px, calc(env(safe-area-inset-right) + 112px)); bottom: 28px; }
+#btn-aim      { right: max(24px, calc(env(safe-area-inset-right) + 24px)); bottom: 200px; }
+#btn-callcops { right: max(112px, calc(env(safe-area-inset-right) + 112px)); bottom: 150px; }
+
+/* ---------- Start screen ---------- */
+#start-screen, #rotate-hint, #loading {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 30%, rgba(40, 46, 60, 0.85), rgba(8, 9, 12, 0.96));
+}
+#start-screen .panel {
+  width: min(92vw, 560px); max-height: 94vh; overflow: auto;
+  padding: 18px 22px; border-radius: 14px; background: var(--panel);
+  text-align: center;
+}
+#start-screen h1 { margin: 0; font-size: clamp(30px, 6vw, 46px); letter-spacing: 3px; color: var(--accent); }
+#start-screen .tag { margin: 2px 0 10px; color: var(--muted); font-size: 13px; }
+#start-screen p { margin: 8px 0; font-size: 15px; line-height: 1.4; }
+#start-screen .help { text-align: left; font-size: 13.5px; color: var(--muted); display: grid; gap: 6px; margin: 10px 0 14px; }
+#btn-play {
+  font: inherit; font-size: 20px; font-weight: 900; letter-spacing: 1px;
+  padding: 14px 34px; border-radius: 40px; border: none;
+  background: var(--accent); color: #1b1b1b; cursor: pointer;
+}
+.small-note { font-size: 12px !important; color: var(--muted); }
+
+#loading { z-index: 11; font-size: 18px; color: var(--muted); }
+
+#rotate-hint { display: none; z-index: 12; font-size: 20px; font-weight: 700; text-align: center; padding: 20px; }
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate-hint { display: flex; }
+}
+
+/* Short phone screens (landscape): smaller objective box and buttons. */
+@media (max-height: 430px) {
+  #objective { font-size: 11px; width: min(32vw, 240px); padding: 6px 8px; }
+  #status { font-size: 14px; top: 26px; }
+  .hud-btn.round { width: 62px; height: 62px; font-size: 11px; }
+  #btn-jump { bottom: 92px; }
+  #btn-aim { bottom: 176px; }
+  #btn-callcops { bottom: 134px; right: max(100px, calc(env(safe-area-inset-right) + 100px)); }
+  #btn-crouch { right: max(100px, calc(env(safe-area-inset-right) + 100px)); }
+  #minimap { width: 110px; height: 110px; }
+}

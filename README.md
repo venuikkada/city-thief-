@@ -31,6 +31,20 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
 
 ---
 
+## Browser demo (for sharing and feedback)
+
+`web-demo/` is a small playable **web version** of Steps 1-2 (Three.js, about 800 KB,
+no build step): joystick + drag-to-look, the Navapur block, left-hand traffic,
+pedestrians and a police chase. It works in phone browsers, so the link can be shared on
+WhatsApp. The **Unity project stays the real game** - the demo is only for feedback and promotion.
+
+- Live (temporary Hostinger domain): https://worldly-mediumturquoise-anteater-68.hostingersite.com
+- Run it on your computer: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
+- Add `?low` to the URL to force low quality (no shadows) on weak phones.
+- Deploy target is saved in `.hostinger/site.json`.
+
+---
+
 ## Folder structure
 
 ```
