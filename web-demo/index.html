@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d0e11">
-  <meta name="description" content="City Thief - free browser demo. Steal cars, fight the Navapur police, play 5 story missions. No login.">
+  <meta name="description" content="City Thief - free browser demo. A big Indian coastal city: steal cars, escape the Navapur police (roadblocks, helicopter), play 5 story missions. No login.">
   <title>City Thief - Browser Demo</title>
   <link rel="stylesheet" href="css/game.css">
   <script type="importmap">
@@ -14,7 +14,8 @@
 <body>
   <div id="game"></div>
   <div id="touch-layer"></div>
-  <div id="stick-base" class="hidden"><div id="stick-knob"></div><div id="stick-sprint">SPRINT</div></div>
+  <div id="stick-base" class="hidden"><div id="stick-knob"></div><div id="stick-sprint">SPRINT</div><div id="stick-lock">&#128274;</div></div>
+  <div id="sprint-lock">SPRINT LOCKED &middot; touch the left side to stop</div>
   <div id="hurt" class="hidden"></div>
 
   <!-- ===================== HUD ===================== -->
@@ -26,6 +27,7 @@
     <canvas id="compass"></canvas>
     <div id="fps">-- FPS</div>
     <div id="status"></div>
+    <div id="toast" class="hidden"></div>
     <div id="big-msg" class="hidden"></div>
 
     <div id="mission-panel">
@@ -44,6 +46,7 @@
     <div id="hitmarker" class="hidden"></div>
     <div id="speedo" class="car-only">0<span>km/h</span></div>
     <div id="car-health" class="car-only"><div id="car-health-fill"></div></div>
+    <div id="boost" class="car-only"><div id="boost-fill"></div><span>NITRO</span></div>
     <div id="health"><div id="health-fill"></div></div>
     <div id="subtitle" class="hidden"></div>
 
@@ -85,6 +88,16 @@
     <button id="btn-horn" class="hud-btn round car-only" aria-label="Horn"><svg viewBox="0 0 24 24"><path d="M4 10h3l6-4v12l-6-4H4zM16 9a4 4 0 0 1 0 6"/></svg><span>HORN</span></button>
     <button id="btn-cam" class="hud-btn small car-only" aria-label="Camera"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3" fill="#222"/></svg></button>
     <button id="btn-exit" class="hud-btn round car-only" aria-label="Exit car"><svg viewBox="0 0 24 24"><path d="M10 4h9v16h-9v-3h2v1h5V6h-5v1h-2zM4 12l4-4v3h7v2H8v3z"/></svg><span>EXIT</span></button>
+    <button id="btn-boost" class="hud-btn round fire car-only" aria-label="Nitro boost"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg><span>BOOST</span></button>
+    <button id="btn-left" class="hud-btn round car-only steer" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M15 4l-9 8 9 8z"/></svg></button>
+    <button id="btn-right" class="hud-btn round car-only steer" aria-label="Steer right"><svg viewBox="0 0 24 24"><path d="M9 4l9 8-9 8z"/></svg></button>
+  </div>
+
+  <!-- Full-screen map -->
+  <div id="bigmap" class="hidden">
+    <canvas id="bigmap-canvas"></canvas>
+    <div class="hint">Tap the map to set a waypoint (purple GPS line) &middot; tap it again to remove</div>
+    <button id="bigmap-close" aria-label="Close map">&#10005;</button>
   </div>
 
   <!-- Cutscene letterbox -->
@@ -95,6 +108,7 @@
     <div class="panel left">
       <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
       <p class="tag">NAVAPUR &middot; CHAPTER 1: STREET ESCAPE</p>
+      <p class="tag2">A big coastal city &middot; real people &middot; cops, SWAT, roadblocks &amp; a helicopter</p>
       <div class="menu-buttons">
         <button class="big-btn" id="btn-story">STORY MISSIONS</button>
         <button class="big-btn alt" id="btn-free">FREE ROAM</button>
@@ -120,12 +134,15 @@
       <label>Aim sensitivity <input type="range" id="set-aim" min="0.2" max="1.5" step="0.05"></label>
       <label>Button size <input type="range" id="set-btn" min="0.8" max="1.3" step="0.05"></label>
       <label class="row">Invert look (up/down) <input type="checkbox" id="set-invert"></label>
+      <label class="row">Aim help (touch screens) <input type="checkbox" id="set-assist"></label>
+      <label class="row">Car controls
+        <select id="set-drive"><option value="joystick">Joystick (like PUBG)</option><option value="buttons">Buttons: arrows + GAS/BRAKE</option></select></label>
       <label class="row">Sound <input type="checkbox" id="set-sound"></label>
       <label class="row">Difficulty
         <select id="set-diff"><option value="0.7">Easy</option><option value="1">Normal</option><option value="1.3">Hard</option></select></label>
       <label class="row">Graphics
         <select id="set-gfx"><option value="low">Low (old phones)</option><option value="medium">Medium (phones)</option><option value="high">High (computers)</option></select></label>
-      <p class="small-note">Computer: click the game to capture the mouse. WASD move, Shift sprint, Space jump/drift, C crouch, R reload, Q switch gun, E enter/exit car, G pick up, H horn, V car camera, right-click aim, left-click fire, Esc release mouse.</p>
+      <p class="small-note">Phone: left thumb = joystick (push to the edge to sprint, drag far up to lock sprint). In a car the joystick drives: up = gas, down = brake/reverse. Tap the mini-map for the full map.<br>Computer: click the game to capture the mouse. WASD move/drive, Shift sprint/nitro, Space jump/drift, C crouch, R reload, Q switch gun, E enter/exit car, G pick up, H horn, V car camera, M map, right-click aim, left-click fire, Esc release mouse.</p>
       <button class="big-btn alt small" data-back>BACK</button>
     </div>
   </div>

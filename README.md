@@ -34,17 +34,30 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
 ## Browser demo (for sharing and feedback)
 
 `web-demo/` is a playable **web version** built with Three.js:
+- **Big city:** Navapur is 6 x 6 blocks (about 0.5 km x 0.5 km) in districts: old town, downtown glass towers,
+  parks with fountains, bazaars, and a Marine-Drive-style seafront (palm promenade, art-deco hotels with neon signs,
+  beach and sea). Traffic and people follow you around the city, so it always feels busy.
+- **Real people:** motion-captured humans (Vikram, Ravi, police, SWAT and 17 city people) who walk, run, sit on
+  benches, drink chai, talk on phones, dance, cheer, shop at the bazaar, and run away from gunfire.
 - **Story:** Chapter 1 (5 missions with timers, win/fail, coins + stars, cutscenes with Ravi) and Free Roam.
-- **Combat:** realistic animated people, pistol + SMG (aim, fire, reload, switch), police who arrest at 1 star and shoot at 2+, 5-star wanted level.
-- **Cars and city:** steal any car (even police SUVs) and drive with drift/handbrake; street life (chai stall, street dancer, bus stop, fruit cart, crowds that flee); Indian street detail.
-- **Settings:** sensitivity, button size, difficulty, graphics level, sound.
+- **Combat:** pistol + SMG, aim help on phones (slows on target, snaps when you press AIM), strafe and walk
+  backwards while aiming, sprint lock (drag the joystick far up).
+- **Police (5 stars):** arrest at 1 star, shooting at 2, SWAT + roadblocks at 3, helicopter with searchlight +
+  spike strips at 4-5. Officers find their way round buildings; cars predict where you go and ram you.
+- **Escaping:** a red search circle on the map. Get out of it while nobody sees you and the stars go.
+  A different car the police did not see also helps.
+- **Driving (PUBG-style):** joystick drives (up = gas, down = brake/reverse) or arrow buttons + GAS/BRAKE
+  (Settings), BOOST (nitro), DRIFT, horn, camera; crashes, burst tyres on spikes.
+- **Map:** mini-map with GPS route; tap it for the full map and set a waypoint.
+- **Settings:** sensitivity, aim help, car controls, button size, difficulty, graphics level, sound.
 
 The **Unity project stays the real game** - the demo is for feedback and promotion.
 
 - Live (temporary Hostinger domain): https://worldly-mediumturquoise-anteater-68.hostingersite.com
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`.
-- Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt`.
+- Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).
+- Size: about 9 MB to download; draw calls about 60-140 on Low quality (cheap phones).
 - Deploy target is saved in `.hostinger/site.json`.
 
 ---

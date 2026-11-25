@@ -1,9 +1,9 @@
 // Traffic: lane network (LEFT-hand traffic, like India), signals, AI cars and pedestrians.
 import * as THREE from 'three';
 import { LINES, HALF_ROAD, LANE_OFF, STOP_BACK, FOOT_W, FOOT_TOP, ROAD_TOP, ROAD_W } from './world.js';
-import { clamp, lerp, moveTowards, rotateTowards, yawOf, dist, DEG, pick } from './util.js';
+import { clamp, lerp, moveTowards, rotateTowards, yawOf, dist, DEG, pick, angleDiff } from './util.js';
 import { makeVehicle, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles.js';
-import { CharacterRig } from './characters.js';
+import { randomPersonRig } from './characters.js';
 
 const LIGHT_COLORS = [0x22ff44, 0xffcc11, 0xff2222];
 
@@ -14,8 +14,8 @@ class Signal {
   constructor(offset) {
     this.offset = offset;
     this.green = 10; this.yellow = 2.5; this.allRed = 1.5;
-    this.mats = [new THREE.MeshBasicMaterial({ color: 0x333333, toneMapped: false }), new THREE.MeshBasicMaterial({ color: 0x333333, toneMapped: false })];
     this.shown = [-1, -1];
+    this.lamps = [[], []];   // instance ids of the lamps for each axis
   }
   light(axis, t) {
     const half = this.green + this.yellow + this.allRed;
@@ -23,14 +23,6 @@ class Signal {
     if (tt < this.green) return 0;
     if (tt < this.green + this.yellow) return 1;
     return 2;
-  }
-  update(t) {
-    for (let a = 0; a < 2; a++) {
-      const l = this.light(a, t);
-      if (l === this.shown[a]) continue;
-      this.shown[a] = l;
-      this.mats[a].color.setHex(LIGHT_COLORS[l]).multiplyScalar(2.5);   // brighter than white = glows
-    }
   }
 }
 
@@ -71,39 +63,85 @@ export class Network {
     return best;
   }
 
-  // A* shortest drive. Returns the list of nodes from start to goal, or null.
+  // A* shortest drive (binary heap). Returns the list of nodes from start to goal, or null.
   findPath(start, goal) {
-    const n = this.nodes.length;
-    const g = new Float32Array(n).fill(Infinity);
-    const came = new Int32Array(n).fill(-1);
-    const open = new Uint8Array(n), closed = new Uint8Array(n);
-    const G = this.nodes[goal];
-    g[start] = 0; open[start] = 1;
-    let openCount = 1;
-    while (openCount > 0) {
-      let cur = -1, best = Infinity;
-      for (let i = 0; i < n; i++) {
-        if (!open[i]) continue;
-        const f = g[i] + Math.hypot(this.nodes[i].x - G.x, this.nodes[i].z - G.z);
-        if (f < best) { best = f; cur = i; }
-      }
+    const n = this.nodes.length, N = this.nodes, G = N[goal];
+    if (!this.g || this.g.length !== n) { this.g = new Float32Array(n); this.came = new Int32Array(n); this.seen = new Uint32Array(n); this.gen = 0; }
+    const g = this.g, came = this.came, seen = this.seen;
+    const gen = ++this.gen;
+    const heap = new MinHeap();
+    g[start] = 0; came[start] = -1; seen[start] = gen;
+    heap.push(start, Math.hypot(N[start].x - G.x, N[start].z - G.z));
+    let guard = 0;
+    while (heap.size && guard++ < 20000) {
+      const cur = heap.pop();
       if (cur === goal) {
         const path = [];
         for (let c = goal; c !== -1; c = came[c]) path.push(c);
         return path.reverse();
       }
-      open[cur] = 0; closed[cur] = 1; openCount--;
-      const C = this.nodes[cur];
+      const C = N[cur];
       for (const nb of C.next) {
-        if (closed[nb]) continue;
-        const cost = g[cur] + Math.hypot(this.nodes[nb].x - C.x, this.nodes[nb].z - C.z);
-        if (cost < g[nb]) {
-          g[nb] = cost; came[nb] = cur;
-          if (!open[nb]) { open[nb] = 1; openCount++; }
+        const cost = g[cur] + Math.hypot(N[nb].x - C.x, N[nb].z - C.z);
+        if (seen[nb] !== gen || cost < g[nb]) {
+          seen[nb] = gen; g[nb] = cost; came[nb] = cur;
+          heap.push(nb, cost + Math.hypot(N[nb].x - G.x, N[nb].z - G.z));
         }
       }
     }
     return null;
+  }
+
+  // Traffic lights: recolour the lamps only when a light changes.
+  updateSignals(t) {
+    if (!this.lampMesh) return;
+    let dirty = false;
+    for (const s of this.signals) {
+      for (let a = 0; a < 2; a++) {
+        const l = s.light(a, t);
+        if (l === s.shown[a]) continue;
+        s.shown[a] = l;
+        _lc.setHex(LIGHT_COLORS[l]).multiplyScalar(2.5);   // brighter than white = glows
+        for (const id of s.lamps[a]) this.lampMesh.setColorAt(id, _lc);
+        dirty = true;
+      }
+    }
+    if (dirty) this.lampMesh.instanceColor.needsUpdate = true;
+  }
+}
+
+const _lc = new THREE.Color();
+
+// Small priority queue (lowest f first) for A*.
+export class MinHeap {
+  constructor() { this.ids = []; this.keys = []; }
+  get size() { return this.ids.length; }
+  push(id, key) {
+    const I = this.ids, K = this.keys;
+    let i = I.length; I.push(id); K.push(key);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (K[p] <= key) break;
+      I[i] = I[p]; K[i] = K[p]; i = p;
+    }
+    I[i] = id; K[i] = key;
+  }
+  pop() {
+    const I = this.ids, K = this.keys, top = I[0];
+    const lastI = I.pop(), lastK = K.pop();
+    const n = I.length;
+    if (n) {
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= n) break;
+        if (c + 1 < n && K[c + 1] < K[c]) c++;
+        if (K[c] >= lastK) break;
+        I[i] = I[c]; K[i] = K[c]; i = c;
+      }
+      I[i] = lastI; K[i] = lastK;
+    }
+    return top;
   }
 }
 
@@ -135,7 +173,7 @@ export function buildNetwork(world, scene) {
   }
 
   // 2) Turns in each crossing + traffic lights where 3 or more roads meet.
-  const lampGeo = new THREE.BoxGeometry(0.36, 0.36, 0.5);
+  const lamps = [];
   for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
     const ins = incoming[idx(i, j)], outs = outgoing[idx(i, j)];
     let signal = null, sIndex = -1;
@@ -165,14 +203,20 @@ export function buildNetwork(world, scene) {
         const pz = node.z + lz * (HALF_ROAD - LANE_OFF + 0.7) - a.dz * 0.5;
         world.addBox(px, FOOT_TOP + 1.9, pz, 0.14, 3.8, 0.14, 0x2b2d31);
         world.addBox(px, FOOT_TOP + 4.0, pz, 0.5, 1.2, 0.5, 0x1b1c1f);   // signal housing
-        const lamp = new THREE.Mesh(lampGeo, signal.mats[axis]);
-        lamp.position.set(px, FOOT_TOP + 4.0, pz);
-        scene.add(lamp);
+        signal.lamps[axis].push(lamps.length);
+        lamps.push([px, FOOT_TOP + 4.0, pz]);
         world.addBox(node.x + a.dx * 0.3, ROAD_TOP + 0.004, node.z + a.dz * 0.3,
           Math.abs(a.dx) > 0.5 ? 0.4 : ROAD_W * 0.45, 0.01, Math.abs(a.dx) > 0.5 ? ROAD_W * 0.45 : 0.4, 0xf2f2f2);
       }
     }
   }
+  // All signal lamps in ONE draw call.
+  const lampMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.36, 0.5), new THREE.MeshBasicMaterial({ toneMapped: false }), lamps.length);
+  const m = new THREE.Matrix4();
+  lamps.forEach((p, i) => { lampMesh.setMatrixAt(i, m.makeTranslation(p[0], p[1], p[2])); lampMesh.setColorAt(i, _lc.setHex(0x333333)); });
+  lampMesh.instanceMatrix.needsUpdate = true;
+  scene.add(lampMesh);
+  net.lampMesh = lampMesh;
   return net;
 }
 
@@ -292,6 +336,9 @@ export class Car {
     if (this.direct) {
       aimX = this.direct.x; aimZ = this.direct.z;
       desired = Math.min(desired, this.stopSpeed(dist(this.x, this.z, aimX, aimZ) - this.directStop));
+      // Big turn ahead: slow down first (no impossible spins).
+      const off = Math.abs(angleDiff(this.yaw, yawOf(aimX - this.x, aimZ - this.z)));
+      desired = Math.min(desired, lerp(this.cruise, 7, clamp(off / (80 * DEG), 0, 1)));
     } else {
       if (this.target < 0) this.rejoin();
       if (this.target < 0) return;
@@ -362,7 +409,7 @@ export class Car {
     // Steer: a faster car turns faster; a stopped car cannot spin on the spot.
     const tx = aimX - this.x, tz = aimZ - this.z;
     if (tx * tx + tz * tz > 0.04 && this.speed > 0.1) {
-      const turnRate = Math.max(25, this.speed * 14) * DEG;
+      const turnRate = Math.min(140, Math.max(25, this.speed * 14)) * DEG;
       this.yaw = rotateTowards(this.yaw, yawOf(tx, tz), turnRate * dt);
     }
     this.x += Math.sin(this.yaw) * this.speed * dt;
@@ -425,19 +472,6 @@ export function randomCarColor() { return pick(CAR_COLORS); }
 // ---------------------------------------------------------------------------
 // Pedestrians: walk round the blocks, keep left, run from police chases.
 // ---------------------------------------------------------------------------
-export const CLOTHES = [0xe8e2d0, 0xc0392b, 0x2e5aa8, 0xe6a817, 0x4f8f4f, 0x8e3a85, 0x4a4a50, 0xe07a9a, 0xd35400, 0x16a085, 0xf5f0e6];
-export const TROUSERS = [0x2b2f3a, 0x3d3227, 0x1f2a44, 0x4b4b4b, 0x6b5a42, 0xd8d0c0];
-
-// A random city person: realistic man (any clothes) or woman.
-export function randomPersonRig(castShadow) {
-  if (Math.random() < 0.62) {
-    return new CharacterRig('man', {
-      top: pick(CLOTHES), bottom: pick(TROUSERS), hideBeard: Math.random() < 0.5, hideHat: Math.random() < 0.7, castShadow,
-    });
-  }
-  return new CharacterRig('woman', { castShadow, tint: pick([0xffffff, 0xf2e6da, 0xe8f0ff, 0xfff0f0]) });
-}
-
 export function buildLoops() {
   const loops = [];
   const mid = FOOT_W / 2;
@@ -498,6 +532,12 @@ export class Pedestrian {
       if (this.deadT > 25) this.respawnElsewhere();
       return;
     }
+    // Too far from the player: come back near him.
+    this.farT = (this.farT || 0) - dt;
+    if (this.farT <= 0) {
+      this.farT = 1 + Math.random();
+      if (dist(this.x, this.z, P.x, P.z) > 120 && this.respawnElsewhere()) return;
+    }
 
     if (g.dispatch.active && dist(this.x, this.z, P.x, P.z) < 14) this.panicFrom(P.x, P.z);
     this.panic -= dt;
@@ -538,18 +578,30 @@ export class Pedestrian {
     this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
   }
 
-  // Quietly come back as a new person on the far side of the loop (keeps the streets busy).
+  // Quietly come back as a new person somewhere near the player, but out of sight
+  // (the city is big: people are only simulated around Vikram).
   respawnElsewhere() {
-    const g = this.game, cam = g.camera.position;
-    const i = Math.floor(Math.random() * this.loop.length);
-    const p = this.point(i);
-    if (dist(p[0], p[1], cam.x, cam.z) < 40) { this.deadT = 15; return; }
-    g.scene.remove(this.mesh);
-    this.rig = randomPersonRig(g.shadows);
-    this.mesh = this.rig.root;
-    g.scene.add(this.mesh);
-    this.x = p[0]; this.z = p[1]; this.target = i + this.dir;
-    this.dead = false; this.health = 40; this.panic = 0;
+    const g = this.game, cam = g.camera.position, P = g.player;
+    const loops = g.pedLoops;
+    for (let tries = 0; tries < 12; tries++) {
+      const loop = loops[Math.floor(Math.random() * loops.length)];
+      const i = Math.floor(Math.random() * loop.length);
+      const A = loop[i], B = loop[(i + 1) % loop.length], t = Math.random();
+      const x = A[0] + (B[0] - A[0]) * t, z = A[1] + (B[1] - A[1]) * t;
+      const d = dist(x, z, P.x, P.z);
+      if (d < 45 || d > 95 || dist(x, z, cam.x, cam.z) < 40) continue;
+      g.scene.remove(this.mesh);
+      this.rig = randomPersonRig(g.shadows);
+      this.mesh = this.rig.root;
+      g.scene.add(this.mesh);
+      this.loop = loop; this.x = x; this.z = z;
+      this.dir = Math.random() < 0.5 ? 1 : -1;
+      this.target = this.dir === 1 ? i + 1 : i;
+      this.dead = false; this.health = 40; this.panic = 0; this.speed = 0;
+      return true;
+    }
+    this.deadT = Math.min(this.deadT || 0, 15);
+    return false;
   }
 
   fleeFrom(px, pz) {

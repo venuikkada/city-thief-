@@ -104,6 +104,7 @@ export class Effects {
     const puff = glowTexture('rgba(255,255,255,0.9)', 'rgba(255,255,255,0.35)');
     this.sparks = new ParticlePool(scene, 240, 0.12, true, spark);
     this.puffs = new ParticlePool(scene, 200, 0.45, false, puff);
+    this.glows = new ParticlePool(scene, 90, 0.38, true, spark);   // nitro flames
 
     // Tracers: short bright lines that fade fast.
     this.maxTracers = 24;
@@ -183,6 +184,21 @@ export class Effects {
     }
   }
 
+  // Nitro flame out of the exhaust; (dx, dz) = backwards.
+  flame(x, y, z, dx, dz) {
+    for (let k = 0; k < 2; k++) {
+      this.glows.emit(x + (Math.random() - 0.5) * 0.25, y + Math.random() * 0.08, z + (Math.random() - 0.5) * 0.25,
+        dx * 5 + (Math.random() - 0.5), 0.2, dz * 5 + (Math.random() - 0.5), 0.5 + Math.random() * 0.6, 1.1, 3.2, 0.1 + Math.random() * 0.08, 0);
+    }
+  }
+
+  // Sparks from a wheel rim (burst tyres).
+  tyreSparks(x, y, z) {
+    for (let k = 0; k < 3; k++) {
+      this.sparks.emit(x, y, z, (Math.random() - 0.5) * 4, 1 + Math.random() * 2, (Math.random() - 0.5) * 4, 2.4, 1.6, 0.6, 0.18 + Math.random() * 0.15);
+    }
+  }
+
   // Engine smoke from a damaged car.
   smoke(x, y, z, dark) {
     const c = dark ? 0.12 : 0.5;
@@ -193,6 +209,7 @@ export class Effects {
   update(dt) {
     this.sparks.update(dt);
     this.puffs.update(dt);
+    this.glows.update(dt);
     let tracerChanged = false;
     for (let i = 0; i < this.maxTracers; i++) {
       if (this.tracerLife[i] <= 0) continue;

@@ -16,7 +16,7 @@ export function writeSave(s) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) { /* private mode: fine */ }
 }
 
-const GARAGE = { x: -70, z: -35 };
+const GARAGE = { x: -75, z: -37 };
 const GETAWAY_CAR = { x: -35, z: 2.25, yaw: -Math.PI / 2 };
 
 export const MISSIONS = [
@@ -26,7 +26,7 @@ export const MISSIONS = [
     goal: 'Lose the police within 2:30', reward: 500,
     start(g, m) {
       g.placePlayer(6.6, 19.5, -Math.PI / 2);
-      m.objective('Lose the police: sprint, turn corners, hide out of sight');
+      m.objective('Lose the police: get out of the red circle on the map and stay out of sight');
       m.timer(150);
       g.say([['RAVI (phone)', 'Vikram! The cops have your photo. RUN! Lose them, then call me.']]);
       setTimeout(() => g.dispatch.setStars(1), 1200);
@@ -37,7 +37,7 @@ export const MISSIONS = [
   },
   {
     id: 2, title: 'Wheels',
-    brief: 'You need a car. Take one from the street and bring it to Ravi\'s garage on the west road.',
+    brief: 'You need a car. Take one from the street and bring it to Ravi\'s garage near downtown (follow the yellow GPS line).',
     goal: 'Steal a car, drive to the garage within 2:30', reward: 700,
     start(g, m) {
       g.placePlayer(6.6, 19.5, -Math.PI / 2);
@@ -63,10 +63,10 @@ export const MISSIONS = [
   },
   {
     id: 3, title: 'Meet Ravi',
-    brief: 'Ravi is waiting at the old warehouse, hidden behind the buildings in the north-west block.',
+    brief: 'Ravi is waiting at the old warehouse, hidden behind the buildings north of downtown.',
     goal: 'Reach the warehouse within 2:30', reward: 400,
     start(g, m) {
-      g.placePlayer(-62.5, -28, 0);
+      g.placePlayer(-68.5, -30, 0);
       g.ravi = spawnRavi(g);
       m.objective('Go to the old warehouse (yellow marker). Find the narrow lane between the buildings.');
       m.marker(WAREHOUSE.door.x, WAREHOUSE.door.z - 2.5, 3);
@@ -111,7 +111,7 @@ export const MISSIONS = [
     wave(g, m, n) {
       m.wave = n;
       // They come in through the narrow lanes between the buildings.
-      const gates = n === 1 ? [[-44.3, 16], [-25.7, 16], [-44.3, 18], [-25.7, 18]] : [[-54, 25], [-15, 25], [-54, 45], [-15, 45]];
+      const gates = n === 1 ? [[-47.67, 15], [-27.33, 15], [-47.67, 18], [-27.33, 18]] : [[-59, 25], [-16, 25], [-59, 50], [-16, 50]];
       for (const [x, z] of gates) {
         const o = g.spawnOfficer(x, z, Math.atan2(-35 - x, 32 - z), null);
         o.forceHostile = true; o.missionTarget = true;
@@ -172,7 +172,7 @@ export const MISSIONS = [
     update(g, m) {
       if (m.step === 0 && g.player.inCar && g.driving.car === m.car) {
         m.step = 1; m.marker(null);
-        m.objective('Lose the police! (stay out of their sight)');
+        m.objective('Lose the police! Get out of the red search circle and stay out of sight');
       }
       if (m.step === 1 && g.dispatch.stars === 0 && g.player.inCar) {
         m.pass(m.elapsed < 90 ? 3 : m.elapsed < 140 ? 2 : 1, true);

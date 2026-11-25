@@ -1,15 +1,22 @@
-// Navapur Metro Police (fictional): wanted stars, patrol cars, officers who arrest or shoot.
+// Navapur Metro Police (fictional): wanted stars, the search area, patrol cars, SWAT,
+// roadblocks, spike strips and a police helicopter.
 //
 // WANTED STARS
-//   1 star : cops chase you and try to ARREST you (BUSTED if one catches you).
-//   2 stars: cops SHOOT. 3+ stars: more cars, two officers per car.
-//   Crimes raise stars (shooting near police, hurting people, stealing cars in front of cops).
-//   Stay out of sight long enough and the stars disappear.
+//   1 star : cops chase you and try to ARREST you (BUSTED if one grabs you while you are slow).
+//   2 stars: cops SHOOT. 3 stars: SWAT team, more cars, ROADBLOCKS ahead of you.
+//   4-5 stars: a HELICOPTER with a searchlight, and SPIKE STRIPS in front of roadblocks.
+// ESCAPING
+//   The red circle on the map is where the police are searching (it follows you while they see you).
+//   Get OUT of the circle while nobody sees you -> the stars go in a few seconds.
+//   Staying hidden inside it also works, but takes much longer.
+//   Switching to a car they did not see you take also helps.
 import * as THREE from 'three';
 import { Car } from './traffic.js';
-import { CharacterRig } from './characters.js';
-import { makeGun, castShot, shotHitsPlayer } from './weapons.js';
-import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards } from './util.js';
+import { CharacterRig, strafeYaw, twistTo } from './characters.js';
+import { makeGun, shotHitsPlayer } from './weapons.js';
+import { part, mergeParts, BOX, vertexColorMaterial } from './mesh.js';
+import { LINES, HALF_ROAD } from './world.js';
+import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp } from './util.js';
 
 const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
 
@@ -31,14 +38,21 @@ export class Dispatch {
     this.stars = 0;
     this.lastX = 0; this.lastZ = 0;
     this.sinceSeen = 0;
+    this.circle = { x: 0, z: 0, r: 0 };
+    this.outsideT = 0;
     this.busting = false;
     this.reportTimer = -1;
     this.reinforceT = 0;
-    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {};
+    this.roadblocks = []; this.roadblockT = 4;
+    this.heli = null;
+    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {};
   }
 
   get active() { return this.stars > 0; }
-  get loseTime() { return 6 + this.stars * 3; }
+  get radius() { return 45 + this.stars * 20; }          // search circle size
+  get escapeTime() { return 2 + this.stars * 0.6; }      // unseen + outside the circle
+  get loseTime() { return 14 + this.stars * 4; }         // unseen anywhere (hiding)
+  get target() { const g = this.game; return g.player.inCar && g.driving.car ? g.driving.car : g.player; }
 
   // Raise (never lower) the wanted level.
   setStars(n, x, z) {
@@ -48,8 +62,11 @@ export class Dispatch {
     const was = this.stars;
     this.stars = n;
     this.lastX = x ?? P.x; this.lastZ = z ?? P.z;
-    this.sinceSeen = 0;
+    this.circle.x = this.lastX; this.circle.z = this.lastZ; this.circle.r = this.radius;
+    this.sinceSeen = 0; this.outsideT = 0;
     if (was === 0) for (const c of this.game.policeCars) c.beginPursuit();
+    if (n >= 3 && was < 3) this.onMessage('SWAT TEAM ON THE WAY');
+    if (n >= 4 && was < 4) this.onMessage('POLICE HELICOPTER!');
     this.onStars(n, was);
   }
 
@@ -58,15 +75,17 @@ export class Dispatch {
     this.stars = 0;
     for (const c of this.game.policeCars) c.endPursuit();
     for (const o of this.game.officers) if (!o.dead) o.standDown();
+    if (this.heli) this.heli.leave();
     this.onStars(0, 1);
     if (escaped) this.onEscaped();
   }
 
   // Is any police unit looking at the player right now?
   witnessed() {
-    const g = this.game, P = g.player;
-    for (const c of g.policeCars) if (canSee(g.world, c.x, c.z, Math.sin(c.yaw), Math.cos(c.yaw), P, 55, 200)) return true;
-    for (const o of g.officers) if (!o.dead && canSee(g.world, o.x, o.z, Math.sin(o.yaw), Math.cos(o.yaw), P, 45, 220)) return true;
+    const g = this.game, T = this.target;
+    for (const c of g.policeCars) if (!c.wrecked && canSee(g.world, c.x, c.z, Math.sin(c.yaw), Math.cos(c.yaw), T, 55, 200)) return true;
+    for (const o of g.officers) if (!o.dead && canSee(g.world, o.x, o.z, Math.sin(o.yaw), Math.cos(o.yaw), T, 45, 220)) return true;
+    if (this.heli && this.heli.sees()) return true;
     return false;
   }
 
@@ -80,7 +99,7 @@ export class Dispatch {
         break;
       case 'kill_ped': this.setStars(seen ? Math.min(5, Math.max(1, this.stars + 1)) : Math.max(1, this.stars), x, z); break;
       case 'hit_cop': this.setStars(Math.max(this.stars, 2), x, z); break;
-      case 'kill_cop': this.setStars(Math.min(5, Math.max(2, this.stars + 1)), x, z); this.forceUp(); break;
+      case 'kill_cop': this.setStars(Math.min(5, Math.max(2, this.stars + 1)), x, z); this.report(x, z); break;
       case 'carjack': if (seen) this.setStars(Math.max(this.stars, 1), x, z); break;
       case 'steal_police': this.setStars(Math.max(this.stars, 2), x, z); break;
       case 'run_over': this.setStars(Math.max(this.stars, seen ? 2 : 1), x, z); break;
@@ -88,22 +107,34 @@ export class Dispatch {
     }
   }
 
-  forceUp() { this.sinceSeen = 0; }
-
+  // The police saw the player at (x, z): the search circle moves there.
   report(x, z) {
     if (!this.stars) return;
     this.lastX = x; this.lastZ = z;
+    this.circle.x = x; this.circle.z = z;
     this.sinceSeen = 0;
   }
 
-  // An officer has hold of the player (only at 1 star; on foot).
+  // The player got into a different car while nobody was looking: the police lose track for a bit.
+  newCar() {
+    if (this.active && this.sinceSeen > 1.5) { this.sinceSeen += 6; this.onMessage('NEW CAR - THE POLICE DID NOT SEE IT'); }
+  }
+
+  // An officer has hold of the player (only at 1 star).
   caught() {
     const g = this.game, P = g.player;
-    if (this.busting || this.stars !== 1 || P.inCar || P.dead) return;
+    if (this.busting || this.stars !== 1 || P.dead) return;
     this.busting = true;
+    if (P.inCar) g.driving.exit();
     P.controlsEnabled = false;
     this.onBusted();
     setTimeout(() => { this.busting = false; }, 2600);
+  }
+
+  // A random point (on a road) inside the search circle, for police to check.
+  searchPoint() {
+    const C = this.circle, a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * C.r * 0.8;
+    return { x: C.x + Math.cos(a) * r, z: C.z + Math.sin(a) * r };
   }
 
   update(dt) {
@@ -112,48 +143,72 @@ export class Dispatch {
       this.reportTimer -= dt;
       if (this.reportTimer < 0 && !this.stars) this.setStars(1, this.reportX, this.reportZ);
     }
+    for (const rb of [...this.roadblocks]) rb.update(dt);
+    if (this.heli) this.heli.update(dt);
     if (!this.stars || this.busting) return;
+
     this.sinceSeen += dt;
     if (g.mission && g.mission.holdStars && !g.mission.done) this.sinceSeen = 0;   // no escape during the shoot-out
-    if (this.sinceSeen >= this.loseTime) { this.clear(true); return; }
+    this.circle.r = moveTowards(this.circle.r, this.radius, 30 * dt);
+    const T = this.target;
+    const outside = dist(T.x, T.z, this.circle.x, this.circle.z) > this.circle.r;
+    this.outsideT = this.sinceSeen > 1 && outside ? this.outsideT + dt : 0;
+    if (this.outsideT >= this.escapeTime || this.sinceSeen >= this.loseTime) { this.clear(true); return; }
 
-    // Reinforcements: keep enough police cars for the star level.
+    // Reinforcements: keep enough chasing police cars for the star level.
     this.reinforceT -= dt;
     if (this.reinforceT <= 0) {
-      this.reinforceT = 4;
-      const want = UNITS_FOR_STARS[this.stars];
-      if (g.policeCars.length < want) g.spawnPoliceCar(true);
+      this.reinforceT = 3;
+      const chasing = g.policeCars.filter((c) => !c.wrecked && !c.roadblock && !c.playerControlled && !c.parked).length;
+      if (chasing < UNITS_FOR_STARS[this.stars]) g.spawnPoliceCar(true);
+    }
+    // Roadblocks (3+ stars) when the player is driving fast.
+    this.roadblockT -= dt;
+    if (this.stars >= 3 && this.roadblockT <= 0 && this.roadblocks.length < 1 && g.player.inCar && g.driving.speed > 9) {
+      this.roadblockT = 8;
+      const rb = Roadblock.ahead(g, this.stars >= 4);
+      if (rb) { this.roadblocks.push(rb); this.onMessage(this.stars >= 4 ? 'ROADBLOCK AHEAD - WATCH FOR SPIKES!' : 'ROADBLOCK AHEAD!'); }
+    }
+    // Helicopter (4+ stars).
+    if (this.stars >= 4 && (!this.heli || this.heli.leaving)) {
+      if (this.heli) this.heli.remove();
+      this.heli = new Helicopter(g);
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Police patrol car.
+// Police patrol car: patrols the lanes; in a chase it cuts corners, predicts where you
+// are going, rams your car, and drops officers off when you are on foot.
 // ---------------------------------------------------------------------------
 export class PoliceCar extends Car {
   constructor(game) {
     super(game, 'police', 0xffffff);
     this.isPolice = true;
     this.state = 'patrol';
-    this.patrolSpeed = 9; this.pursuitSpeed = 16;
+    this.patrolSpeed = 9;
     this.cruise = this.patrolSpeed;
     this.crew = [];
-    this.repathT = 0; this.sightT = Math.random() * 0.2; this.flashT = 0; this.flash = false; this.waitT = 0;
+    this.repathT = 0; this.sightT = Math.random() * 0.2; this.flashT = 0; this.flash = false; this.waitT = 0; this.deployT = 0;
+    this.search = null; this.searchT = 0;
     this.redMat = this.vehicle.red;
     this.blueMat = this.vehicle.blue;
   }
 
+  get pursuitSpeed() { return 22 + this.game.dispatch.stars * 2; }
+
   beginPursuit() {
     if (this.playerControlled || this.parked || this.wrecked) return;
     this.state = 'pursuit';
-    this.cruise = this.pursuitSpeed; this.accel = 5.5;
+    this.cruise = this.pursuitSpeed; this.accel = 7; this.brake = 11;
     this.obeySignals = false; this.pursuing = true; this.hold = false;
     this.repathT = 0;
   }
 
   endPursuit() {
+    if (this.roadblock || this.parked) { this.pursuing = false; return; }
     this.pursuing = false; this.obeySignals = true;
-    this.cruise = this.patrolSpeed; this.accel = 3.5;
+    this.cruise = this.patrolSpeed; this.accel = 3.5; this.brake = 8;
     this.clearDirect(); this.upcoming = [];
     this.setLights(false, false);
     const alive = this.crew.filter((o) => !o.dead);
@@ -171,37 +226,55 @@ export class PoliceCar extends Car {
     if (b) this.blueMat.color.setRGB(0.3, 0.8, 7); else this.blueMat.color.setHex(0x111a55);
   }
 
+  flashLights(dt) {
+    this.flashT -= dt;
+    if (this.flashT <= 0) { this.flashT = 0.25; this.flash = !this.flash; this.setLights(this.flash, !this.flash); }
+  }
+
   update(dt) {
-    if (this.playerControlled || this.parked) { super.update(dt); return; }
+    if (this.playerControlled || this.parked) {
+      if (this.roadblock && !this.playerControlled) this.flashLights(dt);
+      super.update(dt); return;
+    }
     const g = this.game, D = g.dispatch, P = g.player;
-    const target = P.inCar && g.driving.car ? g.driving.car : P;
+    const T = D.target;
 
     this.sightT -= dt;
     if (this.sightT <= 0) {
       this.sightT = 0.2;
-      if (D.active && canSee(g.world, this.x, this.z, Math.sin(this.yaw), Math.cos(this.yaw), target, 60, 200)) D.report(target.x, target.z);
+      if (D.active && !this.wrecked && canSee(g.world, this.x, this.z, Math.sin(this.yaw), Math.cos(this.yaw), T, 60, 200)) D.report(T.x, T.z);
     }
 
     if (this.state === 'pursuit' && !this.wrecked) {
-      const d = dist(this.x, this.z, D.lastX, D.lastZ);
-      const clear = d < 32 && !g.world.segmentBlocked(this.x, this.z, D.lastX, D.lastZ);
-      if (clear) this.setDirect(D.lastX, D.lastZ, P.inCar ? 4 : 7);
-      else {
-        this.clearDirect();
-        this.repathT -= dt;
-        if (this.repathT <= 0) { this.repathT = 1; this.routeTo(this.net.nearest(D.lastX, D.lastZ)); }
+      this.cruise = this.pursuitSpeed;
+      const dT = dist(this.x, this.z, T.x, T.z);
+      const fresh = D.sinceSeen < 2.5;
+      if (fresh) {
+        // Chase: drive at where the player WILL be.
+        const vx = P.inCar ? g.driving.vx : P.vx, vz = P.inCar ? g.driving.vz : P.vz;
+        const lead = clamp(dT / 22, 0, 1.3);
+        const ax = T.x + vx * lead, az = T.z + vz * lead;
+        if (dT < 75 && !g.world.pathBlocked(this.x, this.z, ax, az, 1.1)) this.setDirect(ax, az, P.inCar ? 0 : 6.5);
+        else this.routeAt(D.lastX, D.lastZ, dt);
+      } else {
+        // Lost sight: search random spots inside the search circle.
+        this.searchT -= dt;
+        if (!this.search || this.searchT <= 0 || dist(this.x, this.z, this.search.x, this.search.z) < 14) {
+          this.search = D.searchPoint(); this.searchT = 12; this.repathT = 0;
+        }
+        this.routeAt(this.search.x, this.search.z, dt);
       }
-      // Officers get out when close (one at 1-2 stars, two at 3+).
+      // Officers get out when close and you are on foot or stopped (one at 1-2 stars, two at 3+).
       const crewSize = D.stars >= 3 ? 2 : 1;
-      if (!P.inCar && this.crew.filter((o) => !o.dead).length < crewSize && this.deployT <= 0 && D.sinceSeen < 1.5 && d < 14 && this.speed < 1.5) {
+      const stopped = !P.inCar || g.driving.speed < 2.5;
+      if (stopped && this.crew.filter((o) => !o.dead).length < crewSize && this.deployT <= 0 && D.sinceSeen < 1.5 && dT < 16 && this.speed < 1.5) {
         const side = this.crew.length % 2 === 0 ? 1 : -1;
         const rx = -Math.cos(this.yaw) * side, rz = Math.sin(this.yaw) * side;
         const o = g.spawnOfficer(this.x + rx * (this.halfW + 0.9), this.z + rz * (this.halfW + 0.9), this.yaw, this);
         this.crew.push(o);
         this.deployT = 1.2;
       }
-      this.flashT -= dt;
-      if (this.flashT <= 0) { this.flashT = 0.25; this.flash = !this.flash; this.setLights(this.flash, !this.flash); }
+      this.flashLights(dt);
     } else if (this.state === 'waiting') {
       this.waitT -= dt;
       if (this.waitT <= 0) {
@@ -212,42 +285,58 @@ export class PoliceCar extends Car {
     if (this.deployT > 0) this.deployT -= dt; else this.deployT = 0;
 
     super.update(dt);
-    if (this.direct) { g.world.resolveCircle(this, this.halfW); this.syncMesh(); }
+    if (this.direct) {
+      // Two circles (front + back) so the car slides along walls instead of driving into them.
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      for (const k of [0.55, -0.55]) {
+        const c = { x: this.x + fx * this.halfL * k, z: this.z + fz * this.halfL * k };
+        const bx = c.x, bz = c.z;
+        g.world.resolveCircle(c, this.halfW);
+        this.x += c.x - bx; this.z += c.z - bz;
+      }
+      this.syncMesh();
+    }
+  }
+
+  // Follow the roads to (x, z).
+  routeAt(x, z, dt) {
+    if (this.direct && dist(this.x, this.z, x, z) < 30 && !this.game.world.pathBlocked(this.x, this.z, x, z, 1.1)) { this.setDirect(x, z, 4); return; }
+    this.clearDirect();
+    this.repathT -= dt;
+    if (this.repathT <= 0) { this.repathT = 1.2; this.routeTo(this.net.nearest(x, z)); }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Officer on foot: khaki uniform, pistol. Arrests at 1 star, shoots at 2+.
+// Officer on foot: khaki police (pistol) or SWAT (SMG, armour). Arrests at 1 star,
+// shoots at 2+ (moving sideways while shooting), finds a way round buildings.
 // ---------------------------------------------------------------------------
-const _from = new THREE.Vector3(), _dir = new THREE.Vector3(), _hand = new THREE.Vector3(), _hd = new THREE.Vector3();
+const _dir = new THREE.Vector3(), _from = new THREE.Vector3(), _hd = new THREE.Vector3();
 
 export class Officer {
-  constructor(game, x, z, yaw, car) {
+  constructor(game, x, z, yaw, car, opts = {}) {
     this.game = game; this.car = car;
     this.x = x; this.z = z; this.yaw = yaw; this.groundY = game.world.groundAt(x, z);
     this.rLong = 0.35; this.rLat = 0.35; this.radius = 0.35;
-    this.health = 100; this.dead = false; this.deadT = 0;
-    this.returning = false; this.catchT = 0; this.sightT = Math.random() * 0.2; this.avoidSide = 1;
-    this.fireT = 1 + Math.random(); this.seesPlayer = false; this.speed = 0; this.aimW = 0;
+    this.swat = opts.swat ?? game.dispatch.stars >= 3;
+    this.health = this.swat ? 150 : 100; this.dead = false; this.deadT = 0;
+    this.returning = false; this.catchT = 0; this.sightT = Math.random() * 0.2;
+    this.fireT = 1 + Math.random(); this.burst = 0; this.seesPlayer = false; this.speed = 0; this.aimW = 0;
+    this.vx = 0; this.vz = 0;
+    this.path = null; this.pathI = 0; this.repathT = 0; this.pathGoal = null; this.directT = 0; this.direct = true;
+    this.strafe = Math.random() < 0.5 ? 1 : -1; this.strafeT = 1 + Math.random() * 2;
+    this.search = null;
     this.isOfficer = true;
-    this.rig = new CharacterRig('man', { top: 0xc9b07a, bottom: 0xa8915f, shoes: 0x2a1f14, hideBeard: Math.random() < 0.5, castShadow: game.shadows, skin: true });
+    this.rig = new CharacterRig(this.swat ? 'swat' : 'police', { castShadow: game.shadows });
     this.mesh = this.rig.root;
     game.scene.add(this.mesh);
-    // Police cap.
-    const head = this.rig.bones.Head;
-    if (head) {
-      const cap = new THREE.Mesh(CAP_GEO, CAP_MAT);
-      head.add(cap);
-      const s = 1 / worldScale(head);
-      cap.scale.setScalar(s);
-      cap.position.set(0, 0.16 * s, 0.015 * s);
-    }
-    this.gun = makeGun('pistol');
+    this.weapon = this.swat ? 'smg' : 'pistol';
+    this.gun = makeGun(this.weapon);
     this.gun.visible = false;
     game.scene.add(this.gun);
   }
 
-  standDown() { if (this.car) this.returning = true; }
+  standDown() { this.returning = true; }
 
   remove() {
     this.inactive = true;
@@ -275,7 +364,25 @@ export class Officer {
     } else if (byPlayer) {
       g.dispatch.crime('hit_cop', this.x, this.z);
       this.fireT = Math.min(this.fireT, 0.5);   // shoot back quickly
+      this.strafe = -this.strafe;
     }
+  }
+
+  // Direction to walk to reach (gx, gz): straight if nothing is in the way, else along an A* path.
+  steerTo(gx, gz, dt) {
+    const g = this.game;
+    this.directT -= dt;
+    if (this.directT <= 0) { this.directT = 0.25; this.direct = g.nav.lineFree(this.x, this.z, gx, gz); }
+    if (this.direct) { this.path = null; return yawOf(gx - this.x, gz - this.z); }
+    this.repathT -= dt;
+    if (!this.path || this.repathT <= 0 || dist(gx, gz, this.pathGoal.x, this.pathGoal.z) > 4) {
+      this.path = g.nav.findPath(this.x, this.z, gx, gz);
+      this.pathI = 0; this.repathT = 1 + Math.random() * 0.4; this.pathGoal = { x: gx, z: gz };
+    }
+    if (!this.path || !this.path.length) return yawOf(gx - this.x, gz - this.z);
+    let p = this.path[this.pathI];
+    while (this.pathI < this.path.length - 1 && dist(this.x, this.z, p.x, p.z) < 1.0) p = this.path[++this.pathI];
+    return yawOf(p.x - this.x, p.z - this.z);
   }
 
   update(dt) {
@@ -288,65 +395,97 @@ export class Officer {
       return;
     }
 
-    let gx, gz, speed = 0, shooting = false;
-    const target = P.inCar && g.driving.car ? g.driving.car : P;
-    const dP = dist(this.x, this.z, target.x, target.z);
+    let gx = this.x, gz = this.z, speed = 0, shooting = false;
+    const T = D.target;
+    const dP = dist(this.x, this.z, T.x, T.z);
+    const hostile = (D.stars >= 2 || this.forceHostile) && !P.dead;
 
     this.sightT -= dt;
     if (this.sightT <= 0) {
       this.sightT = 0.2;
-      this.seesPlayer = !P.dead && canSee(g.world, this.x, this.z, Math.sin(this.yaw), Math.cos(this.yaw), target, 45, 220);
-      if (this.seesPlayer) D.report(target.x, target.z);
+      this.seesPlayer = !P.dead && canSee(g.world, this.x, this.z, Math.sin(this.yaw), Math.cos(this.yaw), T, 48, 230);
+      if (this.seesPlayer) D.report(T.x, T.z);
     }
 
     if (this.returning || (!D.active && !this.forceHostile)) {
       if (this.car && !this.car.inactive) {
         gx = this.car.x; gz = this.car.z; speed = 2.6;
         if (dist(this.x, this.z, gx, gz) < 3) { this.car.officerBack(this); this.remove(); return; }
-      } else { gx = this.x; gz = this.z; }
-    } else if ((D.stars >= 2 || this.forceHostile) && this.seesPlayer && dP < 32 && !P.dead) {
-      // Engage: stop, face the player, shoot.
+      } else if (camD > 60) { this.remove(); return; }
+      if (D.active) this.returning = false;
+    } else if (hostile && this.seesPlayer && dP < (this.swat ? 40 : 34)) {
+      // Engage: aim at the player, side-step, shoot. Walk closer if far.
       shooting = true;
-      gx = this.x; gz = this.z;
-      this.yaw = rotateTowards(this.yaw, yawOf(target.x - this.x, target.z - this.z), 8 * dt);
+      this.strafeT -= dt;
+      if (this.strafeT <= 0) { this.strafeT = 1.2 + Math.random() * 2; this.strafe = -this.strafe; }
+      const ax = (T.x - this.x) / (dP || 1), az = (T.z - this.z) / (dP || 1);
+      const sx = -az * this.strafe, sz = ax * this.strafe;
+      const close = dP > 20 ? 0.8 : dP < 7 ? -0.6 : 0;
+      gx = this.x + (sx + ax * close) * 3; gz = this.z + (sz + az * close) * 3;
+      speed = 1.9;
+      if (g.world.pathBlocked(this.x, this.z, this.x + sx * 1.5, this.z + sz * 1.5, 0.2)) this.strafe = -this.strafe;
       this.fireT -= dt;
-      if (this.fireT <= 0) { this.fireT = 1.0 + Math.random() * 0.7; this.shoot(target, dP); }
-      // Keep some distance: step closer if far.
-      if (dP > 18) { speed = 2.2; gx = target.x; gz = target.z; }
+      if (this.fireT <= 0) {
+        if (this.swat) {
+          this.shoot(T, dP);
+          this.burst++;
+          if (this.burst >= 3) { this.burst = 0; this.fireT = 1.1 + Math.random() * 0.7; } else this.fireT = 0.11;
+        } else { this.shoot(T, dP); this.fireT = 0.95 + Math.random() * 0.7; }
+      }
     } else {
-      gx = D.active ? D.lastX : this.x; gz = D.active ? D.lastZ : this.z;
+      // Chase the last place they saw you, or search nearby.
+      if (D.sinceSeen < 4 || this.forceHostile) { gx = D.lastX; gz = D.lastZ; this.search = null; }
+      else {
+        if (!this.search || dist(this.x, this.z, this.search.x, this.search.z) < 2) {
+          const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 16;
+          this.search = { x: D.lastX + Math.cos(a) * r, z: D.lastZ + Math.sin(a) * r };
+        }
+        gx = this.search.x; gz = this.search.z;
+      }
       if (this.forceHostile && !D.active) { gx = P.x; gz = P.z; }
-      speed = dist(this.x, this.z, gx, gz) < 1 ? 0 : 5.3;
-      // Arrest at 1 star.
-      if (D.stars === 1 && !P.inCar && dist(this.x, this.z, P.x, P.z) < 1.5 && P.controlsEnabled) {
+      const dd = dist(this.x, this.z, gx, gz);
+      speed = dd < 1 ? 0 : D.sinceSeen < 4 ? (D.stars === 1 && dP < 30 ? 6.3 : 5.4) : 2.4;
+      // Arrest at 1 star: grab the player when he is slow (walking, aiming, stopped car).
+      const pSpeed = P.inCar ? g.driving.speed : Math.hypot(P.vx, P.vz);
+      const reach = P.inCar ? g.driving.car.halfL + 1.5 : 1.7;
+      if (D.stars === 1 && dP < reach && pSpeed < (P.inCar ? 1.2 : 3.4) && P.controlsEnabled) {
         this.catchT += dt;
-        if (this.catchT >= 0.5) { this.catchT = 0; D.caught(); }
+        if (this.catchT >= (P.inCar ? 1.0 : 0.55)) { this.catchT = 0; D.caught(); }
       } else this.catchT = 0;
     }
 
-    if (speed > 0) {
-      const want = this.avoid(yawOf(gx - this.x, gz - this.z));
-      this.yaw = rotateTowards(this.yaw, want, 9.4 * dt);
-    }
-    this.speed = moveTowards(this.speed, speed, 10 * dt);
+    // Move.
+    let wantYaw = this.yaw;
+    if (speed > 0) wantYaw = this.steerTo(gx, gz, dt);
+    const tvx = Math.sin(wantYaw) * speed, tvz = Math.cos(wantYaw) * speed;
+    const k = Math.min(1, 9 * dt);
+    this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
     const bx = this.x, bz = this.z;
-    this.x += Math.sin(this.yaw) * this.speed * dt;
-    this.z += Math.cos(this.yaw) * this.speed * dt;
+    this.x += this.vx * dt; this.z += this.vz * dt;
     g.world.resolveCircle(this, this.radius);
-    for (const c of g.cars) pushOutOfBox(this, this.radius, c.x, c.z, c.yaw, c.halfL, c.halfW);
+    for (const c of g.cars) if (Math.abs(c.x - this.x) < 4 && Math.abs(c.z - this.z) < 4) pushOutOfBox(this, this.radius, c.x, c.z, c.yaw, c.halfL, c.halfW);
     this.groundY = g.world.groundAt(this.x, this.z);
+    const rvx = (this.x - bx) / Math.max(dt, 1e-4), rvz = (this.z - bz) / Math.max(dt, 1e-4);
 
+    // Body: legs follow the walk; while shooting the chest stays on the player.
+    if (shooting) {
+      const aimYaw = yawOf(T.x - this.x, T.z - this.z);
+      this.yaw = rotateTowards(this.yaw, strafeYaw(this.rig, aimYaw, rvx, rvz), 8 * dt);
+      twistTo(this.rig, this.yaw, aimYaw);
+    } else {
+      this.rig.reverse = false; this.rig.twist = 0;
+      if (Math.hypot(rvx, rvz) > 0.3) this.yaw = rotateTowards(this.yaw, yawOf(rvx, rvz), 9.4 * dt);
+    }
     this.mesh.position.set(this.x, this.groundY, this.z);
     this.mesh.rotation.y = this.yaw;
-    const real = dist(bx, bz, this.x, this.z) / Math.max(dt, 1e-4);
-    this.rig.setMotion(Math.min(real, this.speed + 0.1));
+    this.rig.setMotion(Math.hypot(rvx, rvz));
 
     // Gun out and arms up while shooting.
     this.aimW = moveTowards(this.aimW, shooting ? 1 : 0, 5 * dt);
-    if (shooting) {
-      _dir.set(target.x - this.x, (target.y || 0) + 1.2 - (this.groundY + 1.4), target.z - this.z).normalize();
+    if (shooting || this.aimW > 0) {
+      _dir.set(T.x - this.x, (T.y || 0) + 1.2 - (this.groundY + 1.4), T.z - this.z).normalize();
       this.rig.setAim(this.aimW, _dir);
-    } else this.rig.setAim(this.aimW, null);
+    }
     this.rig.update(dt, camD);
     this.gun.visible = this.aimW > 0.3 && this.rig.root.visible;
     if (this.gun.visible) placeGun(this.rig, this.gun, shooting ? _dir : null);
@@ -356,9 +495,9 @@ export class Officer {
   shoot(target, d) {
     const g = this.game, P = g.player;
     this.rig.handPose(_from, _hd);
-    const muzzle = _from.clone().addScaledVector(_dir, 0.2);
+    const muzzle = _from.clone().addScaledVector(_dir, this.swat ? 0.4 : 0.2);
     const moving = Math.hypot(P.vx || 0, P.vz || 0) > 2 || P.inCar;
-    let chance = 0.5 - d * 0.012 - (moving ? 0.18 : 0) - (P.crouching ? 0.12 : 0);
+    let chance = (this.swat ? 0.42 : 0.5) - d * 0.012 - (moving ? 0.18 : 0) - (P.crouching ? 0.12 : 0);
     chance = Math.max(0.06, Math.min(0.5, chance)) * g.difficulty;
     const aimY = (target.y || 0) + (P.crouching ? 0.9 : 1.25);
     const dir = new THREE.Vector3(target.x - muzzle.x, aimY - muzzle.y, target.z - muzzle.z).normalize();
@@ -368,39 +507,225 @@ export class Officer {
     const end = muzzle.clone().addScaledVector(dir, Math.min(res.t, 60));
     g.fx.muzzle(muzzle);
     g.fx.tracer(muzzle, end, 0.8);
-    g.audio.gunshot('pistol', Math.max(0, 1 - dist(this.x, this.z, g.camera.position.x, g.camera.position.z) / 70));
-    if (res.hit && hit) P.takeDamage(6 + Math.random() * 3, this.x, this.z);
+    g.audio.gunshot(this.weapon, Math.max(0, 1 - dist(this.x, this.z, g.camera.position.x, g.camera.position.z) / 70));
+    if (res.hit && hit) P.takeDamage(this.swat ? 5 + Math.random() * 2 : 6 + Math.random() * 3, this.x, this.z);
     else if (res.t < 60) g.fx.impact(end, dir.clone().negate(), false);
   }
-
-  avoid(yaw) {
-    const blocked = (a) => this.game.world.segmentBlocked(this.x, this.z, this.x + Math.sin(a) * 1.6, this.z + Math.cos(a) * 1.6);
-    if (!blocked(yaw)) return yaw;
-    for (let i = 1; i <= 3; i++) {
-      const a = 0.61 * i;
-      if (!blocked(yaw + a * this.avoidSide)) return yaw + a * this.avoidSide;
-      if (!blocked(yaw - a * this.avoidSide)) { this.avoidSide = -this.avoidSide; return yaw + a * this.avoidSide; }
-    }
-    return yaw;
-  }
-}
-
-const CAP_GEO = new THREE.CylinderGeometry(0.105, 0.115, 0.07, 12);
-const CAP_MAT = new THREE.MeshStandardMaterial({ color: 0x4a3b25, roughness: 0.7 });
-
-function worldScale(obj) {
-  obj.updateWorldMatrix(true, false);
-  const s = new THREE.Vector3();
-  obj.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), s);
-  return s.x || 1;
 }
 
 // Put a gun model in the character's right hand, pointing along aimDir (or along the forearm).
-const _gp = new THREE.Vector3(), _gd = new THREE.Vector3(), _m4 = new THREE.Matrix4();
+const _gp = new THREE.Vector3(), _gd = new THREE.Vector3(), _m4 = new THREE.Matrix4(), _zero = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _neg = new THREE.Vector3();
 export function placeGun(rig, gun, aimDir) {
   rig.handPose(_gp, _gd);
   const d = aimDir || _gd;
   gun.position.copy(_gp).addScaledVector(d, 0.03);
-  _m4.lookAt(new THREE.Vector3(), d.clone().negate(), new THREE.Vector3(0, 1, 0));
+  _m4.lookAt(_zero, _neg.copy(d).negate(), _up);
   gun.quaternion.setFromRotationMatrix(_m4);
 }
+
+// ---------------------------------------------------------------------------
+// Roadblock: two police SUVs across the road ahead of the player, officers behind them,
+// and (4+ stars) a spike strip in front that bursts your tyres.
+// ---------------------------------------------------------------------------
+const SPIKE_GEO = (() => {
+  const p = [part(BOX, 0x1b1b1b, 0, 0.03, 0, 8.4, 0.06, 0.55)];
+  for (let i = 0; i < 28; i++) p.push(part(BOX, 0xb8b8b8, -4.05 + i * 0.3, 0.1, (i % 2 ? 0.12 : -0.12), 0.05, 0.12, 0.05));
+  return mergeParts(p);
+})();
+
+class Roadblock {
+  // Find the next crossing ahead of the player's car and block the road just after it.
+  static ahead(game, spikes) {
+    const car = game.driving.car;
+    if (!car) return null;
+    const vx = game.driving.vx, vz = game.driving.vz;
+    const alongX = Math.abs(vx) > Math.abs(vz);
+    const s = Math.sign(alongX ? vx : vz) || 1;
+    // The road the player is on.
+    const lineCoord = alongX ? car.z : car.x;
+    let line = null;
+    for (const L of LINES) if (Math.abs(lineCoord - L) < HALF_ROAD + 1.5) line = L;
+    if (line === null) return null;
+    const pos = alongX ? car.x : car.z;
+    let cross = null;
+    for (const L of LINES) {
+      const ahead = (L - pos) * s;
+      if (ahead > 55 && ahead < 150 && (cross === null || ahead < (cross - pos) * s)) cross = L;
+    }
+    if (cross === null) return null;
+    const at = cross + s * 16;   // just past the crossing, so you cannot simply turn
+    if (Math.abs(at) > LINES[LINES.length - 1]) return null;
+    const x = alongX ? at : line, z = alongX ? line : at;
+    if (game.cars.some((c) => dist(c.x, c.z, x, z) < 6)) return null;
+    return new Roadblock(game, x, z, alongX, s, spikes);
+  }
+
+  constructor(game, x, z, alongX, s, spikes) {
+    this.game = game; this.x = x; this.z = z; this.t = 0;
+    this.ax = alongX ? s : 0; this.az = alongX ? 0 : s;   // the player's driving direction
+    this.cars = []; this.officers = [];
+    const ux = alongX ? 0 : 1, uz = alongX ? 1 : 0;      // across the road
+    for (const side of [-1, 1]) {
+      const c = new PoliceCar(game);
+      c.parked = true; c.roadblock = true; c.speed = 0;
+      c.x = x + ux * side * 2.25; c.z = z + uz * side * 2.25;
+      c.yaw = yawOf(ux, uz) + side * 0.35;
+      c.syncMesh();
+      game.cars.push(c); game.policeCars.push(c);
+      this.cars.push(c);
+      const o = game.spawnOfficer(x + ux * side * 2.6 + this.ax * 4, z + uz * side * 2.6 + this.az * 4, yawOf(-this.ax, -this.az), null);
+      this.officers.push(o);
+    }
+    if (spikes) {
+      this.spike = { x: x - this.ax * 14, z: z - this.az * 14 };
+      this.spikeMesh = new THREE.Mesh(SPIKE_GEO, vertexColorMaterial);
+      this.spikeMesh.position.set(this.spike.x, 0.02, this.spike.z);
+      this.spikeMesh.rotation.y = alongX ? Math.PI / 2 : 0;
+      game.scene.add(this.spikeMesh);
+    }
+  }
+
+  update(dt) {
+    const g = this.game, P = g.player;
+    this.t += dt;
+    // Spike strip: tyres burst when you drive over it.
+    if (this.spike && P.inCar && g.driving.car && !g.driving.car.spiked) {
+      const c = g.driving.car;
+      const along = (c.x - this.spike.x) * this.ax + (c.z - this.spike.z) * this.az;
+      const across = Math.abs((c.x - this.spike.x) * this.az - (c.z - this.spike.z) * this.ax);
+      if (Math.abs(along) < c.halfL * 0.7 && across < 4.4) g.driving.burstTyres();
+    }
+    const far = dist(P.x, P.z, this.x, this.z) > 230;
+    if (far || (this.t > 80 && dist(P.x, P.z, this.x, this.z) > 90)) this.remove();
+  }
+
+  remove() {
+    const g = this.game;
+    for (const c of this.cars) if (c.parked && !c.playerControlled) g.removeCar(c);
+    for (const o of this.officers) if (!o.inactive && dist(o.x, o.z, g.camera.position.x, g.camera.position.z) > 40) o.remove();
+    if (this.spikeMesh) g.scene.remove(this.spikeMesh);
+    const list = g.dispatch.roadblocks, i = list.indexOf(this);
+    if (i >= 0) list.splice(i, 1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Police helicopter (4+ stars): circles over you; its searchlight finds you from the sky.
+// Outrun it in a fast car or get out of the search circle.
+// ---------------------------------------------------------------------------
+let heliGeo = null;
+function heliModel() {
+  if (!heliGeo) {
+    const navy = 0x1d2b4a, white = 0xf2f2f2, dark = 0x151515, glass = 0x26343f;
+    heliGeo = mergeParts([
+      part(BOX, navy, 0, 1.5, 0.2, 2.1, 1.9, 4.2),
+      part(BOX, white, 0, 1.15, 0.2, 2.14, 0.35, 4.24),
+      part(BOX, glass, 0, 1.7, 2.1, 1.9, 1.3, 0.9, -0.35, 0, 0),
+      part(BOX, navy, 0, 1.9, -3.6, 0.45, 0.45, 4.6),
+      part(BOX, white, 0, 2.6, -5.7, 0.12, 1.4, 0.9),
+      part(BOX, navy, 0, 2.6, -0.2, 0.5, 0.5, 0.6),
+      part(BOX, dark, -0.85, 0.25, 0.2, 0.12, 0.08, 4.0), part(BOX, dark, 0.85, 0.25, 0.2, 0.12, 0.08, 4.0),
+      part(BOX, dark, -0.7, 0.55, 1.1, 0.08, 0.6, 0.08), part(BOX, dark, 0.7, 0.55, 1.1, 0.08, 0.6, 0.08),
+      part(BOX, dark, -0.7, 0.55, -0.7, 0.08, 0.6, 0.08), part(BOX, dark, 0.7, 0.55, -0.7, 0.08, 0.6, 0.08),
+    ]);
+  }
+  return heliGeo;
+}
+const ROTOR = new THREE.BoxGeometry(11, 0.06, 0.32);
+const TAIL_ROTOR = new THREE.BoxGeometry(0.06, 1.6, 0.18);
+const DARK = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
+function lightTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,250,220,1)'); grad.addColorStop(0.55, 'rgba(255,240,200,0.55)'); grad.addColorStop(1, 'rgba(255,240,200,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+let LIGHT_TEX = null;
+
+class Helicopter {
+  constructor(game) {
+    this.game = game;
+    const P = game.player, a = Math.random() * Math.PI * 2;
+    this.x = P.x + Math.cos(a) * 160; this.z = P.z + Math.sin(a) * 160; this.y = 46;
+    this.vx = 0; this.vz = 0; this.yaw = 0; this.orbit = Math.random() * 6;
+    this.spot = { x: P.x, z: P.z }; this.sweep = 0; this.leaving = false; this.leaveT = 0; this.seeing = false;
+    this.group = new THREE.Group();
+    const body = new THREE.Mesh(heliModel(), vertexColorMaterial);
+    body.castShadow = game.shadows;
+    this.rotor = new THREE.Group(); this.rotor.position.y = 2.95;
+    const b1 = new THREE.Mesh(ROTOR, DARK), b2 = new THREE.Mesh(ROTOR, DARK); b2.rotation.y = Math.PI / 2;
+    this.rotor.add(b1, b2);
+    this.tail = new THREE.Mesh(TAIL_ROTOR, DARK); this.tail.position.set(0.2, 2.6, -5.9);
+    this.group.add(body, this.rotor, this.tail);
+    game.scene.add(this.group);
+    // Searchlight: a soft cone + a bright patch on the ground.
+    if (!LIGHT_TEX) LIGHT_TEX = lightTexture();
+    this.cone = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 7, 1, 20, 1, true).translate(0, -0.5, 0),
+      new THREE.MeshBasicMaterial({ color: 0xfff2cc, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    this.patch = new THREE.Mesh(new THREE.CircleGeometry(9, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: LIGHT_TEX, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    game.scene.add(this.cone, this.patch);
+  }
+
+  sees() { return this.seeing && !this.leaving; }
+  leave() { this.leaving = true; }
+
+  remove() {
+    this.game.scene.remove(this.group, this.cone, this.patch);
+    if (this.game.dispatch.heli === this) this.game.dispatch.heli = null;
+    this.game.audio.heli(0);
+  }
+
+  update(dt) {
+    const g = this.game, D = g.dispatch, T = D.target;
+    let gx, gz, max = 24;
+    if (this.leaving) {
+      this.leaveT += dt;
+      this.y += 6 * dt; gx = this.x + Math.sin(this.yaw) * 100; gz = this.z + Math.cos(this.yaw) * 100;
+      if (this.leaveT > 14) { this.remove(); return; }
+    } else {
+      // Circle above the last place you were seen.
+      this.orbit += dt * 0.3;
+      gx = D.lastX + Math.cos(this.orbit) * 22; gz = D.lastZ + Math.sin(this.orbit) * 22;
+      this.y = moveTowards(this.y, 40, 5 * dt);
+    }
+    const dx = gx - this.x, dz = gz - this.z, d = Math.hypot(dx, dz) || 1;
+    const want = Math.min(max, d * 0.6);
+    this.vx = moveTowards(this.vx, (dx / d) * want, 8 * dt);
+    this.vz = moveTowards(this.vz, (dz / d) * want, 8 * dt);
+    this.x += this.vx * dt; this.z += this.vz * dt;
+    const sp = Math.hypot(this.vx, this.vz);
+    if (sp > 1) this.yaw = rotateTowards(this.yaw, yawOf(this.vx, this.vz), 1.2 * dt);
+    this.group.position.set(this.x, this.y, this.z);
+    this.group.rotation.set(Math.min(0.25, sp * 0.012), this.yaw, 0, 'YXZ');
+    this.rotor.rotation.y += dt * 38;
+    this.tail.rotation.x += dt * 50;
+
+    // Searchlight: locks on while it can see you; sweeps the search area when it lost you.
+    if (!this.leaving) {
+      let sx, sz, rate;
+      if (D.sinceSeen < 1.5) { sx = T.x; sz = T.z; rate = 15; }
+      else {
+        this.sweep += dt * 0.7;
+        const r = Math.min(D.circle.r * 0.5, 40);
+        sx = D.circle.x + Math.sin(this.sweep) * r; sz = D.circle.z + Math.sin(this.sweep * 1.7) * r * 0.6; rate = 10;
+      }
+      const ex = sx - this.spot.x, ez = sz - this.spot.z, el = Math.hypot(ex, ez);
+      if (el > 0.01) { const step = Math.min(el, rate * dt); this.spot.x += (ex / el) * step; this.spot.z += (ez / el) * step; }
+      this.seeing = D.active && dist(this.spot.x, this.spot.z, T.x, T.z) < 9;
+      if (this.seeing) D.report(T.x, T.z);
+    }
+    const gy = g.world.groundAt(this.spot.x, this.spot.z);
+    this.patch.position.set(this.spot.x, gy + 0.08, this.spot.z);
+    this.patch.visible = this.cone.visible = !this.leaving;
+    const lx = this.spot.x - this.x, ly = gy - (this.y + 0.5), lz = this.spot.z - this.z;
+    const L = Math.hypot(lx, ly, lz);
+    this.cone.position.set(this.x, this.y + 0.5, this.z);
+    this.cone.scale.set(1, L, 1);
+    this.cone.quaternion.setFromUnitVectors(_down, _dir.set(lx / L, ly / L, lz / L));
+    g.audio.heli(this.leaving ? 0 : Math.max(0, 1 - dist(this.x, this.z, g.camera.position.x, g.camera.position.z) / 220));
+  }
+}
+const _down = new THREE.Vector3(0, -1, 0);

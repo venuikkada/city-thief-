@@ -235,3 +235,97 @@ export function policeDecal() {
   g.fillText('DIAL 112', 256, 76);
   return toTexture(c, false, 4);
 }
+
+// ---------------------------------------------------------------------------
+// Bigger city: art-deco seafront hotels, glass towers, grass, sand, palms, neon.
+// ---------------------------------------------------------------------------
+const DECO = [
+  ['#f7b6c8', '#ffffff', '#5ec4c8'], ['#9fe3d6', '#ffffff', '#f28ab2'], ['#fde59a', '#ffffff', '#4aa3df'],
+  ['#c7b8f5', '#ffffff', '#ffb347'], ['#ffd1a1', '#ffffff', '#3cb5a0'], ['#b9e8ff', '#ffffff', '#ff7aa8'],
+];
+export const DECO_COUNT = DECO.length;
+
+// Art-deco hotel floor tile (3 m x 3.2 m): pastel wall, white bands, rounded windows, coloured trim.
+export function decoTexture(i) {
+  const [wall, band, trim] = DECO[i % DECO.length];
+  const [c, g] = canvas(128, 136);
+  g.fillStyle = wall; g.fillRect(0, 0, 128, 136);
+  noise(g, 128, 136, 500, ['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.04)'], 3);
+  g.fillStyle = band; g.fillRect(0, 112, 128, 24);
+  g.fillStyle = trim; g.fillRect(0, 108, 128, 4);
+  // Window with rounded corners + balcony rail.
+  g.fillStyle = '#2d4e66';
+  const x = 26, y = 22, w = 76, h = 74, r = 14;
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.fill();
+  const grad = g.createLinearGradient(0, y, 0, y + h); grad.addColorStop(0, 'rgba(255,220,180,0.55)'); grad.addColorStop(1, 'rgba(80,140,190,0.2)');
+  g.fillStyle = grad; g.fill();
+  g.fillStyle = band; for (let k = 0; k < 6; k++) g.fillRect(24, 100 + (k % 2), 80, 2);
+  g.fillRect(24, 96, 80, 3);
+  for (let k = 0; k < 9; k++) g.fillRect(26 + k * 9.5, 96, 2, 12);
+  return toTexture(c);
+}
+
+// Glass tower curtain wall (3 m x 3.6 m tile): reflective blue glass, thin mullions, a few lit offices.
+export function glassTexture(tint) {
+  const [c, g] = canvas(128, 154);
+  const grad = g.createLinearGradient(0, 0, 128, 154);
+  grad.addColorStop(0, tint[0]); grad.addColorStop(1, tint[1]);
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 154);
+  g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, 0, 64, 154);
+  if (rand() < 0.35) { g.fillStyle = 'rgba(255,230,170,0.35)'; g.fillRect(8, 12, 50, 120); }
+  g.fillStyle = '#c9d3dc'; g.fillRect(0, 0, 128, 5); g.fillRect(0, 146, 128, 8); g.fillRect(62, 0, 4, 154); g.fillRect(0, 0, 3, 154);
+  return toTexture(c);
+}
+export const GLASS_TINTS = [['#5b86a8', '#1f3b57'], ['#6f9fa0', '#23474d'], ['#8a9bb5', '#2b3550'], ['#9bb7cf', '#3a5872']];
+
+export function grassTexture() {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = '#4f7a32'; g.fillRect(0, 0, 256, 256);
+  noise(g, 256, 256, 14000, ['#5d8a3a', '#46702c', '#6a9842', '#3f6427', '#78a64c'], 2);
+  for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(30,50,20,0.15)'; g.beginPath(); g.arc(rand() * 256, rand() * 256, 6 + rand() * 18, 0, 7); g.fill(); }
+  return toTexture(c);
+}
+
+export function sandTexture() {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = '#d9c39a'; g.fillRect(0, 0, 256, 256);
+  noise(g, 256, 256, 12000, ['#e3cfa8', '#cdb58b', '#ead9b5', '#c4aa7d', '#f0e2c4'], 2);
+  return toTexture(c);
+}
+
+// Palm frond with transparent gaps between the leaflets.
+export function palmTexture() {
+  const [c, g] = canvas(128, 256);
+  g.clearRect(0, 0, 128, 256);
+  g.strokeStyle = '#4c6b25'; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(64, 256); g.quadraticCurveTo(66, 128, 64, 4); g.stroke();
+  for (let y = 12; y < 250; y += 7) {
+    const len = 54 * Math.sin((y / 256) * Math.PI) + 6;
+    for (const s of [-1, 1]) {
+      const grad = g.createLinearGradient(64, y, 64 + s * len, y + 18);
+      grad.addColorStop(0, '#3f7a26'); grad.addColorStop(1, '#7fb34a');
+      g.strokeStyle = grad; g.lineWidth = 3.2;
+      g.beginPath(); g.moveTo(64, y); g.quadraticCurveTo(64 + s * len * 0.5, y + 2, 64 + s * len, y + 16); g.stroke();
+    }
+  }
+  const t = toTexture(c, false, 4);
+  return t;
+}
+
+// Neon roof signs for the seafront hotels (glow with bloom).
+const NEON = [['HOTEL SAGAR', '#ff4fa3'], ['OCEAN VIEW', '#3ff0ff'], ['SEA BREEZE', '#ffe14f'], ['MARINE PALACE', '#7cff6b'], ['SUNSET INN', '#ff8a3d'], ['CORAL BAY', '#b48bff']];
+export function neonAtlas() {
+  const [c, g] = canvas(512, 384);
+  g.fillStyle = '#000'; g.fillRect(0, 0, 512, 384);
+  const rects = [];
+  NEON.forEach(([text, col], i) => {
+    const y = i * 64;
+    g.font = 'bold 44px "Arial Black", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = col; g.shadowBlur = 16; g.fillStyle = col;
+    g.fillText(text, 256, y + 33, 490);
+    g.shadowBlur = 0; g.fillStyle = '#fff'; g.globalAlpha = 0.6; g.fillText(text, 256, y + 33, 490); g.globalAlpha = 1;
+    rects.push([0, 1 - (y + 64) / 384, 1, 64 / 384]);
+  });
+  const t = toTexture(c, false, 4);
+  return { texture: t, rects };
+}

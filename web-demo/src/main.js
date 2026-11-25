@@ -7,36 +7,45 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { World } from './world.js';
 import { buildNetwork, buildLoops, Car, randomTrafficType, randomCarColor, Pedestrian } from './traffic.js';
+import { NavGrid } from './nav.js';
 import { Dispatch, PoliceCar, Officer } from './police.js';
 import { Player, ThirdPersonCamera } from './player.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
 import { GameAudio } from './audio.js';
-import { loadCharacters, setCharacterQuality } from './characters.js';
+import { loadCharacters, loadMoreCrowd, setCharacterQuality } from './characters.js';
 import { Effects } from './weapons.js';
 import { Driving } from './driving.js';
-import { buildStreetLife, buildWarehouse, Pickups } from './ambient.js';
+import { buildStreetLife, buildWarehouse, Pickups, SpotLife } from './ambient.js';
 import { MISSIONS, MissionRunner, loadSave, writeSave } from './missions.js';
 import { makeSky } from './sky.js';
 import { dist, yawOf } from './util.js';
 
 // ---------- Settings + quality ----------
 const SETTINGS_KEY = 'cityThief.settings.v1';
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const DEFAULTS = { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, diff: 1, gfx: null, assist: isTouch, drive: 'joystick' };
 function loadSettings() {
-  try { return Object.assign({ look: 1, aim: 0.6, btn: 1, invert: false, sound: true, diff: 1, gfx: null }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
-  catch (e) { return { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, diff: 1, gfx: null }; }
+  try { return Object.assign({ ...DEFAULTS }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+  catch (e) { return { ...DEFAULTS }; }
 }
 const settings = loadSettings();
 const params = new URLSearchParams(location.search);
-const isTouch = matchMedia('(pointer: coarse)').matches;
 const mem = navigator.deviceMemory || 8;
 let quality = settings.gfx || (isTouch ? (mem <= 4 ? 'low' : 'medium') : 'high');
 for (const q of ['low', 'medium', 'high']) if (params.has(q)) quality = q;
 
-const COUNTS = { low: { cars: 9, police: 2, people: 6, life: 10 }, medium: { cars: 12, police: 2, people: 9, life: 17 }, high: { cars: 16, police: 2, people: 20, life: 99 } };
-const SUN_DIR = new THREE.Vector3(0.81, 0.53, 0.59).normalize();
+// How many cars / people live around the player (the city is big; they follow you around).
+const COUNTS = {
+  low: { cars: 10, police: 2, people: 8, life: 10, spots: 10 },
+  medium: { cars: 14, police: 3, people: 12, life: 17, spots: 16 },
+  high: { cars: 22, police: 3, people: 22, life: 99, spots: 30 },
+};
+// Evening sun over the sea (south-west).
+const SUN_DIR = new THREE.Vector3(-0.55, 0.42, -0.72).normalize();
 const START = { x: 6.6, z: 19.5, yaw: -Math.PI / 2 };
 const EMPTY_INPUT = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
+const _fwd = new THREE.Vector3();
 
 class Game {
   constructor() {
@@ -61,8 +70,8 @@ class Game {
     document.getElementById('game').appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xe0b08a, 120, 360);
-    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 600);
+    this.scene.fog = new THREE.Fog(0xe3b48c, 150, 560);
+    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1600);
 
     this.sun = new THREE.DirectionalLight(0xffd2a1, 2.6);
     this.sun.castShadow = this.shadows;
@@ -87,7 +96,11 @@ class Game {
   async load(onProgress) {
     const manager = new THREE.LoadingManager();
     manager.onProgress = (url, loaded, total) => onProgress(loaded / total);
-    const [sky] = await Promise.all([new RGBELoader(manager).loadAsync('assets/sky/sunset_1k.hdr'), loadCharacters(manager)]);
+    const [sky, seaTex] = await Promise.all([
+      new RGBELoader(manager).loadAsync('assets/sky/sunset_1k.hdr'),
+      new THREE.TextureLoader(manager).loadAsync('assets/tex/waternormals.jpg'),
+      loadCharacters(manager),
+    ]);
     sky.mapping = THREE.EquirectangularReflectionMapping;
     this.scene.environment = sky;
     this.skyDome = makeSky(SUN_DIR);
@@ -97,6 +110,10 @@ class Game {
     buildWarehouse(this);
     this.network = buildNetwork(this.world, this.scene);
     this.world.finishStatic();
+    this.world.buildSea(seaTex);
+    this.nav = new NavGrid(this.world, -282, -300, 282, 282);
+    this.pedLoops = buildLoops();
+    this.waypoint = null;
 
     this.fx = new Effects(this.scene, quality);
     this.cars = []; this.policeCars = []; this.peds = []; this.officers = []; this.ambient = [];
@@ -112,6 +129,7 @@ class Game {
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
     this.spawnPeople(n.people);
+    this.spotLife = new SpotLife(this, n.spots);
     this.streetLife = buildStreetLife(this);
     for (const p of this.streetLife) { p.home = { x: p.x, z: p.z, yaw: p.yaw, gesture: p.gesture }; this.ambient.push(p); }
     // Fewer bystanders on phones (the chai stall, dancer and bus stop come first in the list).
@@ -121,6 +139,7 @@ class Game {
 
     this.dispatch.onStars = (n, was) => { if (n > 0 && was === 0) this.hud.showBig('COPS ARE COMING!', '#ff4438', 2); };
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
+    this.dispatch.onMessage = (t) => this.hud.toast(t);
     this.dispatch.onBusted = () => {
       this.hud.showBig('BUSTED!', '#ff2626', 2.5);
       setTimeout(() => { if (this.mission) this.mission.fail('You were arrested by the Navapur police'); else this.respawnFree(); }, 2500);
@@ -142,6 +161,7 @@ class Game {
     this.loop = this.loop.bind(this);
     this.mode = 'menu';
     requestAnimationFrame(this.loop);
+    loadMoreCrowd();   // more kinds of people, in the background
   }
 
   // ---------- Lists ----------
@@ -163,20 +183,51 @@ class Game {
   }
 
   // ---------- Spawning ----------
-  freeSpots(minFromPlayer, maxFromPlayer = 9999) {
-    const N = this.network.nodes, P = this.player;
+  // Lane points between min and max metres from the player, away from other cars
+  // (and out of the camera's view when hidden = true). Random order.
+  freeSpots(minFromPlayer, maxFromPlayer = 9999, hidden = false) {
+    const N = this.network.nodes, P = this.player, cam = this.camera.position;
+    this.camera.getWorldDirection(_fwd);
     return N.map((nd, i) => (nd.spawnable ? i : -1)).filter((i) => {
       if (i < 0) return false;
       const d = dist(N[i].x, N[i].z, P.x, P.z);
       if (d < minFromPlayer || d > maxFromPlayer) return false;
-      return !this.cars.some((c) => dist(c.x, c.z, N[i].x, N[i].z) < 12);
+      if (this.cars.some((c) => Math.abs(c.x - N[i].x) < 12 && Math.abs(c.z - N[i].z) < 12)) return false;
+      if (hidden) {
+        const dx = N[i].x - cam.x, dz = N[i].z - cam.z, dc = Math.hypot(dx, dz);
+        if (dc < 130 && (dx * _fwd.x + dz * _fwd.z) / dc > 0.25 && !this.world.segmentBlocked(cam.x, cam.z, N[i].x, N[i].z)) return false;
+      }
+      return true;
     }).sort(() => Math.random() - 0.5);
+  }
+
+  // Keep the streets around the player busy: far cars come back near him, out of sight.
+  recycle() {
+    const P = this.player, n = COUNTS[quality];
+    for (const c of [...this.cars]) {
+      if (c.playerControlled || c.missionCar || c.roadblock) continue;
+      const d = dist(c.x, c.z, P.x, P.z);
+      if (c.parked || c.wrecked) { if (d > 230) this.removeCar(c); continue; }
+      if (c.isPolice && c.pursuing) continue;
+      if (d < 175) continue;
+      const spot = this.freeSpots(80, 160, true)[0];
+      if (spot === undefined) continue;
+      c.upcoming = []; c.direct = null; c.lateral = 0; c.obstacle = null;
+      c.init(spot);
+    }
+    const traffic = this.cars.filter((c) => !c.isPolice && !c.parked && !c.wrecked && !c.playerControlled && !c.missionCar).length;
+    if (traffic < n.cars) {
+      const spot = this.freeSpots(70, 160, true)[0];
+      if (spot !== undefined) { const c = new Car(this, randomTrafficType(), randomCarColor()); c.init(spot); this.cars.push(c); }
+    }
+    const police = this.policeCars.filter((c) => !c.wrecked && !c.roadblock && !c.parked && !c.playerControlled).length;
+    if (police < n.police) this.spawnPoliceCar(false);
   }
 
   spawnTraffic(carCount, policeCount) {
     for (let i = 0; i < policeCount; i++) this.spawnPoliceCar(false);
     for (let i = 0; i < carCount; i++) {
-      const node = this.freeSpots(15)[0];
+      const node = this.freeSpots(15, 150)[0];
       if (node === undefined) break;
       const c = new Car(this, randomTrafficType(), randomCarColor());
       c.init(node);
@@ -185,7 +236,7 @@ class Game {
   }
 
   spawnPoliceCar(toChase) {
-    const spots = this.freeSpots(toChase ? 70 : 45, toChase ? 160 : 9999);
+    const spots = this.freeSpots(toChase ? 70 : 45, toChase ? 160 : 170, true);
     if (!spots.length) return null;
     const p = new PoliceCar(this);
     p.init(spots[0]);
@@ -216,14 +267,15 @@ class Game {
   }
 
   spawnPeople(count) {
-    const loops = buildLoops();
+    const loops = this.pedLoops;
     let placed = 0;
-    for (let a = 0; a < count * 5 && placed < count; a++) {
-      const loop = loops[a % loops.length];
+    for (let a = 0; a < count * 60 && placed < count; a++) {
+      const loop = loops[Math.floor(Math.random() * loops.length)];
       const i = Math.floor(Math.random() * loop.length);
       const A = loop[i], B = loop[(i + 1) % loop.length], t = Math.random();
       const pos = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
-      if (dist(pos[0], pos[1], START.x, START.z) < 5) continue;
+      const d = dist(pos[0], pos[1], START.x, START.z);
+      if (d < 5 || d > 90) continue;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.peds.push(new Pedestrian(this, loop, pos, dir === 1 ? i + 1 : i, dir));
       placed++;
@@ -269,6 +321,9 @@ class Game {
     }
     for (const p of this.peds) if (p.dead) { p.deadT = 99; p.respawnElsewhere(); }
     this.pickups.clear();
+    for (const rb of [...this.dispatch.roadblocks]) rb.remove();
+    if (this.dispatch.heli) this.dispatch.heli.remove();
+    this.waypoint = null;
     this.ravi = null;
     P.owned = ['pistol']; P.weapon = 'pistol';
     P.ammo = { pistol: { mag: 12, reserve: 48 }, smg: { mag: 0, reserve: 0 } };
@@ -304,7 +359,7 @@ class Game {
     this.mission = null;
     this.resetCity();
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, tap CALL COPS for a chase.');
+    this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, drive to the beach. Tap the map to set a waypoint. CALL COPS for a chase.');
     this.pickups.spawn('smg', 41, 41);
     this.pickups.spawn('health', 6.4, 35);
     this.pickups.spawn('ammo', 6.4, 45);
@@ -390,6 +445,25 @@ class Game {
     this.audio.setMuted(true);
   }
 
+  // Full-screen map (game waits while it is open).
+  openMap() {
+    if (this.mode !== 'play') return;
+    this.mode = 'map';
+    this.controls.enabled = false; this.controls.releaseAll();
+    document.exitPointerLock?.();
+    document.getElementById('bigmap').classList.remove('hidden');
+    this.hud.drawBigMap();
+  }
+
+  closeMap() {
+    if (this.mode !== 'map') return;
+    document.getElementById('bigmap').classList.add('hidden');
+    this.mode = 'play';
+    this.controls.enabled = true;
+    this.clock.getDelta();
+    this.controls.lockMouse();
+  }
+
   // Short in-engine cutscene: fixed camera, letterbox, subtitles.
   cutscene(opts) {
     this.mode = 'cutscene';
@@ -423,6 +497,9 @@ class Game {
     this.camera3p.aimSensitivity = Number(settings.aim);
     this.camera3p.invert = !!settings.invert;
     this.difficulty = Number(settings.diff) || 1;
+    this.aimAssist = !!settings.assist;
+    this.driving.mode = settings.drive === 'buttons' ? 'buttons' : 'joystick';
+    document.body.classList.toggle('drive-buttons', this.driving.mode === 'buttons');
     document.documentElement.style.setProperty('--bs', settings.btn);
     if (this.audio.enabled) this.audio.setMuted(!settings.sound);
   }
@@ -445,12 +522,16 @@ class Game {
 
   // World that keeps living in every mode (traffic, people, police, effects).
   simulate(dt) {
-    for (const s of this.network.signals) s.update(this.time);
+    this.network.updateSignals(this.time);
+    this.world.update(dt, this.time);
     for (const c of this.cars) c.update(dt);
     for (const p of this.peds) p.update(dt);
     for (const a of [...this.ambient]) a.update(dt);
     for (const o of [...this.officers]) o.update(dt);
     this.pickups.update(dt);
+    this.spotLife.update(dt);
+    this.recycleT = (this.recycleT || 0) - dt;
+    if (this.recycleT <= 0) { this.recycleT = 0.5; this.recycle(); }
     this.fx.update(dt);
     if (this.markerMesh.visible) this.markerMesh.children[1].scale.setScalar(1 + Math.sin(this.time * 4) * 0.08);
   }
@@ -462,14 +543,15 @@ class Game {
 
     if (this.mode === 'menu' || this.mode === 'result') {
       this.time += dt;
-      const a = this.time * 0.05;
-      this.camera.position.set(Math.cos(a) * 60, 32, Math.sin(a) * 60);
-      this.camera.lookAt(0, 6, 0);
+      // Slow flight along the seafront at sunset.
+      const a = this.time * 0.035, x = Math.sin(a) * 160;
+      this.camera.position.set(x, 15, -268);
+      this.camera.lookAt(x + 40, 9, -218);
       this.simulate(dt);
       this.render();
       return;
     }
-    if (this.mode === 'paused') { this.render(); return; }
+    if (this.mode === 'paused' || this.mode === 'map') { this.render(); return; }
 
     this.time += dt;
     const P = this.player;
@@ -502,6 +584,7 @@ class Game {
       }
     }
     if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars));
+    if (input.mapPressed) { this.openMap(); return; }
     if (input.camPressed && P.inCar) this.carCamFar = !this.carCamFar;
 
     this.simulate(dt);
@@ -549,11 +632,13 @@ function openSettings(from) {
   $('set-look').value = settings.look; $('set-aim').value = settings.aim; $('set-btn').value = settings.btn;
   $('set-invert').checked = !!settings.invert; $('set-sound').checked = !!settings.sound;
   $('set-diff').value = String(settings.diff); $('set-gfx').value = quality;
+  $('set-assist').checked = !!settings.assist; $('set-drive').value = settings.drive;
   game.showScreen('settings-screen');
 }
 function saveSettings() {
   settings.look = $('set-look').value; settings.aim = $('set-aim').value; settings.btn = $('set-btn').value;
   settings.invert = $('set-invert').checked; settings.sound = $('set-sound').checked; settings.diff = $('set-diff').value;
+  settings.assist = $('set-assist').checked; settings.drive = $('set-drive').value;
   const gfx = $('set-gfx').value;
   const gfxChanged = gfx !== quality;
   settings.gfx = gfx;
@@ -561,7 +646,7 @@ function saveSettings() {
   game.applySettings();
   if (gfxChanged) location.href = location.pathname;   // new graphics level needs a reload
 }
-for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff']) $(id).addEventListener('change', saveSettings);
+for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive']) $(id).addEventListener('change', saveSettings);
 $('set-gfx').addEventListener('change', saveSettings);
 
 $('btn-story').addEventListener('click', () => { renderMissionList(); game.showScreen('missions-screen'); });
@@ -574,7 +659,10 @@ for (const b of document.querySelectorAll('[data-back]')) {
   });
 }
 $('btn-pause').addEventListener('pointerdown', (e) => { e.stopPropagation(); game.pause(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && game.mode === 'play' && !document.pointerLockElement) game.pause(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && game.mode === 'play' && !document.pointerLockElement) game.pause();
+  if (game.mode === 'map' && (e.key === 'Escape' || e.key.toLowerCase() === 'm')) game.closeMap();
+});
 $('btn-resume').addEventListener('click', () => { game.showScreen(null); game.mode = 'play'; game.controls.enabled = true; game.clock.getDelta(); game.audio.setMuted(!settings.sound); game.controls.lockMouse(); });
 $('btn-restart').addEventListener('click', () => { if (game.mission) game.startMission(game.mission.def.id); });
 $('btn-pause-settings').addEventListener('click', () => openSettings('pause'));

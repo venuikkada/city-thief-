@@ -1,8 +1,9 @@
 // Street life: chai stall, street dancer with a crowd, bus stop, fruit cart, people chatting,
-// Ravi's old warehouse. People run and hide when there is shooting.
+// plus people all over the city (bench sitters, beach groups, market sellers, hotel doormen,
+// people at fountains) who appear when you come near. Ravi's old warehouse.
+// People run and hide when there is shooting.
 import * as THREE from 'three';
-import { CharacterRig } from './characters.js';
-import { randomPersonRig, CLOTHES, TROUSERS } from './traffic.js';
+import { CharacterRig, randomPersonRig } from './characters.js';
 import { part, mergeParts, BOX, vertexColorMaterial, signGeometry } from './mesh.js';
 import { FOOT_TOP } from './world.js';
 import { makeGun } from './weapons.js';
@@ -84,6 +85,7 @@ export class AmbientPerson {
   }
 
   remove() {
+    this.removed = true;
     this.game.scene.remove(this.mesh);
     const i = this.game.ambient.indexOf(this);
     if (i >= 0) this.game.ambient.splice(i, 1);
@@ -107,7 +109,8 @@ export function buildStreetLife(game) {
   const W = game.world, people = [];
   const y = FOOT_TOP;
   const person = (x, z, yaw, opts) => { const p = new AmbientPerson(game, x, z, yaw, opts); people.push(p); return p; };
-  const solid = (x0, z0, x1, z1, h) => W.buildings.push({ x0, z0, x1, z1, h });
+  const solid = (x0, z0, x1, z1, h) => W.addSolid(x0, z0, x1, z1, h, { nomap: true, nosight: true });
+  const sh = game.shadows;
 
   // ---- Chai stall (west footpath of the start block) ----
   {
@@ -126,21 +129,22 @@ export function buildStreetLife(game) {
       new THREE.MeshStandardMaterial({ map: W.atlas.texture, emissive: 0xffffff, emissiveMap: W.atlas.texture, emissiveIntensity: 0.4 }));
     game.scene.add(sign);
     solid(sx - 0.75, sz - 1.3, sx - 0.05, sz + 1.3, 1.1);
-    person(sx + 0.3, sz - 0.3, -Math.PI / 2, { rig: new CharacterRig('man', { top: 0xf2efe6, bottom: 0xf2efe6, castShadow: game.shadows }), gesture: 'talk' });
-    person(sx - 1.3, sz - 0.6, Math.PI / 2, { gesture: 'agree' });
+    person(sx + 0.3, sz - 0.3, -Math.PI / 2, { rig: new CharacterRig('m_kurta', { castShadow: sh }), gesture: 'talk' });
+    person(sx - 1.3, sz - 0.6, Math.PI / 2, { gesture: 'drink' });
     person(sx - 1.45, sz + 0.5, Math.PI / 2 - 0.3, { gesture: 'talk' });
-    person(sx - 1.2, sz + 1.6, Math.PI / 2 + 0.4, {});
+    person(sx - 1.2, sz + 1.6, Math.PI / 2 + 0.4, { gesture: 'listen' });
   }
 
   // ---- Street dancer with a crowd (courtyard of the start block, a hidden "galli" party) ----
   {
     const cx = 29.5, cz = 29.5;
-    const dancer = person(cx, cz, Math.PI * 0.25, { rig: new CharacterRig('woman', { castShadow: game.shadows }), gesture: 'dance' });
+    const dancer = person(cx, cz, Math.PI * 0.25, { rig: new CharacterRig('f_purple', { castShadow: sh }), gesture: 'dance' });
     dancer.calm = false;
+    const crowd = ['cheer', 'phone', 'cheer', 'talk', 'cheer', 'look'];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 1.6 - 0.2;
       const x = cx + Math.sin(a) * 2.6, z = cz + Math.cos(a) * 2.6;
-      person(x, z, yawOf(cx - x, cz - z), { gesture: i % 3 === 0 ? 'agree' : null });
+      person(x, z, yawOf(cx - x, cz - z), { gesture: crowd[i] });
     }
     // Speaker box + small mat.
     addProps(game, [part(BOX, 0x151515, cx + 1.4, y + 0.45, cz - 1.4, 0.5, 0.9, 0.45), part(BOX, 0x9c2b2b, cx, y + 0.01, cz, 2.0, 0.02, 2.0)]);
@@ -154,9 +158,9 @@ export function buildStreetLife(game) {
     p.push(part(BOX, 0x8a5a2b, bx, y + 0.45, bz + 0.5, 3.0, 0.08, 0.45));           // bench
     p.push(part(BOX, 0x1f6fb2, bx, y + 2.85, bz - 0.7, 1.2, 0.35, 0.06));           // BUS sign plate
     addProps(game, p);
-    person(bx - 1.0, bz - 0.3, Math.PI, {});
-    person(bx + 0.2, bz - 0.4, Math.PI - 0.3, { gesture: 'talk' });
-    person(bx + 1.2, bz - 0.1, Math.PI + 0.4, { gesture: 'agree' });
+    person(bx - 1.0, bz - 0.3, Math.PI, { gesture: 'phone' });
+    person(bx + 0.2, bz - 0.4, Math.PI - 0.3, { gesture: 'wait' });
+    person(bx + 1.2, bz - 0.1, Math.PI + 0.4, { gesture: 'look' });
   }
 
   // ---- Fruit cart (west footpath) ----
@@ -169,14 +173,14 @@ export function buildStreetLife(game) {
     addProps(game, p);
     solid(fx - 0.55, fz - 1.0, fx + 0.55, fz + 1.0, 1.0);
     person(fx + 0.9, fz, -Math.PI / 2, { gesture: 'talk' });
-    person(fx - 1.2, fz + 0.4, Math.PI / 2, { gesture: 'headShake' });
+    person(fx - 1.2, fz + 0.4, Math.PI / 2, { gesture: 'listen' });
   }
 
   // ---- People chatting in pairs on the footpaths ----
   for (const [x, z, a] of [[6.9, 13, 0], [15, 6.9, Math.PI / 2], [6.9, 60, 0], [56, 6.9, Math.PI / 2], [-6.9, 20, 0]]) {
     const dx = Math.sin(a) * 0.55, dz = Math.cos(a) * 0.55;
     person(x - dx, z - dz, a, { gesture: 'talk' });
-    person(x + dx, z + dz, a + Math.PI, { gesture: Math.random() < 0.5 ? 'agree' : 'headShake' });
+    person(x + dx, z + dz, a + Math.PI, { gesture: Math.random() < 0.5 ? 'listen' : 'phone' });
   }
 
   return people;
@@ -187,7 +191,7 @@ export const WAREHOUSE = { x: -33, z: 32, door: { x: -38, z: 36.5 } };
 
 export function buildWarehouse(game) {
   const W = game.world, y = FOOT_TOP, p = [];
-  const solid = (x0, z0, x1, z1, h) => { W.buildings.push({ x0, z0, x1, z1, h }); W.mapRects.push({ x0, z0, x1, z1, kind: 'building' }); };
+  const solid = (x0, z0, x1, z1, h) => W.addSolid(x0, z0, x1, z1, h);
   // Rusty shed.
   const x0 = -45, x1 = -31, z0 = 38, z1 = 45.5, h = 5.5;
   p.push(part(BOX, 0x7d6a58, (x0 + x1) / 2, y + h / 2, (z0 + z1) / 2, x1 - x0, h, z1 - z0));
@@ -202,7 +206,7 @@ export function buildWarehouse(game) {
   }
   for (const [x, z] of [[-34, 36], [-33.2, 36.6], [-26, 29]]) {
     p.push(part(CYL, 0x2f5d8a, x, y + 0.5, z, 0.32, 1.0, 0.32));
-    W.circles.push({ x, z, r: 0.35 });
+    W.addCircle(x, z, 0.35);
   }
   const sign = new THREE.Mesh(signGeometry(-38, y + 4.3, z0 - 0.05, 4.6, 0.55, 0, -1, W.atlas.rects.shops[9]),
     new THREE.MeshStandardMaterial({ map: W.atlas.texture, roughness: 0.7 }));
@@ -212,12 +216,84 @@ export function buildWarehouse(game) {
 
 export function spawnRavi(game) {
   const r = new AmbientPerson(game, WAREHOUSE.door.x + 1.5, WAREHOUSE.door.z - 1.2, Math.PI, {
-    rig: new CharacterRig('man', { top: 0x2f7d4f, bottom: 0xd8d0c0, detail: true, hideHat: true, castShadow: game.shadows, skinTone: 0xb07e62 }),
+    rig: new CharacterRig('ravi', { castShadow: game.shadows }),
     invincible: true, gesture: 'talk',
   });
   r.calm = true; r.isRavi = true;
   game.ambient.push(r);
   return r;
+}
+
+// ---------------------------------------------------------------------------
+// People all over the big city. They only exist near the player (cheap on phones):
+// bench sitters, beach groups, market sellers, hotel doormen, people at fountains and in parks.
+// ---------------------------------------------------------------------------
+const GROUP_GESTURES = ['talk', 'listen', 'phone', 'cheer', 'drink', 'look', 'wait'];
+
+export class SpotLife {
+  constructor(game, cap) {
+    this.game = game; this.cap = cap; this.t = 0;
+    const S = game.world.spots, spots = this.spots = [];
+    const rnd = Math.random;
+    const add = (x, z, yaw, gesture, opts = {}) => spots.push({ x, z, yaw, gesture, ...opts, person: null });
+    for (const b of S.benches) if (rnd() < 0.55) add(b.x + Math.sin(b.yaw) * 0.12, b.z + Math.cos(b.yaw) * 0.12, b.yaw, 'sit', { calm: false });
+    for (const b of S.beach) {
+      const n = 1 + Math.floor(rnd() * 3), cx = b.x - 2.5, cz = b.z - 2;
+      for (let i = 0; i < n; i++) {
+        const a = rnd() * Math.PI * 2, x = cx + Math.cos(a) * 0.9, z = cz + Math.sin(a) * 0.9;
+        add(x, z, yawOf(cx - x, cz - z), n === 1 ? (rnd() < 0.5 ? 'phone' : 'look') : GROUP_GESTURES[Math.floor(rnd() * GROUP_GESTURES.length)]);
+      }
+    }
+    for (const p of S.plazas) {
+      for (let i = 0; i < 5; i++) {
+        const a = rnd() * Math.PI * 2, r = p.r + 0.5 + rnd() * 3, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+        add(x, z, rnd() * Math.PI * 2, ['phone', 'talk', 'look', 'wait', 'drink'][i]);
+      }
+    }
+    for (const p of S.parks) {
+      for (let i = 0; i < 4; i++) {
+        const x = p.x0 + 4 + rnd() * (p.x1 - p.x0 - 8), z = p.z0 + 4 + rnd() * (p.z1 - p.z0 - 8);
+        if (Math.abs(x - p.cx) < 6 && Math.abs(z - p.cz) < 6) continue;
+        const a = rnd() * Math.PI * 2;
+        add(x, z, a, 'talk');
+        add(x + Math.sin(a) * 1.1, z + Math.cos(a) * 1.1, a + Math.PI, rnd() < 0.5 ? 'listen' : 'phone');
+      }
+    }
+    for (const m of S.market) {
+      add(m.x, m.z + (m.yaw === 0 ? 3.1 : -3.1), m.yaw + Math.PI, rnd() < 0.5 ? 'talk' : 'wait');   // seller behind the stall
+      if (rnd() < 0.5) add(m.x, m.z, m.yaw, 'listen');                                               // customer in front
+    }
+    for (const h of S.hotels) if (rnd() < 0.6) add(h.x + 2, h.z, rnd() * 6, rnd() < 0.5 ? 'wait' : 'phone');
+    this.active = 0;
+  }
+
+  update(dt) {
+    this.t -= dt;
+    if (this.t > 0) return;
+    this.t = 0.5;
+    const g = this.game, P = g.player;
+    const px = P.x, pz = P.z;
+    for (const s of this.spots) {
+      if (s.person && s.person.removed) { s.person = null; this.active--; }
+      const d = Math.abs(s.x - px) + Math.abs(s.z - pz);
+      if (s.person) {
+        if (d > 150 && !s.person.dead) { s.person.remove(); s.person = null; this.active--; }
+        else if (s.person.dead && d > 120) { s.person.remove(); s.person = null; this.active--; }
+      } else if (d < 95 && this.active < this.cap && !(g.dispatch.active && d < 40)) {
+        const camD = Math.hypot(s.x - g.camera.position.x, s.z - g.camera.position.z);
+        if (camD < 30) continue;   // do not pop in right in front of the camera
+        const p = new AmbientPerson(g, s.x, s.z, s.yaw, { gesture: s.gesture });
+        if (s.gesture === 'sit') p.rig.setGesture('sit');
+        g.ambient.push(p);
+        s.person = p; this.active++;
+      }
+    }
+  }
+
+  clear() {
+    for (const s of this.spots) if (s.person) { s.person.remove(); s.person = null; }
+    this.active = 0;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -54,6 +54,17 @@ export class GameAudio {
     this.engFilter.connect(this.engGain).connect(this.master);
     this.engOsc1.start(); this.engOsc2.start();
 
+    // Helicopter: low noise chopped by a fast "wop-wop" rhythm.
+    const hn = ctx.createBufferSource(); hn.buffer = buf; hn.loop = true;
+    const hlp = ctx.createBiquadFilter(); hlp.type = 'lowpass'; hlp.frequency.value = 260;
+    this.heliChop = ctx.createGain(); this.heliChop.gain.value = 0.5;
+    const chop = ctx.createOscillator(); chop.type = 'square'; chop.frequency.value = 13;
+    const chopDepth = ctx.createGain(); chopDepth.gain.value = 0.5;
+    chop.connect(chopDepth).connect(this.heliChop.gain);
+    this.heliGain = ctx.createGain(); this.heliGain.gain.value = 0;
+    hn.connect(hlp).connect(this.heliChop).connect(this.heliGain).connect(this.master);
+    hn.start(); chop.start();
+
     this.enabled = true;
     this.lastHorn = 0;
   }
@@ -113,6 +124,12 @@ export class GameAudio {
     if (!this.enabled) return;
     const target = sirenDistance === Infinity ? 0 : Math.max(0, 0.16 * (1 - sirenDistance / 120));
     this.siren.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
+  }
+
+  // Helicopter loudness 0..1.
+  heli(level) {
+    if (!this.enabled) return;
+    this.heliGain.gain.setTargetAtTime(level * 0.9, this.ctx.currentTime, 0.3);
   }
 
   // Short "beep beep" (Indian traffic!). volume 0..1

@@ -1,12 +1,17 @@
 // Vikram: movement on foot, health, guns (pistol / SMG), aiming, reload, cars, pick-ups.
 // Plus the third-person camera (on foot, aiming, and a chase camera behind cars).
+//
+// Aiming help for touch screens (can be turned off in Settings):
+// - the camera slows down and gently follows a police officer under the crosshair,
+// - pressing AIM snaps onto the nearest officer close to the crosshair,
+// - bullets bend a tiny bit onto an officer you are almost on.
 import * as THREE from 'three';
-import { clamp, lerp, moveTowards, rotateTowards, yawOf, DEG, pushOutOfBox, dist } from './util.js';
-import { CharacterRig } from './characters.js';
+import { clamp, lerp, moveTowards, rotateTowards, yawOf, DEG, pushOutOfBox, angleDiff } from './util.js';
+import { CharacterRig, strafeYaw, twistTo } from './characters.js';
 import { WEAPONS, makeGun, castShot } from './weapons.js';
 import { placeGun } from './police.js';
 
-const _dir = new THREE.Vector3(), _muz = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3();
+const _dir = new THREE.Vector3(), _muz = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(), _to = new THREE.Vector3();
 
 export class Player {
   constructor(game, x, z, yaw) {
@@ -20,11 +25,10 @@ export class Player {
     this.inCar = false; this.dead = false;
     this.health = 100; this.armor = 0; this.lastHurt = -99;
     this.lastGrounded = 0; this.lastJumpPress = -99;
-    this.runSpeed = 4.6; this.sprintSpeed = 6.8; this.crouchSpeed = 1.7; this.aimSpeed = 2.4;
-    this.accel = 16; this.decel = 24;
+    this.runSpeed = 4.7; this.sprintSpeed = 7.1; this.crouchSpeed = 1.7; this.aimSpeed = 2.1; this.hipSpeed = 3.4;
+    this.accel = 26; this.decel = 30;
 
-    // Vikram: realistic man, dark jacket, jeans, short beard.
-    this.rig = new CharacterRig('man', { top: 0x2b2f36, bottom: 0x2c3e66, shoes: 0x1a1a1a, detail: true, castShadow: game.shadows, skinTone: 0xb98468 });
+    this.rig = new CharacterRig('vikram', { castShadow: game.shadows });
     this.mesh = this.rig.root;
     game.scene.add(this.mesh);
     this.crouchBlend = 0;
@@ -81,7 +85,7 @@ export class Player {
     this.health = 100; this.controlsEnabled = true;
     if (this.rig.dead) {   // fresh body after dying
       this.game.scene.remove(this.mesh);
-      this.rig = new CharacterRig('man', { top: 0x2b2f36, bottom: 0x2c3e66, shoes: 0x1a1a1a, detail: true, castShadow: this.game.shadows, skinTone: 0xb98468 });
+      this.rig = new CharacterRig('vikram', { castShadow: this.game.shadows });
       this.mesh = this.rig.root;
       this.game.scene.add(this.mesh);
     }
@@ -122,12 +126,16 @@ export class Player {
     const move = on ? input.move : { x: 0, y: 0 };
     const strength = Math.min(1, Math.hypot(move.x, move.y));
 
-    if (on && input.aimPressed) this.aiming = !this.aiming;
+    if (on && input.aimPressed) {
+      this.aiming = !this.aiming;
+      if (this.aiming) g.camera3p.snapToTarget();
+    }
     if (on && input.crouchPressed) this.crouching = !this.crouching;
     if (on && input.reloadPressed) this.reload();
     if (on && input.switchPressed) this.switchWeapon();
+    if ((this.aiming || input.fire) && g.controls.sprintLock) g.controls.cancelSprintLock();
 
-    let wantSprint = on && input.sprint && strength > 0.5 && !this.aiming && !input.fire;
+    const wantSprint = on && input.sprint && strength > 0.5 && !this.aiming && !input.fire;
     if (wantSprint && this.crouching) this.crouching = false;
     this.sprinting = wantSprint;
 
@@ -139,7 +147,7 @@ export class Player {
     if (wl > 0.001) { wx /= wl; wz /= wl; }
 
     const firingStance = this.aiming || t - this.lastShot < 0.8;
-    const max = this.crouching ? this.crouchSpeed : firingStance ? this.aimSpeed + 0.8 : this.runSpeed;
+    const max = this.crouching ? this.crouchSpeed : this.aiming ? this.aimSpeed : firingStance ? this.hipSpeed : this.runSpeed;
     const target = this.sprinting ? this.sprintSpeed : max * strength;
     const tvx = wx * target, tvz = wz * target;
     const speedingUp = tvx * tvx + tvz * tvz > this.vx * this.vx + this.vz * this.vz;
@@ -162,10 +170,12 @@ export class Player {
     this.y += this.vy * dt;
 
     g.world.resolveCircle(this, this.radius);
-    for (const c of g.cars) pushOutOfBox(this, this.radius, c.x, c.z, c.yaw, c.halfL, c.halfW);
+    for (const c of g.cars) if (Math.abs(c.x - this.x) < 4 && Math.abs(c.z - this.z) < 4) pushOutOfBox(this, this.radius, c.x, c.z, c.yaw, c.halfL, c.halfW);
     for (const o of g.walkers) {
       if (o === this || o.inactive || o.dead) continue;
-      const dx = this.x - o.x, dz = this.z - o.z, d = Math.hypot(dx, dz), min = this.radius + o.radius;
+      const dx = this.x - o.x, dz = this.z - o.z;
+      if (Math.abs(dx) > 1 || Math.abs(dz) > 1) continue;
+      const d = Math.hypot(dx, dz), min = this.radius + o.radius;
       if (d < min && d > 0.0001) { this.x += (dx / d) * (min - d); this.z += (dz / d) * (min - d); }
     }
     const rvx = (this.x - sx) / dt, rvz = (this.z - sz) / dt;
@@ -175,11 +185,16 @@ export class Player {
     if (this.y <= ground) { this.y = ground; if (this.vy < 0) this.vy = 0; this.grounded = true; }
     else this.grounded = this.y - ground < 0.02 && this.vy <= 0;
 
-    // Face the camera direction when aiming/shooting, else the move direction.
-    let face = null;
-    if (firingStance || input.fire) face = camYaw;
-    else if (strength > 0.1) face = yawOf(wx, wz);
-    if (face !== null) this.yaw = rotateTowards(this.yaw, face, (firingStance ? 1200 : 720) * DEG * dt);
+    // Aiming / shooting: chest faces the crosshair, legs walk where you move (strafe, walk backwards).
+    // Otherwise: face the way you move.
+    if (firingStance || input.fire) {
+      this.yaw = rotateTowards(this.yaw, strafeYaw(this.rig, camYaw, this.vx, this.vz), 900 * DEG * dt);
+      twistTo(this.rig, this.yaw, camYaw);
+    } else {
+      this.rig.reverse = false;
+      this.rig.twist = moveTowards(this.rig.twist, 0, 6 * dt);
+      if (strength > 0.1) this.yaw = rotateTowards(this.yaw, yawOf(wx, wz), 720 * DEG * dt);
+    }
 
     // ---- Guns ----
     if (this.cooldown > 0) this.cooldown -= dt;
@@ -211,6 +226,11 @@ export class Player {
     const spread = w.spread * (this.aiming ? 0.5 : 1.4) * (moving ? 1.6 : 1) * (this.crouching ? 0.7 : 1) + g.camera3p.recoil * 0.02;
     _dir.x += (Math.random() - 0.5) * spread * 2; _dir.y += (Math.random() - 0.5) * spread * 2; _dir.z += (Math.random() - 0.5) * spread * 2;
     _dir.normalize();
+    // Bullet magnetism (aim help): almost on an officer = hit him.
+    if (g.aimAssist) {
+      const t = g.camera3p.findTarget(cam.position, _dir, this.aiming ? 2.6 : 3.6, w.range);
+      if (t) _dir.copy(_to.set(t.x, (t.groundY || 0) + 1.25 + (Math.random() - 0.5) * 0.4, t.z).sub(cam.position).normalize());
+    }
     // Start the ray just past Vikram so he never shoots himself.
     const startAt = Math.max(0, (this.x - cam.position.x) * _dir.x + (this.y + 1.4 - cam.position.y) * _dir.y + (this.z - cam.position.z) * _dir.z) + 0.6;
     const hit = castShot(g, cam.position, _dir, w.range, this, startAt);
@@ -260,53 +280,87 @@ export class Player {
   }
 }
 
-// Over-the-shoulder camera, aim zoom, recoil kick, crash shake, and a chase camera for cars.
+// Over-the-shoulder camera, aim zoom, recoil kick, crash shake, aim help, and a chase camera for cars.
 export class ThirdPersonCamera {
   constructor(game, camera) {
     this.game = game; this.cam = camera;
     this.yaw = 0; this.pitch = 10 * DEG;
     this.dist = 3.4; this.aimBlend = 0; this.pivotH = 1.55;
     this.sensitivity = 1; this.aimSensitivity = 0.6; this.invert = false;
-    this.recoil = 0; this.shakeT = 0; this.carLookT = 0;
+    this.recoil = 0; this.shakeT = 0; this.carLookT = 0; this.snapT = 0; this.fovKick = 0;
   }
 
   snapBehind() { this.yaw = this.game.player.yaw; this.pitch = 10 * DEG; }
   kick(k) { this.recoil = Math.min(3, this.recoil + k); this.pitch -= 0.9 * DEG * k; this.yaw += (Math.random() - 0.5) * 0.5 * DEG * k; }
   shake(k) { this.shakeT = Math.max(this.shakeT, 0.35 * k); }
+  snapToTarget() { if (this.game.aimAssist) this.snapT = 0.2; }
+
+  // Closest enemy (police) within maxDeg of the ray from "from" along "dir", in clear view.
+  findTarget(from, dir, maxDeg, range = 80) {
+    const g = this.game, P = g.player;
+    let best = null, bestCos = Math.cos(maxDeg * DEG);
+    for (const o of g.officers) {
+      if (o.dead || o.inactive) continue;
+      _to.set(o.x - from.x, (o.groundY || 0) + 1.25 - from.y, o.z - from.z);
+      const d = _to.length();
+      if (d > range || d < 1) continue;
+      const c = _to.dot(dir) / d;
+      if (c > bestCos && !g.world.segmentBlocked(P.x, P.z, o.x, o.z)) { bestCos = c; best = o; }
+    }
+    return best;
+  }
 
   update(dt, look) {
-    const P = this.game.player, W = this.game.world;
-    const firing = this.game.time - P.lastShot < 0.8;
+    const g = this.game, P = g.player, W = g.world;
+    const firing = g.time - P.lastShot < 0.8;
     this.aimBlend = moveTowards(this.aimBlend, P.aiming && !P.inCar ? 1 : 0, 6 * dt);
     this.recoil = Math.max(0, this.recoil - dt * 4);
 
-    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity, this.aimBlend);
+    // Aim help: slow the camera over a target and follow it a little.
+    let slow = 1;
+    if (g.aimAssist && !P.inCar && !P.dead && (P.aiming || firing || this.snapT > 0)) {
+      this.cam.getWorldDirection(_dir);
+      const t = this.findTarget(this.cam.position, _dir, this.snapT > 0 ? 12 : P.aiming ? 7 : 4.5);
+      if (t) {
+        slow = 0.55;
+        _to.set(t.x - this.cam.position.x, (t.groundY || 0) + 1.25 - this.cam.position.y, t.z - this.cam.position.z);
+        const wantYaw = Math.atan2(_to.x, _to.z), wantPitch = -Math.atan2(_to.y, Math.hypot(_to.x, _to.z));
+        const rate = (this.snapT > 0 ? 70 : P.aiming ? 9 : 6) * DEG * dt;
+        this.yaw += clamp(angleDiff(this.yaw, wantYaw), -rate, rate);
+        this.pitch += clamp(wantPitch - this.pitch, -rate, rate);
+      }
+    }
+    if (this.snapT > 0) this.snapT -= dt;
+
+    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity, this.aimBlend) * slow;
     this.yaw -= look.x * k;
     this.pitch += (this.invert ? -look.y : look.y) * k;
 
     let px, py, pz, wantDist, wantShoulder, fovBase;
-    if (P.inCar && this.game.driving.car) {
-      // Chase camera: swings behind the car unless you are looking around.
-      const car = this.game.driving.car, sp = this.game.driving.speed;
+    if (P.inCar && g.driving.car) {
+      // Chase camera: swings behind the car (looking a little into the slide/turn) unless you look around.
+      const car = g.driving.car, D = g.driving, sp = D.speed;
       if (Math.abs(look.x) + Math.abs(look.y) > 0.5) this.carLookT = 1.6;
       this.carLookT -= dt;
       if (this.carLookT <= 0 && sp > 1) {
-        const behind = car.yaw + (this.game.driving.vx * Math.sin(car.yaw) + this.game.driving.vz * Math.cos(car.yaw) < -0.5 ? Math.PI : 0);
-        const d = Math.atan2(Math.sin(behind - this.yaw), Math.cos(behind - this.yaw));
-        this.yaw += d * Math.min(1, dt * 3);
-        this.pitch = lerp(this.pitch, 12 * DEG, dt * 2);
+        const back = D.vx * Math.sin(car.yaw) + D.vz * Math.cos(car.yaw) < -0.5;
+        let behind = back ? car.yaw + Math.PI : car.yaw;
+        if (!back && sp > 4) behind += angleDiff(car.yaw, Math.atan2(D.vx, D.vz)) * 0.6 + D.steer * 0.35;
+        this.yaw += angleDiff(this.yaw, behind) * Math.min(1, dt * 3.2);
+        this.pitch = lerp(this.pitch, 11 * DEG, dt * 2);
       }
-      px = car.x; py = 1.6; pz = car.z;
-      wantDist = (this.game.carCamFar ? 9 : 6.2) + Math.min(3, sp * 0.08);
+      px = car.x; py = 1.7; pz = car.z;
+      wantDist = (g.carCamFar ? 9.5 : 6.4) + Math.min(3, sp * 0.08);
       wantShoulder = 0;
-      fovBase = 62 + Math.min(14, sp * 0.45);
+      this.fovKick = moveTowards(this.fovKick, D.boosting ? 12 : 0, 30 * dt);
+      fovBase = 62 + Math.min(14, sp * 0.45) + this.fovKick;
     } else {
       const wantH = P.crouching ? 1.05 : 1.55;
       this.pivotH = lerp(this.pivotH, wantH, 1 - Math.exp(-10 * dt));
       px = P.x; py = P.y + this.pivotH; pz = P.z;
       wantDist = lerp(firing ? 2.6 : 3.4, 1.45, this.aimBlend);
       wantShoulder = lerp(firing ? 0.6 : 0.5, 0.65, this.aimBlend);
-      fovBase = lerp(P.sprinting ? 66 : 60, 42, this.aimBlend);
+      fovBase = lerp(P.sprinting ? 68 : 60, 42, this.aimBlend);
     }
     this.pitch = clamp(this.pitch, -40 * DEG, 65 * DEG);
 

@@ -1,5 +1,6 @@
 // Touch + mouse + keyboard input (PUBG-style).
-// Phone: left side = floating joystick (push to the edge to sprint), drag anywhere else = look.
+// Phone: left side = floating joystick (push to the edge to sprint; drag far UP past the ring to
+// LOCK sprint - you keep running with your thumb off), drag anywhere else = look.
 // Buttons for on foot and in car. Fire buttons also turn the camera when you drag them.
 // Computer: click the game to capture the mouse. Mouse = look, left click = fire, right click = aim.
 const NONE = null;
@@ -13,6 +14,8 @@ export class Controls {
     this.lookX = 0; this.lookY = 0;
     this.stickId = NONE; this.lookId = NONE;
     this.stickCx = 0; this.stickCy = 0; this.stickVec = { x: 0, y: 0 }; this.stickEdge = false;
+    this.sprintLock = false; this.lockArmed = false;
+    this.lockEl = document.getElementById('sprint-lock');
     this.lastLook = { x: 0, y: 0 };
     this.mouseFire = false;
     this.isTouch = matchMedia('(pointer: coarse)').matches;
@@ -32,6 +35,7 @@ export class Controls {
       ['btn-enter', 'enter'], ['btn-pickup', 'pickup'], ['btn-callcops', 'callCops'],
       ['btn-gas', 'gas', true], ['btn-brake', 'brake', true], ['btn-handbrake', 'handbrake', true],
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
+      ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -39,7 +43,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map' };
         if (map[k]) this.pending[map[k]] = true;
       }
       this.keys.add(k);
@@ -105,6 +109,7 @@ export class Controls {
     const inStickZone = e.clientX < w * 0.42 && e.clientY > h * 0.3;
     try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
     if (inStickZone && this.stickId === NONE) {
+      if (this.sprintLock) this.cancelSprintLock();
       this.stickId = e.pointerId;
       this.stickCx = e.clientX; this.stickCy = e.clientY;
       this.base.style.left = e.clientX + 'px';
@@ -128,6 +133,7 @@ export class Controls {
   up(e) {
     if (e.pointerId === this.stickId) {
       this.stickId = NONE; this.stickVec = { x: 0, y: 0 }; this.stickEdge = false;
+      if (this.lockArmed) { this.sprintLock = true; this.lockArmed = false; this.lockEl?.classList.add('on'); }
       this.base.classList.add('hidden');
       this.knob.classList.remove('sprint');
       this.knob.style.transform = '';
@@ -148,6 +154,14 @@ export class Controls {
     }
     this.stickEdge = raw >= 0.97;
     this.knob.classList.toggle('sprint', this.stickEdge);
+    // Dragged far up past the ring: release to lock sprint.
+    this.lockArmed = raw > 1.55 && dy < -0.85 && !document.body.classList.contains('in-car');
+    this.base.classList.toggle('lock-armed', this.lockArmed);
+  }
+
+  cancelSprintLock() {
+    this.sprintLock = false; this.lockArmed = false;
+    this.lockEl?.classList.remove('on');
   }
 
   addLook(dx, dy) {
@@ -157,6 +171,7 @@ export class Controls {
 
   releaseAll() {
     this.held = {}; this.pending = {}; this.mouseFire = false;
+    this.cancelSprintLock();
     this.stickVec = { x: 0, y: 0 }; this.stickEdge = false; this.stickId = NONE; this.lookId = NONE;
     this.base.classList.add('hidden');
   }
@@ -164,6 +179,7 @@ export class Controls {
   // Called once per frame.
   poll() {
     let mx = this.stickVec.x, my = this.stickVec.y, sprint = this.stickEdge;
+    if (this.sprintLock && this.stickId === NONE) { mx = 0; my = 1; sprint = true; }
     const k = this.keys;
     const kx = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     const ky = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
@@ -180,6 +196,7 @@ export class Controls {
       pickupPressed: !!p.pickup, callCopsPressed: !!p.callCops, camPressed: !!p.cam,
       gas: h('gas') || k.has('w') || k.has('arrowup'), brake: h('brake') || k.has('s') || k.has('arrowdown'),
       handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
+      boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
     };
     this.lookX = 0; this.lookY = 0;
     this.pending = {};

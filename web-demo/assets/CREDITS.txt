@@ -1,17 +1,20 @@
 City Thief - browser demo: third-party assets
 
-People
-  man.glb   - sample avatar from the three.js examples (readyplayer.me.glb), https://github.com/mrdoob/three.js
-              (Ready Player Me avatar; clothes recoloured and mesh simplified for phones)
-  woman.glb - "Michelle" character from the three.js examples (Adobe Mixamo), simplified for phones
-  anim_soldier.glb - Idle / Walk / Run animations from the three.js "Soldier" example (Adobe Mixamo)
-  Mixamo content is used under the Mixamo terms (free to use in games; not redistributed as standalone assets).
-  NOTE: these are demo placeholders. The Play Store game should use its own licensed characters.
+People (Vikram, Ravi, police, SWAT and 17 city people) + their motion-captured animations
+  assets/people/*.glb - from Microsoft Rocketbox Avatar Library (MIT License),
+  https://github.com/microsoft/Microsoft-Rocketbox
+  Converted to glTF, textures shrunk to WebP, meshes simplified for phones.
+  The police uniforms were recoloured khaki. Copyright (c) Microsoft Corporation, MIT License.
+
+Water
+  assets/tex/waternormals.jpg - water normal map from the three.js examples (MIT License),
+  https://github.com/mrdoob/three.js
 
 Sky lighting
   sunset_1k.hdr - "Venice Sunset" HDRI from Poly Haven (polyhaven.com), CC0 / public domain.
 
 Libraries: three.js (MIT), meshoptimizer decoder (MIT).
 
-Everything else (city, buildings, cars, auto-rickshaws, police SUVs, guns, textures, shop signs,
-missions, sounds) is made in code for this project. All names, places and police forces are fictional.
+Everything else (the city of Navapur, buildings, seafront hotels, palm trees, cars, auto-rickshaws,
+police SUVs, helicopter, guns, textures, shop signs, missions, sounds) is made in code for this project.
+All names, places and police forces are fictional.
