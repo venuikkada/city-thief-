@@ -152,7 +152,7 @@ export class Controls {
       const s = (len - dead) / (1 - dead);
       this.stickVec = { x: (dx / len) * s, y: (-dy / len) * s };
     }
-    this.stickEdge = raw >= 0.97;
+    this.stickEdge = raw >= 1.22 && dy < -0.35;   // push past the ring (forwards) = sprint; a full push is a jog
     this.knob.classList.toggle('sprint', this.stickEdge);
     // Dragged far up past the ring: release to lock sprint.
     this.lockArmed = raw > 1.55 && dy < -0.85 && !document.body.classList.contains('in-car');

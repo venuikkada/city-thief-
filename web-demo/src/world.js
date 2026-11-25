@@ -62,6 +62,7 @@ export class World {
     this.stamp = 1;
     this.spots = { benches: [], beach: [], plazas: [], parks: [], market: [], hotels: [] };
     this.animated = [];   // boats, water
+    this.ramps = [];      // stunt jumps
 
     this.buildGround();
     this.buildRoads();
@@ -69,6 +70,54 @@ export class World {
     this.buildOuterRing();
     this.buildSeafront();
     this.buildSkyline();
+    this.buildRamps();
+  }
+
+  // ---------- Stunt ramps (jump over the park fountains, and off the promenade onto the beach) ----------
+  buildRamps() {
+    const parks = [[1, 3, 0], [5, 3, Math.PI], [2, 5, Math.PI / 2]];
+    for (const [i, j, yaw] of parks) {
+      const r = blockRect(i, j), cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
+      this.addRamp(cx - Math.sin(yaw) * 22, cz - Math.cos(yaw) * 22, yaw, 7, 1.8);
+    }
+    this.addRamp(112.5, PROMENADE.z1 - 0.6, Math.PI, 6.4, 1.0);
+  }
+
+  // A wedge: low end at (x, z), rising along "yaw" to height h after "len" metres.
+  addRamp(x, z, yaw, len = 7, h = 1.8, w = 4.2) {
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = -fz, rz = fx;
+    const y0 = this.groundAt(x, z);
+    this.ramps.push({ x, z, fx, fz, len, h, w, y0 });
+    const P = (u, v, y) => [x + fx * u + rx * v, y0 + y, z + fz * u + rz * v];
+    const hw = w / 2;
+    const a = P(0, -hw, 0.02), b = P(0, hw, 0.02), c = P(len, hw, h), d = P(len, -hw, h), e = P(len, hw, 0), f = P(len, -hw, 0);
+    const tri = [a, b, c, a, c, d, d, c, e, d, e, f, a, d, f, b, e, c];   // top, back, two sides
+    const cols = [];
+    for (let i = 0; i < tri.length; i++) cols.push(...(i < 6 ? [0.95, 0.72, 0.08] : [0.2, 0.2, 0.22]));
+    // Black hazard stripes across the yellow top.
+    for (let k = 0; k < 4; k++) {
+      const u0 = len * (0.12 + k * 0.22), u1 = u0 + 0.45, y = (u) => h * u / len + 0.03;
+      const q = [P(u0, -hw * 0.9, y(u0)), P(u0, hw * 0.9, y(u0)), P(u1, hw * 0.9, y(u1)), P(u1, -hw * 0.9, y(u1))];
+      tri.push(q[0], q[1], q[2], q[0], q[2], q[3]);
+      for (let i = 0; i < 6; i++) cols.push(0.08, 0.08, 0.08);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(tri.flat(), 3));
+    geo.computeVertexNormals();
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    this.add('static', geo, x, z);
+  }
+
+  // Height of a ramp under (x, z), 0 if none.
+  rampAt(x, z) {
+    for (const r of this.ramps) {
+      const dx = x - r.x, dz = z - r.z;
+      const u = dx * r.fx + dz * r.fz;
+      if (u < 0 || u > r.len) continue;
+      if (Math.abs(-dx * r.fz + dz * r.fx) > r.w / 2) continue;
+      return r.y0 + 0.02 + r.h * u / r.len;
+    }
+    return 0;
   }
 
   // ---------- Parts are grouped by material and by map chunk (so far chunks are not drawn) ----------
@@ -645,8 +694,9 @@ export class World {
     return h;
   }
 
-  resolveCircle(obj, r) {
+  resolveCircle(obj, r, y = 0) {
     this.near('b', obj.x - r, obj.z - r, obj.x + r, obj.z + r, (b) => {
+      if (y > 0.3 && FOOT_TOP + b.h < y) return false;   // flying over it
       const cx = Math.max(b.x0, Math.min(obj.x, b.x1));
       const cz = Math.max(b.z0, Math.min(obj.z, b.z1));
       const dx = obj.x - cx, dz = obj.z - cz;
@@ -663,6 +713,7 @@ export class World {
       }
       return false;
     });
+    if (y > 1.4) return;
     this.near('c', obj.x - r, obj.z - r, obj.x + r, obj.z + r, (c) => {
       const dx = obj.x - c.x, dz = obj.z - c.z, min = r + c.r;
       const d2 = dx * dx + dz * dz;

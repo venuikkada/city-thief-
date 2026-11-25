@@ -6,6 +6,7 @@ import { makeVehicle, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles
 import { randomPersonRig } from './characters.js';
 
 const LIGHT_COLORS = [0x22ff44, 0xffcc11, 0xff2222];
+const BURNT = new THREE.MeshStandardMaterial({ color: 0x1c1816, roughness: 1, metalness: 0 });
 
 // ---------------------------------------------------------------------------
 // Traffic light: north-south (axis 0) and east-west (axis 1) take turns.
@@ -308,14 +309,32 @@ export class Car {
 
   stopSpeed(d) { return d <= 0 ? 0 : Math.sqrt(2 * this.brake * 0.7 * d); }
 
-  // Bullets and crashes damage cars. A wrecked car smokes and stops.
-  takeDamage(amount) {
-    if (this.wrecked) return;
+  // Bullets and crashes damage cars. A wrecked car catches fire, then EXPLODES (chain reactions!).
+  takeDamage(amount, byPlayer = false) {
+    if (this.exploded) return;
     this.health -= amount;
-    if (this.health <= 0) {
+    if (byPlayer) this.lastHitByPlayer = this.game.time;
+    if (this.health <= 0 && !this.wrecked) {
       this.wrecked = true; this.hold = true; this.pursuing = false;
+      this.burnT = this.fastBurn ? 0.7 : 3.2;
       if (this.isPolice) this.state = 'patrol';
+      if (this.onWrecked) this.onWrecked();
     }
+    if (this.wrecked && this.health < -70 && this.burnT > 0.3) this.burnT = 0.3;   // shot a lot more: it blows now
+  }
+
+  explode() {
+    if (this.exploded) return;
+    const g = this.game;
+    this.exploded = true; this.speed = 0;
+    const byPlayer = g.time - (this.lastHitByPlayer ?? -99) < 8 || this.playerControlled;
+    g.fx.explosion(this.x, (this.y || 0) + 0.9, this.z, 1);
+    g.blast(this.x, this.z, 8, this, byPlayer);
+    // Burnt shell: black and charred, lights out, it hops up and crashes down.
+    this.mesh.traverse((o) => { if (o.isMesh) { o.material = BURNT; o.castShadow = false; } });
+    this.hopT = 0;
+    if (this.onExploded) this.onExploded();
+    if (this.isPolice && byPlayer && g.rewards) g.rewards.event('POLICE CAR DESTROYED', 300, 25);
   }
 
   update(dt) {
@@ -324,8 +343,19 @@ export class Car {
       if (this.smokeT <= 0) {
         this.smokeT = this.wrecked ? 0.06 : 0.15;
         const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-        this.game.fx.smoke(this.x + fx * (this.halfL - 0.6), 1.2, this.z + fz * (this.halfL - 0.6), this.wrecked);
+        const ex = this.x + fx * (this.halfL - 0.6), ez = this.z + fz * (this.halfL - 0.6), ey = 1.2 + (this.y || 0);
+        this.game.fx.smoke(ex, ey, ez, this.wrecked);
+        if (this.wrecked && !this.exploded) this.game.fx.carFire(ex, ey - 0.3, ez);
       }
+    }
+    if (this.wrecked && !this.exploded) { this.burnT -= dt; if (this.burnT <= 0) this.explode(); }
+    if (this.hopT !== undefined && this.hopT < 1.2) {
+      this.hopT += dt;
+      const k = Math.min(1, this.hopT / 1.2);
+      this.mesh.position.y = ROAD_TOP + (this.y || 0) + Math.sin(k * Math.PI) * 1.6 * (1 - k * 0.3);
+      this.mesh.rotation.z = Math.sin(k * Math.PI) * 0.5 * (this.hopSide || (this.hopSide = Math.random() < 0.5 ? 1 : -1));
+      if (this.hopT >= 1.2) { this.mesh.position.y = ROAD_TOP + (this.y || 0); this.mesh.rotation.z = 0.08 * this.hopSide; }
+      return;
     }
     if (this.playerControlled || this.parked) return;   // the player is driving / left it parked (see driving.js)
     if (this.wrecked) { this.speed = 0; return; }
@@ -461,7 +491,7 @@ export class Car {
   }
 
   syncMesh() {
-    this.mesh.position.set(this.x, ROAD_TOP, this.z);
+    this.mesh.position.set(this.x, ROAD_TOP + (this.y || 0), this.z);
     this.mesh.rotation.y = this.yaw;
   }
 }

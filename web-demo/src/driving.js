@@ -1,10 +1,11 @@
-// Player driving, PUBG-style: steal any car (or a police SUV!) and drive.
+// Player driving: steal any car (or a police SUV!) and drive.
 // Controls (phone):
-//   JOYSTICK mode (default): push up = gas (harder = faster), pull down = brake / reverse, left-right = steer.
-//   BUTTONS mode (Settings): left/right arrows to steer, GAS and BRAKE buttons.
-//   Always: BOOST (nitro), DRIFT (handbrake), HORN, camera button, EXIT. Drag the right side to look around.
+//   BUTTONS mode (default): left/right arrows steer, the up arrow is GAS, the down arrow is BRAKE / reverse.
+//   JOYSTICK mode (Settings or the small switch button): up = gas, down = brake, left-right = steer.
+//   Always: BOOST (nitro), DRIFT (handbrake), FIRE (shoot from the window), HORN, camera, EXIT.
 // Physics: engine, brakes, reverse, tyre grip, speed-sensitive steering that centres itself,
-// anti-spin help, drifts, crashes (damage), spike strips (burst tyres), police ramming.
+// anti-spin help, drifts, kerbs, ramps and jumps, crashes, burst tyres, police ramming, cars on fire.
+// Bonus cash: drifts, near misses, stunt jumps.
 // Indian cars are right-hand drive: you get out on the right side.
 import { AmbientPerson } from './ambient.js';
 import { dist, clamp, moveTowards, pushOutOfBox } from './util.js';
@@ -14,16 +15,20 @@ const SPEC = {
   sedan: { accel: 9, top: 35, grip: 9, wheelBase: 2.7, mass: 1.1, lat: 15.5 },
   suv: { accel: 8.5, top: 33, grip: 8.5, wheelBase: 2.8, mass: 1.35, lat: 14 },
   police: { accel: 10, top: 38, grip: 9.5, wheelBase: 2.8, mass: 1.35, lat: 16 },
+  sports: { accel: 12, top: 43, grip: 10, wheelBase: 2.6, mass: 1.05, lat: 17 },
   auto: { accel: 5, top: 18, grip: 7, wheelBase: 1.9, mass: 0.6, lat: 11 },
 };
+const GRAVITY = 18;
 
 export class Driving {
   constructor(game) {
     this.game = game;
     this.car = null;
-    this.vx = 0; this.vz = 0; this.steer = 0;
+    this.vx = 0; this.vz = 0; this.vy = 0; this.steer = 0;
     this.crashCooldown = 0; this.ramCooldown = 0;
-    this.nitro = 1; this.boosting = false; this.mode = 'joystick';
+    this.nitro = 1; this.boosting = false; this.mode = 'buttons';
+    this.air = false; this.airT = 0;
+    this.driftPts = 0; this.driftT = 0; this.driftIdle = 0;
   }
 
   get speed() { return Math.hypot(this.vx, this.vz); }
@@ -33,7 +38,7 @@ export class Driving {
   nearestCar(px, pz) {
     let best = null, bd = Infinity;
     for (const c of this.game.cars) {
-      if (c.inactive) continue;
+      if (c.inactive || c.exploded || c.sinking) continue;
       if (Math.abs(c.x - px) > 8 || Math.abs(c.z - pz) > 8) continue;
       const d = dist(px, pz, c.x, c.z) - c.halfL;
       if (d < 1.6 && d < bd) { bd = d; best = c; }
@@ -49,8 +54,10 @@ export class Driving {
     car.parked = false;
     car.pursuing = false; car.hold = false; car.direct = null; car.upcoming = [];
     if (car.setLights) car.setLights(false, false);
-    this.vx = Math.sin(car.yaw) * car.speed; this.vz = Math.cos(car.yaw) * car.speed;
-    this.steer = 0;
+    this.vx = Math.sin(car.yaw) * car.speed; this.vz = Math.cos(car.yaw) * car.speed; this.vy = 0;
+    car.y = car.y || 0;
+    car.mesh.rotation.order = 'YXZ';
+    this.steer = 0; this.air = false; this.driftPts = 0;
     this.spec = SPEC[car.type] || SPEC.sedan;
     P.inCar = true; P.mesh.visible = false; P.gunMesh.visible = false;
     P.aiming = false; P.crouching = false;
@@ -71,9 +78,10 @@ export class Driving {
     if (g.mission && g.mission.onEnterCar) g.mission.onEnterCar(car);
   }
 
-  exit() {
+  exit(force = false) {
     const g = this.game, P = g.player, car = this.car;
-    if (!car) return;
+    if (!car || (this.air && !force)) return;
+    this.bankDrift();
     // Right-hand drive: try the right side first, then the left.
     for (const side of [1, -1]) {
       const rx = -Math.cos(car.yaw) * side, rz = Math.sin(car.yaw) * side;
@@ -83,12 +91,14 @@ export class Driving {
       if (dist(before.x, before.z, test.x, test.z) < 0.3 || side === -1) { P.x = test.x; P.z = test.z; break; }
     }
     P.y = g.world.groundAt(P.x, P.z);
-    P.yaw = car.yaw;
+    P.yaw = car.yaw; P.speed = 0; P.vx = P.vz = 0;
     P.inCar = false; P.mesh.visible = true;
     car.playerControlled = false; car.parked = true; car.speed = 0;
-    this.car = null; this.boosting = false;
+    car.mesh.rotation.x = 0; car.mesh.rotation.z = 0;
+    this.car = null; this.boosting = false; this.air = false;
     g.audio.engine(false);
     g.camera3p.snapBehind();
+    if (g.mission && g.mission.onExitCar) g.mission.onExitCar(car);
   }
 
   // Spike strip: tyres burst - slow and slidey from now on.
@@ -103,10 +113,12 @@ export class Driving {
   }
 
   update(dt, input) {
-    const car = this.car, g = this.game;
+    const car = this.car, g = this.game, W = g.world;
     if (!car) return;
     const s = this.spec;
     const dead = car.wrecked;
+    if (dead && !this.fireWarned) { this.fireWarned = true; g.hud.showBig('CAR ON FIRE - GET OUT!', '#ff7a2a', 2.5); }
+    if (!dead) this.fireWarned = false;
 
     // ---- Inputs ----
     let throttle = 0, brake = 0, steerIn = 0;
@@ -114,6 +126,7 @@ export class Driving {
       throttle = input.gas ? 1 : 0; brake = input.brake ? 1 : 0;
       steerIn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
       if (!steerIn) steerIn = clamp(input.move.x, -1, 1);
+      if (!throttle && !brake) { if (input.move.y > 0.3) throttle = input.move.y; if (input.move.y < -0.3) brake = -input.move.y; }
     } else {
       const y = input.move.y;
       if (y > 0.12) throttle = Math.min(1, (y - 0.12) / 0.6);
@@ -121,51 +134,51 @@ export class Driving {
       steerIn = clamp(input.move.x, -1, 1);
       if (input.gas) throttle = 1;
       if (input.brake) brake = 1;
+      if (input.left || input.right) steerIn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     }
-    if (input.left || input.right) steerIn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    if (dead) throttle = 0;
+    if (dead || car.sinking) { throttle = 0; brake = 0; }
     const hand = input.handbrake;
-    this.boosting = !dead && input.boost && this.nitro > 0.02 && throttle > 0;
-    if (this.boosting) this.nitro = Math.max(0, this.nitro - 0.28 * dt);
+    const drain = g.rewards && g.rewards.has('nitro') ? 0.14 : 0.28;
+    this.boosting = !dead && !this.air && input.boost && this.nitro > 0.02 && throttle > 0;
+    if (this.boosting) this.nitro = Math.max(0, this.nitro - drain * dt);
     else this.nitro = Math.min(1, this.nitro + 0.07 * dt);
 
     const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), rx = -fz, rz = fx;
     let vF = this.vx * fx + this.vz * fz;
     let vL = this.vx * rx + this.vz * rz;
+    let yawRate = 0;
 
-    // ---- Engine / brakes / reverse ----
-    const spikes = car.spiked ? 0.5 : 1;
-    const top = s.top * (this.boosting ? 1.3 : 1) * spikes;
-    const accel = s.accel * (this.boosting ? 1.9 : 1) * spikes;
-    if (throttle > 0) {
-      if (vF < -0.5) vF += 16 * throttle * dt;
-      else vF += accel * throttle * Math.max(0, 1 - vF / top) * dt;
+    if (!this.air) {
+      // ---- Engine / brakes / reverse ----
+      const spikes = car.spiked ? 0.5 : 1;
+      const top = s.top * (this.boosting ? 1.3 : 1) * spikes;
+      const accel = s.accel * (this.boosting ? 1.9 : 1) * spikes;
+      if (throttle > 0) {
+        if (vF < -0.5) vF += 16 * throttle * dt;
+        else vF += accel * throttle * Math.max(0, 1 - vF / top) * dt;
+      }
+      if (brake > 0) {
+        if (vF > 0.5) vF -= 18 * brake * dt;
+        else vF = Math.max(-8, vF - 6 * brake * dt);
+      }
+      vF -= vF * 0.1 * dt + Math.sign(vF) * (throttle + brake === 0 ? 1.6 : 0.3) * dt;   // rolling + air drag
+      if (Math.abs(vF) < 0.05 && throttle + brake === 0) vF = 0;
+      if (vF > top) vF = moveTowards(vF, top, 6 * dt);
+      if (hand) vF = moveTowards(vF, 0, 5 * dt);
+
+      // ---- Steering: less wheel angle at speed; centres itself fast when you let go ----
+      const maxSteer = 0.6 / (1 + Math.abs(vF) / 16);
+      const centring = steerIn === 0 || Math.sign(steerIn) !== Math.sign(this.steer);
+      this.steer = moveTowards(this.steer, steerIn * maxSteer, (centring ? 6 : 3.4) * dt);
+      yawRate = (vF / s.wheelBase) * Math.tan(this.steer);
+      // Tyres only grip so much: limit the turn at high speed (no spinning out), more with the handbrake.
+      const latMax = (hand ? s.lat * 1.6 : s.lat) * (car.spiked ? 0.6 : 1);
+      const maxRate = latMax / Math.max(4, Math.abs(vF));
+      yawRate = clamp(yawRate, -maxRate, maxRate) * (hand ? 1.35 : 1);
+      car.yaw += yawRate * dt;
+      // Grip kills sideways sliding; the handbrake lets the back slide (drift).
+      vL *= Math.exp(-(hand ? 1.4 : s.grip * (car.spiked ? 0.55 : 1)) * dt);
     }
-    if (brake > 0) {
-      if (vF > 0.5) vF -= 18 * brake * dt;
-      else vF = Math.max(-8, vF - 6 * brake * dt);
-    }
-    // Rolling resistance + air drag.
-    vF -= vF * 0.1 * dt + Math.sign(vF) * (throttle + brake === 0 ? 1.6 : 0.3) * dt;
-    if (Math.abs(vF) < 0.05 && throttle + brake === 0) vF = 0;
-    if (vF > top) vF = moveTowards(vF, top, 6 * dt);
-    if (hand) vF = moveTowards(vF, 0, 5 * dt);
-
-    // ---- Steering ----
-    // Less wheel angle at speed; the wheel centres itself fast when you let go.
-    const maxSteer = 0.6 / (1 + Math.abs(vF) / 16);
-    const wantSteer = steerIn * maxSteer;
-    const centring = steerIn === 0 || Math.sign(steerIn) !== Math.sign(this.steer);
-    this.steer = moveTowards(this.steer, wantSteer, (centring ? 6 : 3.4) * dt);
-    let yawRate = (vF / s.wheelBase) * Math.tan(this.steer);
-    // Tyres can only grip so much: limit the turn at high speed (no spinning out), more with the handbrake.
-    const latMax = (hand ? s.lat * 1.6 : s.lat) * (car.spiked ? 0.6 : 1);
-    const maxRate = latMax / Math.max(4, Math.abs(vF));
-    yawRate = clamp(yawRate, -maxRate, maxRate) * (hand ? 1.35 : 1);
-    car.yaw += yawRate * dt;
-
-    // Tyre grip kills sideways sliding; the handbrake lets the back slide (drift).
-    vL *= Math.exp(-(hand ? 1.4 : s.grip * (car.spiked ? 0.55 : 1)) * dt);
 
     const nfx = Math.sin(car.yaw), nfz = Math.cos(car.yaw), nrx = -nfz, nrz = nfx;
     this.vx = nfx * vF + nrx * vL;
@@ -174,9 +187,13 @@ export class Driving {
     car.z += this.vz * dt;
     car.speed = Math.abs(vF);
 
+    this.vertical(dt, vF);
     this.collide(dt);
+    this.scoring(dt, vF, vL);
     car.syncMesh();
-    car.mesh.rotation.z = -vL * 0.012 - yawRate * Math.abs(vF) * 0.0025;   // body roll in turns and slides
+    // Body: pitch with the jump, roll in turns and slides.
+    car.mesh.rotation.x = this.air ? -Math.atan2(this.vy, Math.max(4, Math.abs(vF))) * 0.6 : car.mesh.rotation.x * 0.8;
+    car.mesh.rotation.z = -vL * 0.012 - yawRate * Math.abs(vF) * 0.0025;
 
     // Nitro flames, sparks from burst tyres.
     if (this.boosting || car.spiked) {
@@ -184,8 +201,8 @@ export class Driving {
       if (this.fxT <= 0) {
         this.fxT = 0.03;
         const bx = car.x - nfx * (car.halfL + 0.1), bz = car.z - nfz * (car.halfL + 0.1);
-        if (this.boosting) g.fx.flame(bx, 0.45, bz, -nfx, -nfz);
-        if (car.spiked && Math.abs(vF) > 3) g.fx.tyreSparks(car.x + nfx * car.halfL * 0.6 + nrx * car.halfW, 0.2, car.z + nfz * car.halfL * 0.6 + nrz * car.halfW);
+        if (this.boosting) g.fx.flame(bx, 0.45 + car.y, bz, -nfx, -nfz);
+        if (car.spiked && Math.abs(vF) > 3) g.fx.tyreSparks(car.x + nfx * car.halfL * 0.6 + nrx * car.halfW, 0.2 + car.y, car.z + nfz * car.halfL * 0.6 + nrz * car.halfW);
       }
     }
 
@@ -195,19 +212,79 @@ export class Driving {
     if (input.horn) g.audio.horn(1);
   }
 
+  // Kerbs, ramps, jumps, landing; water at the beach.
+  vertical(dt, vF) {
+    const g = this.game, W = g.world, car = this.car;
+    const rampH = W.rampAt(car.x, car.z);
+    const ground = Math.max(W.groundAt(car.x, car.z), rampH);
+    if (this.air) {
+      this.vy -= GRAVITY * dt; car.y += this.vy * dt; this.airT += dt;
+      if (car.y <= ground) {
+        const impact = -this.vy;
+        car.y = ground; this.vy = 0; this.air = false;
+        if (impact > 6) {
+          g.camera3p.shake(Math.min(1, impact / 14)); g.audio.crash(Math.min(1, impact / 18));
+          if (impact > 11) car.takeDamage((impact - 11) * 3);
+        }
+        if (this.airT > 0.55 && g.rewards) g.rewards.stunt(this.airT, dist(this.jumpX, this.jumpZ, car.x, car.z));
+      }
+    } else if (rampH > 0 && rampH >= car.y - 0.3) {
+      this.vy = (rampH - car.y) / Math.max(dt, 1e-3);   // climbing the ramp
+      car.y = rampH;
+    } else if (car.y > ground + 0.35) {
+      // Flew off the top of a ramp.
+      this.air = true; this.airT = 0; this.jumpX = car.x; this.jumpZ = car.z;
+      this.vy = Math.min(this.vy, 9);
+      if (Math.abs(vF) > 14) { g.slowmo(0.9, 0.4); g.music.whoosh(); }
+    } else { car.y = ground; this.vy = 0; }
+    // Into the sea: the car sinks, you wade out.
+    if (!this.air && ground < -0.5 && !car.sinking) {
+      car.sinking = true; car.takeDamage(999);
+      g.hud.showBig('SPLASH!', '#6fd3ff', 2);
+      g.fx.splash(car.x, -0.5, car.z);
+      setTimeout(() => { if (this.car === car) { this.exit(true); g.player.z = Math.max(g.player.z, -246); g.player.y = W.groundAt(g.player.x, g.player.z); } }, 700);
+    }
+    if (car.sinking) car.y = Math.max(-1.6, car.y - dt * 0.6);
+  }
+
+  // Bonus cash for style: drifts and near misses.
+  scoring(dt, vF, vL) {
+    const g = this.game;
+    if (!g.rewards) return;
+    const slide = Math.abs(vL), sp = Math.abs(vF);
+    if (!this.air && slide > 2.4 && sp > 7 && !this.car.wrecked) {
+      this.driftT += dt; this.driftIdle = 0;
+      this.driftMult = Math.min(5, 1 + Math.floor(this.driftT / 1.5));
+      this.driftPts += slide * sp * dt * 2 * this.driftMult;
+      g.hud.setDrift(this.driftPts, this.driftMult);
+    } else if (this.driftPts > 0) {
+      this.driftIdle += dt;
+      if (this.driftIdle > 0.45) this.bankDrift();
+    }
+  }
+
+  bankDrift() {
+    const g = this.game;
+    if (this.driftPts > 60 && g.rewards) g.rewards.drift(this.driftPts);
+    this.driftPts = 0; this.driftT = 0; this.driftIdle = 0;
+    g.hud.setDrift(0);
+  }
+
   // Walls, other cars, people.
   collide(dt) {
     const g = this.game, car = this.car;
-    const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
+    const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), rx = -fz, rz = fx;
     const r = car.halfW + 0.05;
     let pushX = 0, pushZ = 0;
+    const sp = this.speed;
     for (const k of [-0.62, 0, 0.62]) {
       const c = { x: car.x + fx * car.halfL * k, z: car.z + fz * car.halfL * k };
       const bx = c.x, bz = c.z;
-      g.world.resolveCircle(c, r);
+      g.world.resolveCircle(c, r, car.y);
       for (const o of g.cars) {
         if (o === car || o.inactive) continue;
         if (Math.abs(c.x - o.x) > 6 || Math.abs(c.z - o.z) > 6) continue;
+        if (car.y > 1.6) continue;   // flying over it
         const ox = c.x, oz = c.z;
         if (pushOutOfBox(c, r, o.x, o.z, o.yaw, o.halfL, o.halfW)) {
           // Shove the other car a little and stop it.
@@ -221,10 +298,26 @@ export class Driving {
             g.audio.crash(0.7); g.camera3p.shake(0.7);
             o.speed *= 0.3;
           } else o.speed = 0;
-          if (this.speed > 6) o.takeDamage(this.speed * 1.5);
+          if (sp > 6) o.takeDamage(sp * 1.5, true);
+          this.nearOK = false;
+          if (this.driftPts > 0) { this.driftPts = 0; this.driftT = 0; g.hud.setDrift(0); g.hud.popup('DRIFT LOST', 'bad'); }
         }
       }
       pushX += c.x - bx; pushZ += c.z - bz;
+    }
+    // Near misses: flash past another car at speed without touching it.
+    if (sp > 15 && g.rewards && !this.air) {
+      for (const o of g.cars) {
+        if (o === car || o.inactive || o.parked || o.wrecked) continue;
+        const dx = o.x - car.x, dz = o.z - car.z;
+        if (Math.abs(dx) > 7 || Math.abs(dz) > 7) continue;
+        const along = dx * fx + dz * fz, lat = Math.abs(dx * rx + dz * rz);
+        const gap = lat - car.halfW - o.halfW;
+        if (Math.abs(along) < car.halfL * 0.6 && gap > 0.05 && gap < 1.0 && g.time - (o.nearT || -9) > 3) {
+          o.nearT = g.time;
+          g.rewards.nearMiss();
+        }
+      }
     }
     const pl = Math.hypot(pushX, pushZ);
     if (pl > 0.0001) {
@@ -240,11 +333,12 @@ export class Driving {
           g.audio.crash(Math.min(1, -vn / 15));
           g.camera3p.shake(Math.min(1, -vn / 12));
           this.crashCooldown = 0.4;
+          if (this.driftPts > 0) { this.driftPts = 0; this.driftT = 0; g.hud.setDrift(0); g.hud.popup('DRIFT LOST', 'bad'); }
         }
       }
     }
     // People in the way: they dive aside if they can; at speed, they get hit.
-    const sp = this.speed;
+    if (car.y > 1.4) return;
     for (const h of g.humans()) {
       if (h.dead || h.isRavi) continue;
       if (Math.abs(h.x - car.x) > car.halfL + 12 || Math.abs(h.z - car.z) > car.halfL + 12) continue;
@@ -253,7 +347,7 @@ export class Driving {
       if (lat < car.halfW + 0.3 && Math.abs(along) < car.halfL + 0.3) {
         if (sp > 4) {
           h.takeDamage(sp * 6, true, car.x, car.z);
-          if (h.dead) g.dispatch.crime(h.isOfficer ? 'kill_cop' : 'run_over', h.x, h.z);
+          if (h.dead) g.dispatch.crime(h.isOfficer && !h.gang ? 'kill_cop' : 'run_over', h.x, h.z);
           this.vx *= 0.9; this.vz *= 0.9;
         } else {
           pushOutOfBox(h, 0.3, car.x, car.z, car.yaw, car.halfL, car.halfW);

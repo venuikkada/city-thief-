@@ -444,7 +444,7 @@ export class Officer {
       }
       if (this.forceHostile && !D.active) { gx = P.x; gz = P.z; }
       const dd = dist(this.x, this.z, gx, gz);
-      speed = dd < 1 ? 0 : D.sinceSeen < 4 ? (D.stars === 1 && dP < 30 ? 6.3 : 5.4) : 2.4;
+      speed = dd < 1 ? 0 : (D.sinceSeen < 4 || this.gang) ? (dP < 25 ? 5.5 : 4.4) : 2.2;
       // Arrest at 1 star: grab the player when he is slow (walking, aiming, stopped car).
       const pSpeed = P.inCar ? g.driving.speed : Math.hypot(P.vx, P.vz);
       const reach = P.inCar ? g.driving.car.halfL + 1.5 : 1.7;

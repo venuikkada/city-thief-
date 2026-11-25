@@ -6,21 +6,39 @@ import { part, mergeParts, BOX } from './mesh.js';
 export const WEAPONS = {
   pistol: { id: 'pistol', name: 'PISTOL', mag: 12, damage: 34, rate: 0.22, spread: 0.008, auto: false, reload: 1.3, range: 140, muzzle: 0.16 },
   smg: { id: 'smg', name: 'SMG', mag: 30, damage: 20, rate: 0.085, spread: 0.022, auto: true, reload: 1.8, range: 120, muzzle: 0.38 },
+  shotgun: { id: 'shotgun', name: 'SHOTGUN', mag: 6, damage: 24, pellets: 7, rate: 0.75, spread: 0.055, auto: false, reload: 2.2, range: 40, muzzle: 0.55 },
+  rifle: { id: 'rifle', name: 'RIFLE', mag: 25, damage: 46, rate: 0.13, spread: 0.009, auto: true, reload: 2.0, range: 190, muzzle: 0.6 },
+  gold: { id: 'gold', name: 'GOLDEN PISTOL', mag: 12, damage: 75, rate: 0.2, spread: 0.006, auto: false, reload: 1.1, range: 160, muzzle: 0.16 },
 };
+export const WEAPON_ORDER = ['pistol', 'gold', 'smg', 'shotgun', 'rifle'];
 
 const gunGeo = {};
 const gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.7, roughness: 0.35 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xffc94a, metalness: 1, roughness: 0.25 });
 
 // Gun model: points along +Z, grip at the origin.
 export function makeGun(id) {
   if (!gunGeo[id]) {
     const dark = 0x1c1d20, mid = 0x3a3c41;
     const p = [];
-    if (id === 'pistol') {
+    if (id === 'pistol' || id === 'gold') {
       p.push(part(BOX, mid, 0, 0.045, 0.06, 0.034, 0.034, 0.2));     // slide
       p.push(part(BOX, dark, 0, 0.018, 0.05, 0.03, 0.024, 0.16));    // frame
       p.push(part(BOX, dark, 0, -0.035, -0.005, 0.03, 0.1, 0.046, 0.28, 0, 0));   // grip
       p.push(part(BOX, dark, 0, 0.0, 0.045, 0.008, 0.03, 0.05));     // trigger guard
+    } else if (id === 'shotgun') {
+      p.push(part(BOX, 0x5a3a22, 0, 0.03, -0.2, 0.045, 0.08, 0.32));   // wooden stock
+      p.push(part(BOX, dark, 0, 0.05, 0.1, 0.05, 0.07, 0.3));          // receiver
+      p.push(part(BOX, mid, 0, 0.07, 0.45, 0.03, 0.03, 0.5));          // barrel
+      p.push(part(BOX, 0x5a3a22, 0, 0.035, 0.38, 0.045, 0.04, 0.18));  // pump
+      p.push(part(BOX, dark, 0, -0.03, 0.02, 0.03, 0.08, 0.04, 0.3, 0, 0));
+    } else if (id === 'rifle') {
+      p.push(part(BOX, mid, 0, 0.04, 0.12, 0.05, 0.08, 0.42));         // body
+      p.push(part(BOX, dark, 0, 0.055, 0.5, 0.022, 0.022, 0.36));      // barrel
+      p.push(part(BOX, dark, 0, -0.07, 0.18, 0.035, 0.18, 0.06, 0.25, 0, 0));   // curved magazine
+      p.push(part(BOX, dark, 0, 0.03, -0.24, 0.035, 0.09, 0.26));      // stock
+      p.push(part(BOX, dark, 0, 0.12, 0.1, 0.03, 0.04, 0.16));         // scope
+      p.push(part(BOX, dark, 0, -0.03, 0.0, 0.03, 0.09, 0.04, 0.3, 0, 0));
     } else {
       p.push(part(BOX, mid, 0, 0.04, 0.1, 0.05, 0.07, 0.34));        // body
       p.push(part(BOX, dark, 0, 0.05, 0.32, 0.022, 0.022, 0.12));    // barrel
@@ -31,7 +49,7 @@ export function makeGun(id) {
     }
     gunGeo[id] = mergeParts(p);
   }
-  const m = new THREE.Mesh(gunGeo[id], gunMat);
+  const m = new THREE.Mesh(gunGeo[id], id === 'gold' ? goldMat : gunMat);
   m.castShadow = false;
   return m;
 }
@@ -105,6 +123,15 @@ export class Effects {
     this.sparks = new ParticlePool(scene, 240, 0.12, true, spark);
     this.puffs = new ParticlePool(scene, 200, 0.45, false, puff);
     this.glows = new ParticlePool(scene, 90, 0.38, true, spark);   // nitro flames
+    const fireTex = glowTexture('rgba(255,240,200,1)', 'rgba(255,120,30,0.85)');
+    this.fire = new ParticlePool(scene, 220, 1.7, true, fireTex);     // fireballs, burning cars
+    this.smokeBig = new ParticlePool(scene, 140, 3.2, false, puff);    // explosion smoke
+    // Explosion flash ball + ground shock ring (reused).
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    this.ball.visible = this.ring.visible = false;
+    scene.add(this.ball, this.ring);
+    this.boomT = 9;
 
     // Tracers: short bright lines that fade fast.
     this.maxTracers = 24;
@@ -184,6 +211,35 @@ export class Effects {
     }
   }
 
+  // BOOM: fireball, flash, shock ring, smoke column, sparks.
+  explosion(x, y, z, size = 1) {
+    for (let k = 0; k < 34 * size; k++) {
+      const a = Math.random() * Math.PI * 2, e = Math.random() * 1.2, sp = 3 + Math.random() * 6;
+      this.fire.emit(x, y, z, Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp + 2, Math.sin(a) * Math.cos(e) * sp,
+        2.2, 1.1 + Math.random() * 0.4, 0.3, 0.5 + Math.random() * 0.5, 3);
+    }
+    for (let k = 0; k < 18 * size; k++) {
+      this.smokeBig.emit(x + (Math.random() - 0.5) * 2, y + Math.random(), z + (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2.5, 2 + Math.random() * 2.5, (Math.random() - 0.5) * 2.5, 0.16, 0.15, 0.14, 2.2 + Math.random() * 1.5, 0.4);
+    }
+    for (let k = 0; k < 30; k++) {
+      this.sparks.emit(x, y, z, (Math.random() - 0.5) * 18, Math.random() * 12, (Math.random() - 0.5) * 18, 2.5, 1.6, 0.6, 0.5 + Math.random() * 0.6);
+    }
+    this.ball.position.set(x, y, z); this.ring.position.set(x, 0.12, z);
+    this.ball.visible = this.ring.visible = true; this.boomT = 0; this.boomSize = size;
+    if (this.light) { this.light.position.set(x, y + 1, z); this.light.intensity = 500; this.light.distance = 45; this.lightLife = 0.35; }
+  }
+
+  // Flames on a burning car.
+  carFire(x, y, z) {
+    for (let k = 0; k < 2; k++) this.fire.emit(x + (Math.random() - 0.5) * 0.8, y, z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.6, 1.5 + Math.random(), (Math.random() - 0.5) * 0.6, 1.8, 0.8, 0.25, 0.45 + Math.random() * 0.3, 1);
+  }
+
+  // Car into the sea.
+  splash(x, y, z) {
+    for (let k = 0; k < 40; k++) this.puffs.emit(x + (Math.random() - 0.5) * 3, y, z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 4, 4 + Math.random() * 4, (Math.random() - 0.5) * 4, 0.85, 0.92, 1, 0.9 + Math.random() * 0.5, -9);
+  }
+
   // Nitro flame out of the exhaust; (dx, dz) = backwards.
   flame(x, y, z, dx, dz) {
     for (let k = 0; k < 2; k++) {
@@ -210,6 +266,15 @@ export class Effects {
     this.sparks.update(dt);
     this.puffs.update(dt);
     this.glows.update(dt);
+    this.fire.update(dt);
+    this.smokeBig.update(dt);
+    if (this.boomT < 0.7) {
+      this.boomT += dt;
+      const k = this.boomT / 0.7, s = this.boomSize;
+      this.ball.scale.setScalar((1.5 + k * 5) * s); this.ball.material.opacity = Math.max(0, 1 - k * 1.6);
+      this.ring.scale.setScalar((1 + k * 14) * s); this.ring.material.opacity = Math.max(0, 0.9 - k);
+      if (this.boomT >= 0.7) this.ball.visible = this.ring.visible = false;
+    }
     let tracerChanged = false;
     for (let i = 0; i < this.maxTracers; i++) {
       if (this.tracerLife[i] <= 0) continue;
@@ -231,7 +296,7 @@ export class Effects {
     }
     if (this.light && this.lightLife > 0) {
       this.lightLife -= dt;
-      if (this.lightLife <= 0) this.light.intensity = 0;
+      if (this.lightLife <= 0) { this.light.intensity = 0; this.light.distance = 9; }
     }
   }
 }

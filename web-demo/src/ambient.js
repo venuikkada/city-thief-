@@ -55,7 +55,7 @@ export class AmbientPerson {
     if (this.state === 'flee') {
       const away = yawOf(this.x - this.dangerX, this.z - this.dangerZ) + Math.sin(g.time * 1.3 + this.x) * 0.5;
       this.yaw = rotateTowards(this.yaw, away, 7 * dt);
-      speed = 4.3;
+      speed = 3.9;
       this.fleeT -= dt;
       if (this.fleeT <= 0) { this.state = 'cower'; this.cowerT = 5 + Math.random() * 4; }
     } else if (this.state === 'cower') {

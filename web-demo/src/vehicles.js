@@ -12,12 +12,15 @@ const CAR_SHAPES = {
   suv:       { l: 4.6, w: 1.88, gc: 0.4, belt: 1.15, roof: 1.82, hood: 1.0, trunk: 0.22, rakeF: 0.45, rakeR: 0.1, wheel: 0.38, inset: 0.8 },
 };
 CAR_SHAPES.police = CAR_SHAPES.suv;
+// Low two-door sports coupe (street races).
+CAR_SHAPES.sports = { l: 4.4, w: 1.88, gc: 0.2, belt: 0.74, roof: 1.18, hood: 1.45, trunk: 0.75, rakeF: 0.75, rakeR: 0.55, wheel: 0.33, inset: 0.78 };
 
 export const VEHICLE_SIZE = {
   hatchback: { l: 3.8, w: 1.68 },
   sedan: { l: 4.5, w: 1.76 },
   suv: { l: 4.6, w: 1.88 },
   police: { l: 4.6, w: 1.88 },
+  sports: { l: 4.4, w: 1.88 },
   auto: { l: 2.7, w: 1.35 },
 };
 
@@ -81,6 +84,12 @@ function carGeometry(type) {
     const x = sx * (s.w / 2 - 0.12), z = sz * (hl - s.inset);
     detail.push(part(TYRE, 0x101010, x, s.wheel, z, s.wheel, 1, s.wheel, 0, 0, Math.PI / 2));
     detail.push(part(RIM, 0xb8bcc2, x + sx * 0.01, s.wheel, z, s.wheel, 1, s.wheel, 0, 0, Math.PI / 2));
+  }
+
+  if (type === 'sports') {
+    detail.push(part(BOX, 0x151515, 0, s.belt + 0.16, -hl + 0.18, s.w * 0.86, 0.04, 0.3));                 // rear wing
+    for (const sx of [-1, 1]) detail.push(part(BOX, 0x151515, sx * s.w * 0.3, s.belt + 0.07, -hl + 0.2, 0.05, 0.16, 0.08));
+    detail.push(part(BOX, 0x151515, 0, s.gc + 0.04, hl + 0.05, s.w * 0.9, 0.04, 0.18));                    // front splitter
   }
 
   // Lights.
