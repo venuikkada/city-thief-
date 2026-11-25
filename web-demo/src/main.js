@@ -22,6 +22,21 @@ import { Music } from './music.js';
 import { Rewards, RANKS, SHOP, DAILY, rankOf, rankProgress } from './rewards.js';
 import { WEAPONS } from './weapons.js';
 import { makeSky } from './sky.js';
+import { Atmosphere } from './atmosphere.js';
+import { LayoutEditor, applyLayout } from './layout.js';
+
+// Cinematic colour grade, done inside the normal tone mapping (no extra screen pass, cheap on phones):
+// filmic curve + a little more colour and contrast + teal shadows and warm highlights.
+THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+  'vec3 CustomToneMapping( vec3 color ) { return color; }',
+  `vec3 CustomToneMapping( vec3 color ) {
+    vec3 c = ACESFilmicToneMapping( color );
+    float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+    c = mix( vec3( l ), c, 1.1 );
+    c = ( c - 0.5 ) * 1.05 + 0.5;
+    c += vec3( -0.004, 0.0, 0.008 ) * ( 1.0 - l ) * l * 4.0 + vec3( 0.018, 0.006, -0.012 ) * l * l;
+    return clamp( c, 0.0, 1.0 );
+  }`);
 import { dist, yawOf } from './util.js';
 
 // ---------- Settings + quality ----------
@@ -68,7 +83,7 @@ class Game {
     this.renderer = new THREE.WebGLRenderer({ antialias: quality === 'high', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, { low: 1, medium: 1.5, high: 2 }[quality]));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMapping = THREE.CustomToneMapping;
     this.renderer.toneMappingExposure = 0.9;
     this.renderer.shadowMap.enabled = this.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -86,7 +101,8 @@ class Game {
     sc.left = -45; sc.right = 45; sc.top = 45; sc.bottom = -45; sc.near = 1; sc.far = 220;
     this.sun.shadow.bias = -0.0004; this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
-    this.scene.add(new THREE.HemisphereLight(0xffe4c4, 0x4a4036, 0.6));
+    this.hemi = new THREE.HemisphereLight(0xffe4c4, 0x4a4036, 0.6);
+    this.scene.add(this.hemi);
 
     if (quality === 'high') {
       this.composer = new EffectComposer(this.renderer);
@@ -116,6 +132,7 @@ class Game {
     this.network = buildNetwork(this.world, this.scene);
     this.world.finishStatic();
     this.world.buildSea(seaTex);
+    this.atmo = new Atmosphere(this, this.skyDome);
     this.nav = new NavGrid(this.world, -282, -300, 282, 282);
     this.pedLoops = buildLoops();
     this.waypoint = null;
@@ -169,6 +186,8 @@ class Game {
     this.scene.add(this.markerMesh);
 
     this.applySettings();
+    applyLayout();
+    this.layoutEditor = new LayoutEditor(this);
     this.clock = new THREE.Clock();
     this.loop = this.loop.bind(this);
     this.mode = 'menu';
@@ -325,6 +344,24 @@ class Game {
 
   onRankUp(i, rank) { this.hud.rankUp(rank); this.music.rankUp(); }
 
+  // Game events (kills, stunts, explosions...) for the live stream and missions.
+  emit(type, data) {
+    if (this.mission && this.mission.onEvent) this.mission.onEvent(type, data);
+    if (this.live) this.live.event(type, data);
+  }
+
+  // Holi: throw a packet of gulal a few metres ahead (or drop it behind the car).
+  throwColor() {
+    const P = this.player, car = this.driving.car;
+    if (!this.holi || this.colorBombs <= 0) return;
+    this.colorBombs--;
+    const yaw = car ? car.yaw + Math.PI : P.yaw, d = car ? car.halfL + 2.5 : 5;
+    const x = (car ? car.x : P.x) + Math.sin(yaw) * d, z = (car ? car.z : P.z) + Math.cos(yaw) * d;
+    this.holi.burst(x, z, 6, 10);
+    this.audio.burst(0.35, 900, 300, 0.4);
+    this.emit('color');
+  }
+
   // Rank perks and shop items: max health, armour, guns you own.
   applyPerks() {
     const P = this.player, r = this.rewards.rank;
@@ -451,8 +488,8 @@ class Game {
   }
 
   startFreeRoam() {
-    this.mission = null;
     this.resetCity();
+    this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
     this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, drive to the beach. Tap the map to set a waypoint. CALL COPS for a chase.');
     this.pickups.spawn('smg', 41, 41);
@@ -465,6 +502,7 @@ class Game {
     const def = MISSIONS.find((m) => m.id === id);
     if (!def) { this.goMenu(); return; }
     this.resetCity();
+    this.atmo.set(def.atmo || 'day', true);
     this.mission = new MissionRunner(this, def);
     this.hud.setMission(`MISSION ${def.id} · ${def.title.toUpperCase()}`, '');
     this.mission.start();
@@ -544,6 +582,7 @@ class Game {
     this.showScreen('menu');
     this.audio.engine(false);
     this.music.setLevel(0);
+    this.atmo.set('night', true);   // the menu flies over the neon seafront at night
     if (!this.dailyChecked) { this.dailyChecked = true; setTimeout(showDaily, 600); }
   }
 
@@ -553,6 +592,8 @@ class Game {
     this.controls.enabled = false; this.controls.releaseAll();
     document.exitPointerLock?.();
     document.getElementById('btn-restart').classList.toggle('hidden', !this.mission);
+    document.getElementById('time-row').classList.toggle('hidden', !!this.mission);
+    for (const x of document.querySelectorAll('[data-time]')) x.classList.toggle('on', x.dataset.time === (settings.time || 'day'));
     this.showScreen('pause-screen');
     this.audio.setMuted(true);
   }
@@ -647,7 +688,16 @@ class Game {
     this.recycleT = (this.recycleT || 0) - dt;
     if (this.recycleT <= 0) { this.recycleT = 0.5; this.recycle(); }
     this.fx.update(dt);
-    if (this.markerMesh.visible) this.markerMesh.children[1].scale.setScalar(1 + Math.sin(this.time * 4) * 0.08);
+    this.atmo.update(dt);
+    if (this.live) this.live.update(dt);
+    if (this.holi) this.holi.update(dt);
+    if (this.markerMesh.visible) {
+      const mk = this.markerMesh, cam = this.camera.position;
+      mk.children[1].scale.setScalar(1 + Math.sin(this.time * 4) * 0.08);
+      // Fade the tall beam when the camera is inside or close to it (no yellow wall in your face).
+      const d = Math.hypot(cam.x - mk.position.x, cam.z - mk.position.z);
+      mk.children[0].material.opacity = 0.22 * Math.min(1, Math.max(0, (d - mk.scale.x) / 6));
+    }
   }
 
   loop() {
@@ -668,7 +718,7 @@ class Game {
       this.render();
       return;
     }
-    if (this.mode === 'paused' || this.mode === 'map') { this.render(); return; }
+    if (this.mode === 'paused' || this.mode === 'map' || this.mode === 'layout') { this.render(); return; }
 
     this.time += dt;
     const P = this.player;
@@ -700,6 +750,15 @@ class Game {
       }
     }
     if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
+    if (input.colorPressed) this.throwColor();
+    // Mission-only buttons (only touch the page when something changed).
+    const extra = `${this.holi && this.colorBombs > 0 ? this.colorBombs : 0}|${this.rhythm ? 1 : 0}`;
+    if (extra !== this.extraBtns) {
+      this.extraBtns = extra;
+      document.getElementById('btn-color').classList.toggle('hidden', !(this.holi && this.colorBombs > 0));
+      document.getElementById('color-count').textContent = this.colorBombs || 0;
+      document.getElementById('btn-dance').classList.toggle('hidden', !this.rhythm);
+    }
     if (input.drivemodePressed) {
       settings.drive = this.driving.mode === 'buttons' ? 'joystick' : 'buttons';
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* fine */ }
@@ -753,11 +812,12 @@ function renderMissionList() {
     const h = document.createElement('div');
     h.className = 'chapter' + (ch.soon ? ' soon' : '');
     const total = ch.soon ? 0 : MISSIONS.filter((m) => m.id >= ch.from && m.id <= ch.to).reduce((a, m) => a + (game.save.stars[m.id] || 0), 0);
-    h.innerHTML = `<b>CHAPTER ${ch.id}</b> ${ch.title}${ch.soon ? ' <span class="tag">COMING SOON</span>' : ` <span class="tag">&#9733; ${total} / 30</span>`}${ch.teaser ? `<div class="teaser">${ch.teaser}</div>` : ''}`;
+    const count = ch.soon ? 0 : ch.to - ch.from + 1;
+    h.innerHTML = `<b>CHAPTER ${ch.id}</b> ${ch.title}${ch.isNew ? ' <span class="new">NEW</span>' : ''}${ch.soon ? ' <span class="tag">COMING SOON</span>' : ` <span class="tag">&#9733; ${total} / ${count * 3}</span>`}${ch.teaser ? `<div class="teaser">${ch.teaser}</div>` : ''}`;
     list.appendChild(h);
     if (ch.soon) continue;
     for (const m of MISSIONS.filter((x) => x.id >= ch.from && x.id <= ch.to)) {
-      const locked = m.id > game.save.unlocked;
+      const locked = m.id >= 21 ? !(m.id === 21 || (game.save.stars[m.id - 1] || 0) > 0) : m.id > game.save.unlocked;
       const st = game.save.stars[m.id] || 0;
       const card = document.createElement('div');
       card.className = 'mcard' + (locked ? ' locked' : '');
@@ -876,6 +936,8 @@ function saveSettings() {
 }
 for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive', 'set-music']) $(id).addEventListener('change', saveSettings);
 $('btn-shop').addEventListener('click', () => { renderShop(); game.showScreen('shop-screen'); });
+$('btn-layout').addEventListener('click', () => game.layoutEditor.open(settingsReturn === 'pause' ? 'pause' : 'settings'));
+$('btn-pause-layout').addEventListener('click', () => game.layoutEditor.open('pause'));
 $('set-gfx').addEventListener('change', saveSettings);
 
 $('btn-story').addEventListener('click', () => { renderMissionList(); game.showScreen('missions-screen'); });
@@ -895,6 +957,14 @@ document.addEventListener('keydown', (e) => {
 $('btn-resume').addEventListener('click', () => { game.showScreen(null); game.mode = 'play'; game.controls.enabled = true; game.clock.getDelta(); game.audio.setMuted(!settings.sound); game.controls.lockMouse(); });
 $('btn-restart').addEventListener('click', () => { if (game.mission) game.startMission(game.mission.def.id); });
 $('btn-pause-settings').addEventListener('click', () => openSettings('pause'));
+for (const b of document.querySelectorAll('[data-time]')) {
+  b.addEventListener('click', () => {
+    settings.time = b.dataset.time;
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* fine */ }
+    game.atmo.set(settings.time);
+    for (const x of document.querySelectorAll('[data-time]')) x.classList.toggle('on', x === b);
+  });
+}
 $('btn-quit').addEventListener('click', () => game.goMenu());
 $('btn-next').addEventListener('click', () => game.startMission(game.lastDef.id + 1));
 $('btn-retry').addEventListener('click', () => game.startMission(game.lastDef.id));

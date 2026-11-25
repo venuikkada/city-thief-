@@ -235,6 +235,11 @@ export class Effects {
     for (let k = 0; k < 2; k++) this.fire.emit(x + (Math.random() - 0.5) * 0.8, y, z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.6, 1.5 + Math.random(), (Math.random() - 0.5) * 0.6, 1.8, 0.8, 0.25, 0.45 + Math.random() * 0.3, 1);
   }
 
+  // White water behind a speedboat.
+  wake(x, y, z) {
+    for (let k = 0; k < 3; k++) this.puffs.emit(x + (Math.random() - 0.5) * 1.2, y + 0.1, z + (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 2, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 2, 0.9, 0.95, 1, 0.6 + Math.random() * 0.3, -6);
+  }
+
   // Car into the sea.
   splash(x, y, z) {
     for (let k = 0; k < 40; k++) this.puffs.emit(x + (Math.random() - 0.5) * 3, y, z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 4, 4 + Math.random() * 4, (Math.random() - 0.5) * 4, 0.85, 0.92, 1, 0.9 + Math.random() * 0.5, -9);

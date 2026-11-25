@@ -76,6 +76,7 @@ export class Music {
   }
 
   play(s, t) {
+    if (this.quiet) return;   // another drum (the baraat) is playing
     const L = this.level;
     // Tabla always (quieter in big fights where the drums take over).
     const tb = TABLA[s];

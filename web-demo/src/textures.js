@@ -329,3 +329,26 @@ export function neonAtlas() {
   const t = toTexture(c, false, 4);
   return { texture: t, rects };
 }
+
+// ---------------------------------------------------------------------------
+// Window masks (white = glass) for the same tiles: windows reflect the sky by day and light up at night.
+// ---------------------------------------------------------------------------
+function maskCanvas(w, h) { const [c, g] = canvas(w, h); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; return [c, g]; }
+export function facadeMask(i) {
+  const s = FACADE_STYLES[i], [c, g] = maskCanvas(128, 136);
+  if (s.office) { g.fillRect(6, 10, 116, 108); g.fillStyle = '#000'; g.fillRect(62, 10, 4, 108); }
+  else { g.fillRect(35, 27, 58, 68); g.fillStyle = '#000'; g.fillRect(62, 27, 4, 68); g.fillRect(35, 58, 58, 3); }
+  return c;
+}
+export function decoMask() {
+  const [c, g] = maskCanvas(128, 136);
+  const x = 26, y = 22, w = 76, h = 74, r = 14;
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.fill();
+  g.fillStyle = '#000'; g.fillRect(24, 96, 80, 12);
+  return c;
+}
+export function glassMask() {
+  const [c, g] = maskCanvas(128, 154);
+  g.fillStyle = '#000'; g.fillRect(0, 0, 128, 5); g.fillRect(0, 146, 128, 8); g.fillRect(62, 0, 4, 154); g.fillRect(0, 0, 3, 154);
+  return c;
+}

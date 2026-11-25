@@ -22,6 +22,7 @@ const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
 
 // Can a police unit at (ex, ez) facing (fx, fz) see the player?
 export function canSee(world, ex, ez, fx, fz, target, range, fovDeg, closeRange = 8) {
+  if (world.colorBlock && world.colorBlock(ex, ez, target.x, target.z)) return false;   // Holi colour cloud in the way
   const dx = target.x - ex, dz = target.z - ez;
   const d = Math.hypot(dx, dz);
   if (d > range) return false;
@@ -68,6 +69,7 @@ export class Dispatch {
     if (n >= 3 && was < 3) this.onMessage('SWAT TEAM ON THE WAY');
     if (n >= 4 && was < 4) this.onMessage('POLICE HELICOPTER!');
     this.onStars(n, was);
+    this.game.emit('stars', n);
   }
 
   clear(escaped) {
@@ -327,6 +329,7 @@ export class Officer {
     if (opts.hostile) this.forceHostile = true;
     this.post = opts.post ? { x, z, yaw } : null; this.engaged = !opts.post;
     this.guard = opts.patrol ? { path: opts.patrol, i: 0, wait: 0, seen: 0, alerted: false } : null;
+    this.flashlight = !!opts.flashlight;
     this.returning = false; this.catchT = 0; this.sightT = Math.random() * 0.2;
     this.fireT = 1 + Math.random(); this.burst = 0; this.seesPlayer = false; this.speed = 0; this.aimW = 0;
     this.vx = 0; this.vz = 0;
@@ -351,6 +354,7 @@ export class Officer {
       this.marker.visible = !this.guard;
       this.mesh.add(this.marker);
     }
+    if (this.flashlight) { this.torch = makeTorch(); this.mesh.add(this.torch); }
   }
 
   standDown() { if (!this.gang) this.returning = true; }
@@ -576,9 +580,9 @@ export class Officer {
     const T = g.dispatch.target, d = dist(this.x, this.z, T.x, T.z);
     let rate = -0.3;
     if (!P.dead && d < 18) {
-      const range = P.crouching && !P.inCar ? 10 : 18;
+      const range = this.flashlight ? (P.crouching && !P.inCar ? 13 : 17) : (P.crouching && !P.inCar ? 10 : 18);
       const cos = ((T.x - this.x) * Math.sin(this.yaw) + (T.z - this.z) * Math.cos(this.yaw)) / (d || 1);
-      const inView = (cos > 0.57 && d < range) || d < 2.2;
+      const inView = (cos > (this.flashlight ? 0.88 : 0.57) && d < range) || d < 2.2;
       if (inView && !g.world.segmentBlocked(this.x, this.z, T.x, T.z)) rate = (d < 5 ? 2.4 : d < 10 ? 1.2 : 0.7) * (P.crouching ? 0.6 : 1) * (P.inCar ? 1.8 : 1);
     }
     G.seen = clamp(G.seen + rate * dt, 0, 1);
@@ -815,7 +819,7 @@ class Helicopter {
       }
       const ex = sx - this.spot.x, ez = sz - this.spot.z, el = Math.hypot(ex, ez);
       if (el > 0.01) { const step = Math.min(el, rate * dt); this.spot.x += (ex / el) * step; this.spot.z += (ez / el) * step; }
-      this.seeing = D.active && dist(this.spot.x, this.spot.z, T.x, T.z) < 9;
+      this.seeing = D.active && dist(this.spot.x, this.spot.z, T.x, T.z) < 9 && !(g.world.colorInside && g.world.colorInside(T.x, T.z));
       if (this.seeing) D.report(T.x, T.z);
     }
     const gy = g.world.groundAt(this.spot.x, this.spot.z);
@@ -850,4 +854,28 @@ function markerMat(kind) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   MARKERS[kind] = new THREE.SpriteMaterial({ map: t, depthTest: false, sizeAttenuation: false, transparent: true });
   return MARKERS[kind];
+}
+
+// A guard's torch: a soft beam ahead and a bright spot on the ground (blackout mission).
+let torchGeo = null;
+const torchMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+function makeTorch() {
+  if (!torchGeo) {
+    const cone = new THREE.CylinderGeometry(0.05, 2.6, 15, 14, 4, true).rotateX(-Math.PI / 2).translate(0, 0, 7.5);
+    cone.rotateX(0.12);
+    const n = cone.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const z = cone.attributes.position.getZ(i); const k = Math.max(0, 1 - z / 15) ** 1.5 * 0.08; col[i * 3] = k; col[i * 3 + 1] = k; col[i * 3 + 2] = k * 0.85; }
+    cone.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    cone.deleteAttribute('uv'); cone.deleteAttribute('normal');
+    const disc = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2).scale(2.2, 1, 3.2).translate(0, -1.25, 9);
+    const m = disc.attributes.position.count, c2 = new Float32Array(m * 3);
+    for (let i = 0; i < m; i++) { const k = i === 0 ? 0.42 : 0; c2[i * 3] = k; c2[i * 3 + 1] = k; c2[i * 3 + 2] = k * 0.85; }
+    disc.setAttribute('color', new THREE.BufferAttribute(c2, 3));
+    disc.deleteAttribute('uv'); disc.deleteAttribute('normal');
+    torchGeo = mergeParts([cone, disc]);
+  }
+  const t = new THREE.Mesh(torchGeo, torchMat);
+  t.position.set(0.25, 1.3, 0.3);
+  t.renderOrder = 3; t.frustumCulled = false;
+  return t;
 }

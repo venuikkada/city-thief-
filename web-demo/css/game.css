@@ -343,3 +343,66 @@ body.dead #game canvas { filter: grayscale(0.85) contrast(1.1); transition: filt
   #bossbar { top: 50px; }
   #mission-card .brief { display: none; }
 }
+
+/* ---------- v6: cinematic look, time of day ---------- */
+#vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%); }
+.time-row { display: flex; gap: 6px; align-items: center; justify-content: center; margin: 4px 0; }
+.time-row span { font-size: 11px; letter-spacing: 2px; color: rgba(255,255,255,0.7); margin-right: 4px; }
+.time-row button { flex: 1; border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; font-weight: 900; padding: 8px 4px; border-radius: 8px; cursor: pointer; }
+.time-row button.on { background: #ffc531; color: #111; border-color: #ffc531; }
+
+/* ---------- v6: chapter 3 + layout editor ---------- */
+.chapter .new { background: #ff3ea5; color: #fff; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; letter-spacing: 1px; }
+#live { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 180px; width: 230px; pointer-events: none; }
+#live .top { font-size: 13px; color: #fff; text-shadow: 0 1px 3px #000; }
+#live .dot { background: #ff2b2b; color: #fff; font-weight: 900; padding: 1px 6px; border-radius: 4px; font-size: 11px; animation: livePulse 1s infinite; }
+@keyframes livePulse { 50% { opacity: 0.55; } }
+#live-viewers { font-size: 20px; } #live .likes { margin-left: 6px; color: #ff7aa8; }
+#live .hype { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 9px; font-weight: 900; color: #ffc531; letter-spacing: 1px; }
+#live .hype .bar { flex: 1; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; overflow: hidden; }
+#live-hype { height: 100%; width: 0; background: linear-gradient(90deg, #ff3ea5, #ffc531); transition: width 0.2s; }
+#live .goal span { color: #7dff8a; } #live-goal { height: 100%; width: 0; background: #7dff8a; }
+#live-chat { margin-top: 6px; font-size: 12px; line-height: 1.35; }
+#live-chat .msg { background: rgba(0,0,0,0.42); padding: 2px 6px; border-radius: 6px; margin-bottom: 2px; color: #fff; animation: rowIn 0.25s ease-out; }
+#live-chat .msg b { color: #8fe3ff; margin-right: 4px; } #live-chat .msg.sys b { color: #ffc531; }
+#live-hearts { position: absolute; left: 190px; top: 0; width: 40px; height: 120px; }
+#live-hearts .heart { position: absolute; bottom: 0; font-size: 18px; animation: heartUp 1.6s ease-out forwards; }
+@keyframes heartUp { from { transform: translateY(0) scale(0.6); opacity: 1; } to { transform: translateY(-110px) scale(1.2); opacity: 0; } }
+#live-poll, #live-task { position: absolute; left: 50%; top: 104px; transform: translateX(-50%); background: rgba(20,8,30,0.85); border: 2px solid #ff3ea5; border-radius: 10px; padding: 8px 12px; color: #fff; pointer-events: none; min-width: 260px; text-align: center; }
+#live-poll .q { font-weight: 900; color: #ff7aa8; font-size: 12px; letter-spacing: 1px; margin-bottom: 4px; }
+#live-poll .opt { position: relative; background: rgba(255,255,255,0.1); border-radius: 6px; margin: 3px 0; padding: 4px 8px; text-align: left; font-size: 13px; overflow: hidden; }
+#live-poll .opt span { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,62,165,0.45); transition: width 0.2s; }
+#live-poll .opt b, #live-poll .opt i { position: relative; } #live-poll .opt i { float: right; font-style: normal; font-weight: 900; }
+#live-task { font-size: 14px; } #live-task b { color: #ffc531; }
+#memory { position: absolute; left: 50%; top: 192px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; white-space: nowrap; background: rgba(6,20,40,0.8); border: 1px solid #8fe3ff; border-radius: 14px; padding: 4px 12px; color: #cfe9ff; font-size: 12px; pointer-events: none; }
+#memory b { color: #8fe3ff; letter-spacing: 1px; font-size: 11px; } #memory span { opacity: 0.8; } #memory span.ok { color: #7dff8a; opacity: 1; }
+body.rewind #game canvas { filter: hue-rotate(160deg) contrast(1.4) saturate(1.6) blur(1.5px); transition: none; }
+#rhythm { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: min(44vw, 380px); pointer-events: none; text-align: center; }
+#rhythm .label { font-size: 11px; font-weight: 900; letter-spacing: 1px; color: #ffc531; text-shadow: 0 1px 3px #000; margin-bottom: 3px; }
+#rhythm-lane { position: relative; height: 34px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.4); border-radius: 17px; overflow: hidden; }
+#rhythm-lane::before { content: ''; position: absolute; left: 12%; top: 3px; bottom: 3px; width: 26px; margin-left: -13px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 10px #ffc531; }
+#rhythm-lane i { position: absolute; top: 7px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: radial-gradient(circle, #fff, #ff3ea5); box-shadow: 0 0 8px #ff3ea5; }
+#rhythm .meter { margin-top: 4px; height: 7px; background: rgba(0,0,0,0.5); border-radius: 4px; overflow: hidden; }
+#rhythm-fill { height: 100%; width: 70%; background: #7dff8a; transition: width 0.1s; }
+#rhythm-judge { position: absolute; left: 50%; top: -34px; transform: translateX(-50%); font-weight: 900; font-size: 22px; font-style: italic; text-shadow: 0 2px 6px #000; animation: countPop 0.7s ease-out forwards; }
+#rhythm-judge.ok { color: #7dff8a; } #rhythm-judge.bad { color: #ff5a4d; }
+#btn-dance { right: max(26px, calc(env(safe-area-inset-right) + 26px)); bottom: 210px; background: rgba(255,62,165,0.45); border-color: #ffb3d6; }
+#btn-color { right: max(124px, calc(env(safe-area-inset-right) + 124px)); bottom: 270px; background: conic-gradient(#ff3ea5, #ffd21f, #2ee66b, #3fa0ff, #ff3ea5); border-color: #fff; }
+#btn-color .holi { font-size: 10px; font-weight: 900; color: #fff; text-shadow: 0 1px 2px #000; } #btn-color b { color: #fff; text-shadow: 0 1px 2px #000; font-size: 16px; }
+#layout-editor { position: fixed; left: 0; right: 0; top: 0; z-index: 50; pointer-events: none; }
+#layout-editor .bar { pointer-events: auto; margin: 8px auto 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; max-width: 96vw; background: rgba(10,12,16,0.92); border: 1px solid rgba(255,255,255,0.25); border-radius: 12px; padding: 8px 10px; }
+#layout-editor button { border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; font-weight: 900; padding: 6px 9px; border-radius: 8px; cursor: pointer; font-size: 11px; }
+#layout-editor button.on, #layout-editor button.save { background: #ffc531; color: #111; border-color: #ffc531; }
+#lay-controls { display: flex; gap: 10px; align-items: center; color: #fff; font-size: 11px; font-weight: 800; }
+#lay-controls.dim label { opacity: 0.35; pointer-events: none; } #lay-controls input { width: 72px; }
+#lay-name { color: #ffc531; min-width: 70px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#layout-editor .hint { text-align: center; color: rgba(255,255,255,0.8); font-size: 12px; margin-top: 6px; text-shadow: 0 1px 3px #000; }
+body.editing #hud .hud-btn { outline: 2px dashed rgba(255,255,255,0.55); outline-offset: 2px; }
+body.editing #hud .hud-btn.lay-sel { outline: 3px solid #ffc531; }
+body.editing #btn-enter, body.editing #btn-pickup, body.editing #btn-takedown, body.editing #btn-color, body.editing #btn-dance { display: flex !important; }
+body.editing #hud.car #btn-color, body.editing #hud.car #btn-dance { display: none !important; }
+body.editing #hud.foot #btn-enter.hidden, body.editing #hud.foot #btn-pickup.hidden { display: flex !important; }
+body.editing #status, body.editing #mission-panel, body.editing #subtitle { opacity: 0.3; }
+@media (max-height: 430px) { #btn-dance { bottom: 178px; } #live { top: 150px; width: 200px; } #live .top { font-size: 11px; } #live-viewers { font-size: 16px; } #live-chat { font-size: 11px; line-height: 1.25; } #live-chat .msg { margin-bottom: 1px; } #memory { top: 146px; font-size: 11px; } #rhythm { bottom: 84px; } #btn-color { bottom: 232px; } }
+#hud.car #subtitle { bottom: 96px; }
+@media (max-height: 430px) { #hud.car #subtitle { bottom: 84px; font-size: 12px; } }

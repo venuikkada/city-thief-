@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { WAREHOUSE, spawnRavi, AmbientPerson } from './ambient.js';
 import { MissionCar } from './mcars.js';
 import { CharacterRig } from './characters.js';
+import { LiveStream, ColorClouds, Rhythm } from './specials.js';
+import { part, mergeParts, BOX, vertexColorGlow } from './mesh.js';
+import { FOOT_TOP } from './world.js';
 import { dist, yawOf, pick } from './util.js';
 
 const SAVE_KEY = 'cityThief.save.v1';
@@ -22,8 +25,8 @@ export function writeSave(s) {
 export const CHAPTERS = [
   { id: 1, title: 'STREET ESCAPE', from: 1, to: 10 },
   { id: 2, title: 'CITY OF GOLD', from: 11, to: 20 },
-  { id: 3, title: 'SAGARPET', soon: true, teaser: 'A new harbour city. Boats, bikes, a smuggling war.' },
-  { id: 4, title: 'THE LAST RUN', soon: true, teaser: 'Helicopters, a highway chase, the final heist.' },
+  { id: 3, title: 'NAVAPUR NIGHTS', from: 21, to: 26, isNew: true },
+  { id: 4, title: 'SAGARPET', soon: true, teaser: 'A new harbour city. Boats, bikes, a smuggling war.' },
 ];
 
 // ---------- Places ----------
@@ -214,15 +217,18 @@ function tail(name, minD, maxD, text) {
 
 // Stay in a zone for some seconds (crack a vault, wait for the crew, defuse).
 function hold(x, z, r, sec, text, o = {}) {
-  let t = 0;
+  let t = 0, away = 0;
   return {
-    start: (g, m) => { t = 0; m.objective(text); m.marker(x, z, r); },
+    start: (g, m) => { t = 0; away = 0; m.objective(text); m.marker(x, z, r); },
     update: (g, m, dt) => {
       const P = g.player, inZone = near(g, x, z, r) && (o.car ? P.inCar : !P.inCar);
-      if (inZone) t += dt;
-      else if (o.failOnLeave && t > 0.5) { m.fail(o.failOnLeave); return false; }
+      const strict = o.failOnLeave && t > 0.5;
+      if (inZone) { t += dt; away = 0; }
+      // Pushed out (police ram you, a wrong turn)? You get 4 seconds to come back before it fails.
+      else if (strict) { away += dt; if (away > 4) { m.fail(o.failOnLeave); return false; } }
       if (o.tick) o.tick(g, m, t, dt);
-      g.hud.setProgress(inZone ? `${o.label || 'HOLD ON'} ${Math.ceil(sec - t)}s` : (o.outText || 'Get back in the zone!'), t / sec, inZone ? '#ffc531' : '#ff5a4d');
+      const outText = (o.outText || 'Get back in the zone!') + (strict ? ` ${Math.ceil(4 - away)}s` : '');
+      g.hud.setProgress(inZone ? `${o.label || 'HOLD ON'} ${Math.ceil(sec - t)}s` : outText, t / sec, inZone ? '#ffc531' : '#ff5a4d');
       return t >= sec;
     },
     end: (g, m) => { g.hud.hideProgress(); m.marker(null); },
@@ -230,7 +236,7 @@ function hold(x, z, r, sec, text, o = {}) {
 }
 
 // Several bombs: stand next to each one for a few seconds.
-function defuse(points, sec, text) {
+function defuse(points, sec, text, o = {}) {
   const done = points.map(() => false);
   let cur = -1, t = 0;
   return {
@@ -242,9 +248,13 @@ function defuse(points, sec, text) {
       points.forEach(([x, z], i) => { if (!done[i] && (best < 0 || dist(x, z, T.x, T.z) < dist(points[best][0], points[best][1], T.x, T.z))) best = i; });
       if (best >= 0) m.marker(points[best][0], points[best][1], 3, true);
       const inside = best >= 0 && !g.player.inCar && dist(points[best][0], points[best][1], T.x, T.z) < 3;
-      if (inside) { if (cur !== best) { cur = best; t = 0; } t += dt; g.hud.setProgress(`DEFUSING... ${Math.ceil(sec - t)}s`, t / sec, '#ffc531'); }
+      if (inside) { if (cur !== best) { cur = best; t = 0; } t += dt; g.hud.setProgress(`${o.doing || 'DEFUSING'}... ${Math.ceil(sec - t)}s`, t / sec, '#ffc531'); }
       else { cur = -1; t = 0; g.hud.hideProgress(); }
-      if (inside && t >= sec) { done[best] = true; cur = -1; t = 0; g.hud.hideProgress(); g.rewards.event('BOMB DEFUSED', 300, 20); }
+      if (inside && t >= sec) {
+        done[best] = true; cur = -1; t = 0; g.hud.hideProgress();
+        g.rewards.event(o.label || 'BOMB DEFUSED', 300, 20);
+        if (o.onEach) o.onEach(g, m, best, done.filter(Boolean).length);
+      }
       m.objective(`${text}: ${done.filter(Boolean).length} / ${points.length}`);
       return done.every(Boolean);
     },
@@ -789,7 +799,7 @@ export const MISSIONS = [
   },
   {
     id: 20, title: 'Kingpin', brief: 'Inspector Rana is waiting at the downtown plaza with his army. End it.',
-    reward: 12000, par: [200, 300], chapterEnd: 2, next: 'Sagarpet awaits... (Chapter 3 coming soon)',
+    reward: 12000, par: [200, 300], chapterEnd: 2, next: 'Navapur never sleeps. CHAPTER 3: NAVAPUR NIGHTS is open!',
     watch: (g, m, dt) => allyFight(g, m, g.ravi, dt),
     onBossHit: (g, m, b) => {
       if (b === m.vars.rana && !m.vars.fled && b.health > 0 && b.health < b.maxHealth * 0.4) {
@@ -828,7 +838,299 @@ export const MISSIONS = [
       say([['RAVI', 'It is over, Vikram. Rana is finished.'], ['VIKRAM', 'Navapur is free... but the gold buyers are in Sagarpet.'], ['RAVI', 'Then Sagarpet is next, bhai.']], true),
     ],
   },
+
+  // ===================== CHAPTER 3: NAVAPUR NIGHTS (never-done-before missions) =====================
+  {
+    id: 21, title: 'Go Live', atmo: 'night',
+    brief: 'Sunny streams your crime spree LIVE. Stunts, drifts, near misses, explosions and chases bring viewers. The chat votes on challenges. Reach 1 MILLION!',
+    reward: 5000, timer: 540, next: 'Holi is coming... and Rana is showing off his golden treasure.',
+    steps: () => [
+      act((g, m) => { parkedCar(g, m, 'sports', 0xff3ea5, -10, -222.75, -PI / 2, 'car'); g.placePlayer(-6, -219, -PI / 2); }),
+      say([['SUNNY', 'Bhai, we go LIVE tonight! 1 MILLION viewers and nobody can touch us. Do crazy things - the chat will tell you what!']]),
+      act((g, m) => { g.live = new LiveStream(g, 1e6); m.music = 2; }),
+      waitFor('Get 1,000,000 viewers! Stunts, drifts, near misses, explosions, chases - and do the CHAT challenges', (g) => g.live && g.live.viewers >= 1e6),
+      act((g) => { g.slowmo(1.6, 0.3); g.hud.showBig('1 MILLION VIEWERS!', '#ff3ea5', 3); g.rewards.event('YOU WENT VIRAL', 3000, 150); g.live.stop(); g.dispatch.clear(false); }),   // fans flood the streets: police lose you
+      say([['SUNNY', 'WE ARE VIRAL! Every channel in India is showing your face, bhai!']], true),
+    ],
+    rate: (g, m) => (m.elapsed < 240 ? 3 : m.elapsed < 360 ? 2 : 1),
+  },
+  {
+    id: 22, title: 'Holi Hai!', atmo: 'day',
+    brief: 'Holi in the bazaar! Steal Rana\'s Golden Pichkari from the stage, then vanish into the colours: police cannot see through gulal clouds. Tap COLOR to throw them.',
+    reward: 5500, timer: 300, par: [150, 220], next: 'Time itself starts acting strange...',
+    watch: (g, m, dt) => {
+      if (!g.holi) return;
+      m.vars.puffT = (m.vars.puffT ?? 0) - dt;
+      if (m.vars.puffT <= 0) { m.vars.puffT = 1.2; g.holi.burst(26 + Math.random() * 23, 106 + Math.random() * 13, 3, 6); }
+    },
+    steps: () => [
+      place(...START),
+      act((g, m) => {
+        g.holi = new ColorClouds(g);
+        g.world.colorBlock = (a, b, c, d) => g.holi.blocks(a, b, c, d);
+        g.world.colorInside = (x, z) => g.holi.clouds.some((c) => dist(x, z, c.x, c.z) < c.r * 0.85);
+        g.colorBombs = 8;
+        parkedCar(g, m, 'hatchback', 0xff3ea5, ...NEAR_CAR, 'car');
+        for (let i = 0; i < 18; i++) {
+          const p = new AmbientPerson(g, 26 + Math.random() * 23, 106 + Math.random() * 13, Math.random() * 6, { gesture: pick(['dance', 'cheer', 'dance', 'talk']) });
+          g.ambient.push(p); m.track(p);
+        }
+        const stage = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ color: 0xff3ea5, roughness: 0.6 }));
+        stage.scale.set(6, 0.14, 4); stage.position.set(37.5, FOOT_TOP + 0.07, 112.5);
+        g.scene.add(stage); m.track(stage);
+        const prize = m.vars.prize = m.track(g.pickups.spawn('gold', 37.5, 112.5, { auto: true, car: false }));
+        prize.g.position.y += 0.15;
+        gang(g, m, [[32, 110], [43, 110], [32, 115.5], [43, 115.5]], { group: 'stage', post: true });
+      }),
+      say([['RAVI (phone)', 'Holi hai! Rana is showing off a GOLDEN PICHKARI on the bazaar stage. Grab it! Tap COLOR to throw gulal - the police cannot see through it!']]),
+      waitFor('Steal the Golden Pichkari from the stage in the bazaar', (g, m) => { const p = m.vars.prize; m.marker(p.x, p.z, 1.5, true); return p.taken; }),
+      act((g, m) => { m.marker(null); g.dispatch.setStars(4); g.hud.toast('RANA: GET THAT THIEF!'); g.rewards.event('GOLDEN PICHKARI', 1000, 40); g.colorBombs = Math.max(g.colorBombs, 6); }),
+      loseCops('Lose the police in the Holi colours! Throw COLOR between you and them'),
+      goTo(CHAI.x - 1.2, CHAI.z, 3, 'Bring the Golden Pichkari to Ravi at the chai stall'),
+      say([['RAVI', 'Bura na mano, Holi hai! Rana will be SO angry!']]),
+    ],
+  },
+  {
+    id: 23, title: '60 Seconds', atmo: 'night',
+    brief: 'A time loop: every 60 seconds the night starts again. Each loop you remember more. Learn the guards, find the vault code, crack the vault and get out before time resets.',
+    reward: 6000, par: [180, 300], next: 'Rana cuts the power of the whole city...',
+    onAlert: (g, m) => { if (!m.vars.resetT) { m.vars.resetT = 1.2; g.hud.showBig('SPOTTED!', '#ff4438', 1.2); } },
+    steps: () => [
+      place(37.5, -72, 0),
+      act((g, m) => {
+        Object.assign(m.vars, { loop: 1, lt: 0, mem: {}, open: false, openT: 0 });
+        loopGuards(g, m);
+        m.vars.note = m.track(g.pickups.spawn('intel', 44.5, -36.8, { auto: true, car: false }));
+        g.player.crouching = true;
+        showMemory(g, m);
+      }),
+      say([['RAVI (phone)', 'Bhai, something is wrong with time! Every minute the night starts again. USE IT: learn the guards, find the vault code, open the vault.']]),
+      { update: (g, m, dt) => loopStep(g, m, dt) },
+      act((g) => { g.hud.hideProgress(); g.slowmo(1.2, 0.3); g.hud.showBig('THE LOOP IS BROKEN', '#8fe3ff', 2.5); g.rewards.event('TIME BREAKER', 2000, 120); }),
+    ],
+    rate: (g, m) => (m.vars.loop <= 3 ? 3 : m.vars.loop <= 5 ? 2 : 1),
+  },
+  {
+    id: 24, title: 'Blackout', atmo: 'blackout',
+    brief: 'Rana cut the city\'s power to hunt you in the dark. Stay out of the torch beams, switch the 3 fuse boxes back on - then take his hunters down.',
+    reward: 6000, par: [200, 300], next: 'The monsoon is coming. And it is BIG.',
+    steps: () => [
+      place(...START),
+      act((g, m) => {
+        g.player.crouching = true;
+        const routes = [[[2, 46], [2, 72]], [[22, 75.5], [-18, 75.5]], [[-28, 100.5], [-47, 100.5]], [[-27, 119], [-48, 119]], [[100, 45], [121, 45]], [[104, 27], [104, 50]]];
+        for (const r of routes) m.track(g.spawnOfficer(r[0][0], r[0][1], 0, null, { gang: true, model: pick(GANG), weapon: 'smg', patrol: r, group: 'hunt', flashlight: true }));
+        m.vars.huntN = routes.length;
+        for (const [x, z] of [[7.9, 60], [-37.5, 104], [108, 41]]) m.track(fuseBox(g, x, z));
+      }),
+      say([['RAVI (phone)', 'Rana cut ALL the power to find you in the dark! His men have torches - stay out of the light, stay low. Turn the 3 fuse boxes back on!']]),
+      defuse([[7.9, 60], [-37.5, 104], [108, 41]], 3, 'Restore the power: fuse boxes', {
+        label: 'POWER RESTORED', doing: 'SWITCHING ON',
+        onEach: (g, m, i, n) => { g.atmo.target.lights = n / 3; g.hud.toast(`POWER: ${n} / 3`); for (const f of m.ents) if (f.userData && f.userData.fuse && Math.abs(f.position.x - [7.9, -37.5, 108][i]) < 0.1) f.userData.lamp.material = FUSE_ON; },
+      }),
+      act((g, m) => { g.atmo.set('night'); g.slowmo(1.4, 0.3); g.hud.showBig('NAVAPUR SHINES AGAIN', '#ffc531', 2.5); for (const o of g.officers) if (o.group === 'hunt') o.alert(); }),
+      say([['RAVI', 'Lights are back! Now they can see you - but you can see them too. Finish them!']]),
+      killGroup('hunt', 'Take down Rana\'s hunters'),
+    ],
+  },
+  {
+    id: 25, title: 'Monsoon', atmo: 'storm',
+    brief: 'A monsoon storm floods Navapur. Ravi is stuck on his car roof at the bazaar as the water rises. Drive the rescue speedboat through the flooded streets!',
+    reward: 6500, timer: 200, par: [100, 150], next: 'Police checkpoints on every road... time to join a wedding.',
+    watch: (g, m, dt) => { m.vars.flood = Math.min(0.95, (m.vars.flood ?? 0.4) + dt * 0.02); g.atmo.setFlood(m.vars.flood); },
+    steps: () => [
+      act((g, m) => {
+        g.flooded = true;
+        for (const c of g.cars) if (!c.missionCar) c.hold = true;
+        const boat = parkedCar(g, m, 'boat', 0xf4f4f4, 0, -222.5, -PI / 2, 'boat');
+        g.placePlayer(2, -219, -PI / 2); g.driving.enter(boat); g.camera3p.snapBehind();
+        parkedCar(g, m, 'sedan', 0x22468f, -187.5, -77.25, PI / 2, 'rcar');
+        const r = m.track(spawnRavi(g)); r.x = -187.5; r.z = -77.25; r.groundY = 1.45; r.calm = true; r.rig.setGesture('wait');
+        g.ravi = r; m.vars.ravi = r;
+      }),
+      say([['RAVI (phone)', 'Vikram! The water is rising - I am on my car roof at the bazaar! Bring the boat, FAST!']]),
+      goTo(-187.5, -70.5, 7, 'Drive the boat through the flooded streets to Ravi (follow the line)', { withCar: 'boat', carText: 'Get back in the boat!' }),
+      hold(-187.5, -72, 9, 3, 'Stop the boat next to Ravi to pull him in', { car: true, label: 'PULLING RAVI IN' }),
+      act((g, m) => { m.vars.ravi.mesh.visible = false; g.rewards.event('RAVI RESCUED', 1500, 60); }),
+      say([['RAVI', 'Thank you bhai! To the relief camp at the downtown plaza!']]),
+      goTo(-37.5, -18, 9, 'Take Ravi to the relief camp (downtown plaza)', { withCar: 'boat', carText: 'Get back in the boat!' }),
+    ],
+  },
+  {
+    id: 26, title: 'Baraat', atmo: 'night', chapterEnd: 3,
+    brief: 'Police checkpoints everywhere. Hide inside a wedding procession and DANCE on the dhol beat to blend in. Dance badly during a police scan and they spot you!',
+    reward: 7000, next: 'Sagarpet awaits... (Chapter 4 coming soon)',
+    steps: () => [
+      act((g, m) => {
+        // One long straight road (z = 2.25, going west): two police checkpoints on the way.
+        const truck = missionCar(g, m, 'suv', 0xf4f4f4, { mode: 'tail', name: 'truck', speed: 1.6, dest: { x: -70, z: 2.25 }, destDir: { x: -1, z: 0 }, health: 99999 }, { node: true, x: 68, z: 2.25, hx: -1, hz: 0 });
+        truck.obeySignals = false; truck.cruise = 1.6;
+        decorateTruck(truck);
+        g.placePlayer(truck.x + 7, truck.z - 1, -PI / 2);
+        m.vars.dancers = [];
+        for (let i = 0; i < 12; i++) {
+          const p = new AmbientPerson(g, truck.x + 4, truck.z, -PI / 2, { gesture: i % 5 === 4 ? 'cheer' : 'dance' });
+          p.calm = true; g.ambient.push(p); m.track(p);
+          m.vars.dancers.push({ p, ox: 4.2 + (i % 4) * 1.5, oz: -2.4 + Math.floor(i / 4) * 2.4 });
+        }
+        for (const x of [35, -35]) {
+          m.track(g.spawnPoliceCarParked(x, -6.2, PI / 2));
+          m.track(g.spawnOfficer(x + 1.5, -5, 0, null, {}));
+          const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 3.2, 16, 16, 1, true).translate(0, -8, 0),
+            new THREE.MeshBasicMaterial({ color: 0xfff2cc, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+          beam.position.set(x, 9, -6); beam.visible = false; g.scene.add(beam); m.track(beam);
+          (m.vars.beams = m.vars.beams || []).push({ beam, x });
+        }
+        m.vars.cps = [{ x: 35, done: false }, { x: -35, done: false }];
+        m.vars.held = [];
+        g.rhythm = new Rhythm(g, 96);
+        g.music.quiet = true; m.music = 0;
+      }),
+      say([['RAVI (phone)', 'Police checkpoints on every road! Hide in that baraat. Tap DANCE when the notes hit the line - on the dhol beat!']]),
+      { update: (g, m, dt) => baraatStep(g, m, dt) },
+      act((g, m) => {
+        if (g.rhythm) { g.rhythm.stop(); g.rhythm = null; }
+        for (const c of m.vars.held) c.hold = false;
+        g.music.quiet = false;
+        if (!m.vars.spotted) { g.hud.showBig('SHAADI MUBARAK!', '#ffc531', 2.5); g.rewards.event('PERFECT DISGUISE', 1500, 80); }
+      }),
+      waitFor('They spotted you! Lose the police', (g, m) => !m.vars.spotted || g.dispatch.stars === 0),
+    ],
+    rate: (g, m) => (m.vars.spotted ? 1 : (m.vars.minBlend ?? 100) > 50 ? 3 : 2),
+  },
 ];
+
+
+// ---------- Chapter 3 helpers ----------
+// 60 SECONDS: the plaza guards (respawned at every loop).
+function loopGuards(g, m) {
+  for (const o of [...g.officers]) if (o.group === 'loop') o.remove();
+  const routes = [[[30, -24], [30, -51]], [[45, -51], [45, -24]], [[24, -44.5], [51, -44.5]], [[51, -30.5], [24, -30.5]]];
+  for (const r of routes) m.track(g.spawnOfficer(r[0][0], r[0][1], 0, null, { gang: true, model: 'police', weapon: 'pistol', patrol: r, group: 'loop' }));
+  m.vars.vg = m.track(g.spawnOfficer(19, -32.5, PI, null, { gang: true, model: 'swat', weapon: 'smg', patrol: [[19, -32.5]], group: 'loop' }));
+}
+function showMemory(g, m) {
+  const el = document.getElementById('memory'), M = m.vars.mem;
+  el.classList.remove('hidden');
+  el.innerHTML = `<b>MEMORY · LOOP ${m.vars.loop}</b>` +
+    `<span class="${M.code ? 'ok' : ''}">${M.code ? '✓ Code 7-3-9-1' : '? Vault code'}</span>` +
+    `<span class="${M.guard ? 'ok' : ''}">${M.guard ? '✓ Guard leaves 0:38' : '? Guard\'s chai break'}</span>`;
+}
+function loopReset(g, m) {
+  const V = m.vars;
+  V.loop++;
+  if (V.loop > 8) { m.fail('Stuck in the time loop forever'); return; }
+  document.body.classList.add('rewind'); setTimeout(() => document.body.classList.remove('rewind'), 1100);
+  g.hud.showBig(`⏪ LOOP ${V.loop}`, '#8fe3ff', 1.4); g.music.whoosh();
+  g.dispatch.clear(false);
+  loopGuards(g, m);
+  if (V.gold && !V.gold.taken) g.pickups.take(V.gold);
+  Object.assign(V, { gold: null, open: false, openT: 0, away: false, back: false, lt: 0, resetT: 0 });
+  g.player.carrying = false;
+  g.placePlayer(37.5, -72, 0);
+  g.player.crouching = true;
+  showMemory(g, m);
+}
+function loopStep(g, m, dt) {
+  const V = m.vars, P = g.player, vg = V.vg;
+  V.lt += dt;
+  if (V.resetT) { V.resetT -= dt; if (V.resetT <= 0) loopReset(g, m); return false; }
+  if (V.lt >= 60) { loopReset(g, m); return false; }
+  if (vg && !vg.dead && vg.guard) {
+    if (V.lt > 38 && !V.away) {
+      V.away = true; vg.guard.path = [[35, -40.5]]; vg.guard.i = 0; vg.guard.wait = 0;
+      if (!V.mem.guard) { V.mem.guard = true; g.hud.toast('MEMORY: the vault guard leaves at 0:38'); showMemory(g, m); }
+    }
+    if (V.lt > 54 && V.away && !V.back) { V.back = true; vg.guard.path = [[19, -32.5]]; vg.guard.i = 0; vg.guard.wait = 0; }
+  }
+  g.hud.setProgress(`LOOP ${V.loop} · ${Math.ceil(60 - V.lt)}s LEFT`, 1 - V.lt / 60, 60 - V.lt < 10 ? '#ff3b30' : '#8fe3ff');
+  if (!V.mem.code) {
+    if (V.note && V.note.taken) { V.mem.code = true; g.hud.toast('MEMORY: vault code 7-3-9-1'); showMemory(g, m); }
+    else { m.objective('Find the vault code: a note on a plaza bench'); m.marker(44.5, -36.8, 1.5, true); return false; }
+  }
+  if (!V.open) {
+    const guardAway = !vg || vg.dead || dist(vg.x, vg.z, 19, -32.5) > 6;
+    const atDoor = !P.inCar && dist(P.x, P.z, 19, -31.2) < 2.3;
+    m.marker(19, -31.2, 2);
+    if (atDoor && guardAway) {
+      V.openT += dt;
+      m.objective(`CRACKING THE VAULT... ${Math.ceil(5 - V.openT)}s`);
+      if (V.openT >= 5) { V.open = true; V.gold = m.track(g.pickups.spawn('gold', 19, -30.2, { auto: true, car: false })); g.hud.toast('VAULT OPEN!'); }
+    } else m.objective(V.mem.guard ? 'Open the vault door when the guard leaves (0:38)' : 'Open the vault door - watch the guard. When does he leave?');
+    return false;
+  }
+  if (!V.gold.taken) { m.objective('Grab the gold!'); m.marker(19, -30.2, 1.5, true); return false; }
+  m.objective('ESCAPE to the road before the loop resets!'); m.marker(37.5, -2.5, 5);
+  return dist(P.x, P.z, 37.5, -2.5) < 5;
+}
+
+// BLACKOUT: a fuse box on a wall with a red light (green when switched on).
+const FUSE_ON = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 3, 0.5), toneMapped: false });
+const FUSE_OFF = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.2, 0.2), toneMapped: false });
+function fuseBox(g, x, z) {
+  const grp = new THREE.Group();
+  const box = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: 0.5, metalness: 0.4 }));
+  box.scale.set(0.7, 1.1, 0.35); box.position.y = 1.2;
+  const lamp = new THREE.Mesh(BOX, FUSE_OFF); lamp.scale.setScalar(0.12); lamp.position.set(0, 1.95, 0);
+  grp.add(box, lamp); grp.position.set(x, g.world.groundAt(x, z), z);
+  grp.userData = { fuse: true, lamp };
+  g.scene.add(grp);
+  return grp;
+}
+
+// BARAAT: fairy lights on the wedding truck.
+function decorateTruck(truck) {
+  const cols = [0xff3ea5, 0xffd21f, 0x3fe0ff, 0x7dff6b, 0xff7a2a];
+  const parts = [];
+  for (let i = 0; i < 14; i++) {
+    const c = new THREE.Color(cols[i % cols.length]).multiplyScalar(3);
+    const t = i / 13;
+    parts.push(part(BOX, c, -0.95, 1.95, -2.2 + t * 4.4, 0.12, 0.12, 0.12));
+    parts.push(part(BOX, c, 0.95, 1.95, -2.2 + t * 4.4, 0.12, 0.12, 0.12));
+  }
+  const lights = new THREE.Mesh(mergeParts(parts), vertexColorGlow);
+  truck.mesh.add(lights);
+}
+function baraatStep(g, m, dt) {
+  const V = m.vars, T = V.truck, P = g.player, R = g.rhythm;
+  const fx = Math.sin(T.yaw), fz = Math.cos(T.yaw), rx = -fz, rz = fx;
+  for (const d of V.dancers) { d.p.x = T.x - fx * d.ox + rx * d.oz; d.p.z = T.z - fz * d.ox + rz * d.oz; d.p.yaw = T.yaw + Math.sin(g.time * 2 + d.ox) * 0.6; }
+  const cx = T.x - fx * 6.5, cz = T.z - fz * 6.5;
+  m.marker(cx, cz, 4, true);
+  // Traffic waits for the wedding to pass (nobody drives through a baraat!).
+  V.holdT = (V.holdT ?? 0) - dt;
+  if (V.holdT <= 0) {
+    V.holdT = 0.5;
+    // (cars in front going the same way are NOT stopped: they drive away and clear the road)
+    // (cars inside a junction also keep going, so they never block the truck)
+    const clearing = (c) => (c.x - T.x) * fx + (c.z - T.z) * fz > -2 && Math.sin(c.yaw) * fx + Math.cos(c.yaw) * fz > 0.7;
+    const inJunction = (c) => Math.abs(c.x - 75 * Math.round(c.x / 75)) < 10 && Math.abs(c.z - 75 * Math.round(c.z / 75)) < 10;
+    for (const c of g.cars) {
+      if (c === T || c.missionCar || c.playerControlled || c.parked || c.hold || clearing(c) || inJunction(c)) continue;
+      if (dist(c.x, c.z, cx, cz) < 26) { c.hold = true; V.held.push(c); }
+    }
+    V.held = V.held.filter((c) => { if (dist(c.x, c.z, cx, cz) > 34 || clearing(c)) { c.hold = false; return false; } return true; });
+  }
+  const inCrowd = !P.inCar && dist(P.x, P.z, cx, cz) < 7;
+  let scanning = false;
+  for (const c of V.cps) {
+    if (Math.abs(cx - c.x) < 13) scanning = true;
+    if (!c.done && cx < c.x - 13) { c.done = true; g.rewards.event('CHECKPOINT PASSED', 500, 30); }
+  }
+  for (const b of V.beams) {
+    b.beam.visible = Math.abs(cx - b.x) < 16;
+    if (b.beam.visible) { const sw = Math.sin(g.time * 1.7) * 0.45; b.beam.rotation.set(0.55 + sw * 0.3, 0, sw); }
+  }
+  R.update(dt, scanning);
+  if (!inCrowd) { R.blend = Math.max(0, R.blend - dt * 18); m.objective('Get back INSIDE the procession!'); }
+  else m.objective(scanning ? 'POLICE SCAN! Keep dancing on the beat (tap DANCE)!' : 'Dance with the baraat: tap DANCE on the beat');
+  if (scanning) V.minBlend = Math.min(V.minBlend ?? 100, R.blend);
+  if (scanning && R.blend < 22 && !V.spotted) {
+    V.spotted = true; g.dispatch.setStars(3); g.hud.showBig('SPOTTED!', '#ff4438', 2);
+    return true;
+  }
+  return T.arrived;
+}
 
 // ---------- Runs one mission ----------
 export class MissionRunner {
@@ -848,6 +1150,7 @@ export class MissionRunner {
   onKill(o) { if (this.def.onKill) this.def.onKill(this.game, this, o); }
   onBossHit(o) { if (this.def.onBossHit) this.def.onBossHit(this.game, this, o); }
   onAlert(o) { if (this.def.onAlert) this.def.onAlert(this.game, this, o); }
+  onEvent(type, data) { if (this.def.onEvent) this.def.onEvent(this.game, this, type, data); }
   onEnterCar() {}
 
   start() {
@@ -922,6 +1225,16 @@ export class MissionRunner {
     }
     this.ents = [];
     g.pins = []; g.raceGo = true; g.raceHold = false; g.ravi = null;
+    // Chapter 3 systems.
+    if (g.live) { g.live.stop(); g.live = null; }
+    if (g.holi) { g.holi.dispose(); g.holi = null; }
+    g.world.colorBlock = null; g.world.colorInside = null; g.colorBombs = 0;
+    if (g.rhythm) { g.rhythm.stop(); g.rhythm = null; }
+    g.music.quiet = false;
+    g.atmo.setFlood(null);
+    if (g.flooded) { g.flooded = false; for (const c of g.cars) if (!c.isPolice && !c.wrecked) c.hold = false; }
+    document.getElementById('memory').classList.add('hidden');
+    document.body.classList.remove('rewind');
     g.hud.hideProgress(); g.hud.setBoss(null); g.hud.setRace(null);
   }
 }

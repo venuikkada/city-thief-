@@ -65,6 +65,7 @@ export class Rewards {
     this.comboT = 3.5;
     const base = target.isOfficer ? (target.boss ? 2000 : target.swat ? 150 : target.gang ? 120 : 100) : 0;
     if (!base) return;   // no reward for hurting ordinary people
+    g.emit(head ? 'headshot' : 'kill');
     const mult = Math.min(this.combo, 6);
     let label = head ? 'HEADSHOT' : target.boss ? `${target.bossName || 'BOSS'} DOWN` : '';
     if (this.combo >= 2) label = COMBO_NAMES[Math.min(this.combo, 6)];
@@ -80,12 +81,14 @@ export class Rewards {
     const n = this.nearCombo;
     this.addCash(20 * Math.min(n, 5), n > 1 ? `NEAR MISS x${n}` : 'NEAR MISS', 'bonus');
     this.addXP(2);
+    this.game.emit('near');
   }
 
   drift(points) {
     const cash = Math.round(points / 9);
     if (cash < 5) return;
     this.addCash(cash, `DRIFT ${Math.round(points).toLocaleString('en-IN')}`, 'bonus');
+    this.game.emit('drift', points);
     this.addXP(Math.min(40, points / 100));
     if (this.game.mission) this.game.mission.stats.drift = (this.game.mission.stats.drift || 0) + points;
   }
@@ -95,6 +98,7 @@ export class Rewards {
     const cash = Math.round(airTime * 220 + distance * 6);
     const label = airTime > 1.3 ? 'INSANE STUNT' : airTime > 0.9 ? 'GREAT STUNT' : 'STUNT JUMP';
     this.addCash(cash, `${label} ${distance.toFixed(0)}m`, 'combo');
+    g.emit('stunt');
     this.addXP(15 + airTime * 10);
     if (g.mission) {
       g.mission.stats.stunts = (g.mission.stats.stunts || 0) + 1;

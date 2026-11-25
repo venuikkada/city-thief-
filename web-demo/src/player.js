@@ -188,7 +188,9 @@ export class Player {
         if (this.carrying) want = Math.min(want, 2.6);   // heavy gold bag
         const diff = angleDiff(this.yaw, yawOf(wx, wz)), ad = Math.abs(diff);
         const turn = (this.speed < 2 ? 520 : this.speed < 4.5 ? 340 : 210) * DEG * dt * air;
-        this.yaw += clamp(diff, -turn, turn);
+        const dyaw = clamp(diff, -turn, turn);
+        this.yaw += dyaw;
+        this.turnRate = dyaw / Math.max(dt, 1e-4);
         if (ad > 2.2 && this.speed > 2.4) want = Math.min(want, 0.8);
         else want *= 1 - 0.45 * clamp((ad - 0.35) / 2.2, 0, 1);
       }
@@ -240,6 +242,21 @@ export class Player {
     } else {
       this.rig.reverse = false;
       this.rig.twist = moveTowards(this.rig.twist, 0, 6 * dt);
+    }
+    // Lean into turns when running (like a real runner), straight when slow or aiming.
+    const wantBank = strafe || strength < 0.12 ? 0 : clamp(-(this.turnRate || 0) * this.speed * 0.028, -0.2, 0.2);
+    this.bank = (this.bank || 0) + (wantBank - (this.bank || 0)) * Math.min(1, dt * 7);
+    this.turnRate = 0;
+    // Footsteps (sand is softer, the sea splashes).
+    if (this.grounded) {
+      const sp = Math.hypot(this.vx, this.vz);
+      this.stride = sp < 2 ? 0.72 : sp < 4.5 ? 1.05 : 1.45;
+      this.stepDist = (this.stepDist || 0) + sp * dt;
+      if (this.stepDist > this.stride) {
+        this.stepDist -= this.stride;
+        const surface = this.z < -238 ? (this.y < -0.5 ? 'water' : 'sand') : 'hard';
+        g.audio.footstep(0.18 + sp * 0.05, surface);
+      }
     }
 
     // ---- Guns ----
@@ -343,7 +360,9 @@ export class Player {
 
   sync(dt = 0, holdingGun = false) {
     this.mesh.position.set(this.x, this.y, this.z);
+    this.mesh.rotation.order = 'YXZ';
     this.mesh.rotation.y = this.yaw;
+    this.mesh.rotation.z = this.bank || 0;
     for (const [id, m] of Object.entries(this.guns)) m.visible = !this.inCar && !this.dead && id === this.weapon;
     this.gunMesh = this.guns[this.weapon];
     if (dt > 0) {
@@ -434,7 +453,7 @@ export class ThirdPersonCamera {
       if (this.carLookT <= 0 && sp > 1) {
         const back = D.vx * Math.sin(car.yaw) + D.vz * Math.cos(car.yaw) < -0.5;
         let behind = back ? car.yaw + Math.PI : car.yaw;
-        if (!back && sp > 4) behind += angleDiff(car.yaw, Math.atan2(D.vx, D.vz)) * 0.6 + D.steer * 0.35;
+        if (!back && sp > 4) behind += angleDiff(car.yaw, Math.atan2(D.vx, D.vz)) * 0.6 - D.steer * 0.35;   // look into the turn
         this.yaw += angleDiff(this.yaw, behind) * Math.min(1, dt * 3.2);
         this.pitch = lerp(this.pitch, 11 * DEG, dt * 2);
       }
@@ -452,6 +471,8 @@ export class ThirdPersonCamera {
       this.pivot.x += (P.x - this.pivot.x) * f; this.pivot.z += (P.z - this.pivot.z) * f;
       this.pivot.y += (P.y - this.pivot.y) * (1 - Math.exp(-9 * dt));
       px = this.pivot.x; py = this.pivot.y + this.pivotH; pz = this.pivot.z;
+      // A small bob of the camera with each running step.
+      if (P.grounded && P.speed > 3) py += Math.sin(((P.stepDist || 0) / (P.stride || 1)) * Math.PI * 2) * 0.022 * Math.min(1, P.speed / 5.9);
       wantDist = lerp(firing ? 2.6 : 3.4, 1.45, this.aimBlend);
       wantShoulder = lerp(firing ? 0.6 : 0.5, 0.65, this.aimBlend);
       fovBase = lerp(P.sprinting && P.speed > 4.5 ? 65 : 60, 42, this.aimBlend);

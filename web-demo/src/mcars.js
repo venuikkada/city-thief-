@@ -23,16 +23,19 @@ export class MissionCar extends Car {
       this.cps = opts.cps; this.cpi = 0; this.top = opts.top || 33; this.skill = opts.skill || 1;
       this.lane = opts.lane || 0; this.laneT = 0; this.finished = false;
     }
-    this.dest = opts.dest || null; this.onArrive = opts.onArrive || null; this.arrived = false;
+    this.dest = opts.dest || null; this.destDir = opts.destDir || null; this.onArrive = opts.onArrive || null; this.arrived = false;
   }
 
   // Put it on the road nearest (x, z), facing (hx, hz).
   placeAt(x, z, hx, hz) {
     const n = this.net.nearest(x, z, hx, hz);
     this.init(n);
-    if (this.dest) this.routeTo(this.net.nearest(this.dest.x, this.dest.z));
+    if (this.dest) this.routeTo(this.destNode());
     return this;
   }
+
+  // Road point for the destination (with destDir: on the lane going that way, so no strange detours).
+  destNode() { const d = this.dest, h = this.destDir; return h ? this.net.nearest(d.x, d.z, h.x, h.z) : this.net.nearest(d.x, d.z); }
 
   get progress() { return this.cpi * 100000 - (this.cps ? dist(this.x, this.z, this.cps[Math.min(this.cpi, this.cps.length - 1)].x, this.cps[Math.min(this.cpi, this.cps.length - 1)].z) : 0); }
 
@@ -61,7 +64,7 @@ export class MissionCar extends Car {
         this.arrived = true; this.hold = true;
         if (this.mode === 'deploy') this.parkSoon = 1.2;
         if (this.onArrive) this.onArrive(this);
-      } else if (!this.upcoming.length) this.routeTo(this.net.nearest(this.dest.x, this.dest.z));
+      } else if (!this.upcoming.length) this.routeTo(this.destNode());
     }
     if (this.parkSoon !== undefined) { this.parkSoon -= dt; if (this.parkSoon <= 0 && this.speed < 0.5) { this.parked = true; this.parkSoon = undefined; } }
     super.update(dt);

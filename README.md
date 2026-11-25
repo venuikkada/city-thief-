@@ -39,10 +39,20 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   beach and sea). Traffic and people follow you around the city, so it always feels busy.
 - **Real people:** motion-captured humans (Vikram, Ravi, police, SWAT and 17 city people) who walk, run, sit on
   benches, drink chai, talk on phones, dance, cheer, shop at the bazaar, and run away from gunfire.
-- **Story: 20 missions in 2 chapters** - escapes, a street race, chases where the target car explodes,
+- **Story: 26 missions in 3 chapters** - escapes, a street race, chases where the target car explodes,
   a cash hunt, a speed-bomb van (jump it into the sea), boss fights (Kaali, Inspector Rana), tailing a car,
   stealing a police SUV, gang waves, a drift challenge, a getaway-driver job, a stunt courier, a stealth
-  mission with silent takedowns, a bomb squad, the big gold heist with a boat escape. Plan for 21-40: `Docs/MISSION_PLAN.md`.
+  mission with silent takedowns, a bomb squad, the big gold heist with a boat escape.
+- **Chapter 3 "Navapur Nights" (new, 6 missions nobody has done in a crime game):**
+  - **Go Live** - your crime spree is live-streamed: viewers, hype, chat, and chat VOTES give you challenges. Reach 1 million viewers.
+  - **Holi Hai!** - steal a golden pichkari at the Holi festival; throw gulal clouds the police cannot see through.
+  - **60 Seconds** - a time loop: the night restarts every minute; remember the code and the guard's chai break to crack the vault.
+  - **Blackout** - the city power is cut; hunters with torches; switch 3 fuse boxes back on and watch the city light up.
+  - **Monsoon** - a flood rises in the streets; drive a speedboat through the city to rescue Ravi.
+  - **Baraat** - hide in a wedding procession and dance on the dhol beat (rhythm game) to pass police checkpoints.
+  - Plan for more missions: `Docs/MISSION_PLAN.md`.
+- **Day, night, storm and blackout:** golden-hour day; night with lit windows, street-light pools and headlights;
+  monsoon storm with rain, wet roads, lightning and thunder; reflective glass towers; film-style colour grade.
 - **Rewards:** cash pop-ups, kill combos, headshots, near-miss / drift / stunt-jump bonuses, slow motion,
   street rank (XP) with unlocks, a shop (armour, shotgun, rifle, golden pistol, nitro, big magazines), daily reward streak,
   animated results (stars, cash count-up, XP bar). Indian-style action music that rises with the chase.
@@ -56,13 +66,15 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   BOOST (nitro), DRIFT, FIRE from the window, horn, camera; stunt ramps, crashes, burst tyres, cars that catch fire and explode.
 - **On foot:** realistic walk / jog / sprint with weight (like GTA), smooth follow camera.
 - **Map:** mini-map with GPS route; tap it for the full map and set a waypoint.
-- **Settings:** sensitivity, aim help, car controls, button size, difficulty, graphics level, sound.
+- **Settings:** sensitivity, aim help, car controls, button size, difficulty, graphics level, sound, time of day (pause menu).
+- **Customize controls (like PUBG):** Settings or Pause -> CUSTOMIZE CONTROLS. Drag any button, change its size and
+  see-through level, separate ON FOOT and IN CAR layouts. Saved on the phone.
 
 The **Unity project stays the real game** - the demo is for feedback and promotion.
 
 - Live (temporary Hostinger domain): https://worldly-mediumturquoise-anteater-68.hostingersite.com
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
-- Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`.
+- Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).
 - Size: about 9 MB to download; draw calls about 60-140 on Low quality (cheap phones).
 - Deploy target is saved in `.hostinger/site.json`.

@@ -37,6 +37,7 @@ export class Controls {
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
       ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
       ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
+      ['btn-color', 'color'], ['btn-dance', 'dance'],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -44,7 +45,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance' };
         if (map[k]) this.pending[map[k]] = true;
       }
       this.keys.add(k);
@@ -199,6 +200,7 @@ export class Controls {
       handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
       takedownPressed: !!p.takedown || !!p.pickup, drivemodePressed: !!p.drivemode,
+      colorPressed: !!p.color, dancePressed: !!p.dance,
     };
     this.lookX = 0; this.lookY = 0;
     this.pending = {};

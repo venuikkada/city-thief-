@@ -7,6 +7,7 @@ import { BOX, part, mergeParts, wallsGeometry, floorGeometry, signGeometry, vert
 import {
   asphaltTexture, pavingTexture, kerbTexture, groundTexture, facadeTexture, FACADE_COUNT, shopTexture, signAtlas,
   decoTexture, DECO_COUNT, glassTexture, GLASS_TINTS, grassTexture, sandTexture, palmTexture, neonAtlas,
+  facadeMask, decoMask, glassMask,
 } from './textures.js';
 
 export const LINES = [-225, -150, -75, 0, 75, 150, 225];   // road centre lines (X and Z)
@@ -471,6 +472,7 @@ export class World {
     this.addBox(x + outX * 1.5, y + 6.65, z + outZ * 1.5, outX ? 0.6 : 0.3, 0.14, outZ ? 0.6 : 0.3, 0x2a2a2a);
     this.add('glow', part(BOX, LAMP_GLOW, x + outX * 1.5, y + 6.56, z + outZ * 1.5, outX ? 0.5 : 0.22, 0.04, outZ ? 0.5 : 0.22), x, z);
     this.addCircle(x, z, 0.15);
+    (this.lampHeads = this.lampHeads || []).push([x + outX * 1.5, z + outZ * 1.5]);
   }
 
   tree(x, z, scale) {
@@ -665,8 +667,9 @@ export class World {
     const shopTex = shopTexture();
     const mats = {
       ground: atlasMaterial([asphaltTexture(), pavingTexture(), kerbTexture(), grassTexture()], 256, 256, { roughness: 0.92 }),
-      walls: atlasMaterial([...range(FACADE_COUNT).map(facadeTexture), ...range(DECO_COUNT).map(decoTexture)], 128, 136, { roughness: 0.8 }),
-      glassA: atlasMaterial(GLASS_TINTS.map(glassTexture), 128, 154, { roughness: 0.12, metalness: 0.65 }),
+      walls: atlasMaterial([...range(FACADE_COUNT).map(facadeTexture), ...range(DECO_COUNT).map(decoTexture)], 128, 136, { roughness: 0.8 },
+        [...range(FACADE_COUNT).map(facadeMask), ...range(DECO_COUNT).map(decoMask)]),
+      glassA: atlasMaterial(GLASS_TINTS.map(glassTexture), 128, 154, { roughness: 0.12, metalness: 0.65 }, GLASS_TINTS.map(glassMask), true),
       shop: new THREE.MeshStandardMaterial({ map: shopTex, roughness: 0.8, emissive: 0xffd9a0, emissiveMap: shopTex, emissiveIntensity: 0.25 }),
       lobby: new THREE.MeshStandardMaterial({ map: shopTex, color: 0xb8c4d0, roughness: 0.3, metalness: 0.3 }),
       signs: new THREE.MeshStandardMaterial({ map: this.atlas.texture, emissive: 0xffffff, emissiveMap: this.atlas.texture, emissiveIntensity: 0.45, roughness: 0.6 }),
@@ -677,6 +680,8 @@ export class World {
       pool: new THREE.MeshStandardMaterial({ color: 0x2fb6d6, roughness: 0.05, metalness: 0.2 }),
     };
     this.poolMat = mats.pool;
+    this.mats = mats;
+    this.glowMat = vertexColorGlow;
 
     for (const [key, parts] of this.chunks) {
       const mat = key.split('|')[0];
@@ -834,32 +839,64 @@ function atlasSlot(key) {
 }
 const range = (n) => [...Array(n).keys()];
 
+// Night and city-lights switches shared by the building shaders (set by the atmosphere).
+export const CITY = { night: { value: 0 }, lights: { value: 1 } };
+
 // Stack tiles in one tall picture. The shader picks the tile from the UV (tile * 1000 + 500 is
 // added to V) and repeats inside it; textureGrad keeps the edges between repeats clean.
-function atlasMaterial(textures, w, h, props) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h * textures.length;
-  const g = c.getContext('2d');
-  // Tile 0 at the bottom (V = 0 is the bottom row of a texture).
-  textures.forEach((t, i) => g.drawImage(t.image, 0, (textures.length - 1 - i) * h, w, h));
-  const tex = new THREE.CanvasTexture(c);
+// masks (optional): a matching picture where windows are white: glass reflects the sky by day,
+// and at night random rooms light up (warm, cool white or TV blue).
+function atlasMaterial(textures, w, h, props, masks = null, officeLights = false) {
+  const stack = (list) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h * list.length;
+    const g = c.getContext('2d');
+    // Tile 0 at the bottom (V = 0 is the bottom row of a texture).
+    list.forEach((img, i) => g.drawImage(img, 0, (list.length - 1 - i) * h, w, h));
+    return c;
+  };
+  const tex = new THREE.CanvasTexture(stack(textures.map((t) => t.image)));
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.anisotropy = 4;
   for (const t of textures) t.dispose();
   const mat = new THREE.MeshStandardMaterial({ map: tex, ...props });
   const n = textures.length.toFixed(1), inset = (0.5 / h).toFixed(5);
+  let winTex = null;
+  if (masks) { winTex = new THREE.CanvasTexture(stack(masks)); winTex.wrapS = THREE.RepeatWrapping; }
   mat.onBeforeCompile = (sh) => {
+    if (winTex) {
+      sh.uniforms.uWin = { value: winTex };
+      sh.uniforms.uNight = CITY.night; sh.uniforms.uLights = CITY.lights;
+      sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vWPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+      sh.fragmentShader = 'uniform sampler2D uWin; uniform float uNight; uniform float uLights; varying vec3 vWPos;\n' + sh.fragmentShader;
+    }
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
+      float wm = 0.0;
       #ifdef USE_MAP
         float tIdx = floor( vMapUv.y / 1000.0 );
         vec2 tUv = vec2( vMapUv.x, vMapUv.y - tIdx * 1000.0 - 500.0 );
         vec2 aUv = vec2( fract( tUv.x ), ( tIdx + ${inset} + fract( tUv.y ) * ( 1.0 - 2.0 * ${inset} ) ) / ${n} );
         vec2 gUv = vec2( tUv.x, tUv.y / ${n} );
         diffuseColor *= textureGrad( map, aUv, dFdx( gUv ), dFdy( gUv ) );
+        ${winTex ? 'wm = textureGrad( uWin, aUv, dFdx( gUv ), dFdy( gUv ) ).r;' : ''}
       #endif
     `);
+    if (winTex) {
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix( roughnessFactor, 0.07, wm );')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix( metalnessFactor, 0.92, wm );')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          {
+            vec3 cell = floor( vec3( ( vWPos.x + vWPos.z ) / 3.0, vWPos.y / ${officeLights ? '3.6' : '3.2'}, ( vWPos.z - vWPos.x ) / 3.0 ) );
+            float hs = fract( sin( dot( cell, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
+            float on = step( ${officeLights ? '0.45' : '0.6'}, fract( hs * 7.31 ) );
+            vec3 room = hs < 0.3 ? vec3( 1.0, 0.62, 0.3 ) : hs < 0.42 ? vec3( 0.35, 0.55, 1.0 ) : vec3( 1.0, 0.78, 0.5 );
+            ${officeLights ? 'room = mix( room, vec3( 0.85, 0.92, 1.0 ), 0.6 );' : ''}
+            totalEmissiveRadiance += room * on * wm * uNight * uLights * ${officeLights ? '0.75' : '0.85'};
+          }`);
+    }
   };
-  mat.customProgramCacheKey = () => 'atlas' + n + inset;
+  mat.customProgramCacheKey = () => 'atlas' + n + inset + (winTex ? 'w' + officeLights : '');
   return mat;
 }

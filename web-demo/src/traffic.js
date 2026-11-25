@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { LINES, HALF_ROAD, LANE_OFF, STOP_BACK, FOOT_W, FOOT_TOP, ROAD_TOP, ROAD_W } from './world.js';
 import { clamp, lerp, moveTowards, rotateTowards, yawOf, dist, DEG, pick, angleDiff } from './util.js';
-import { makeVehicle, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles.js';
+import { makeVehicle, makeBeams, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles.js';
 import { randomPersonRig } from './characters.js';
 
 const LIGHT_COLORS = [0x22ff44, 0xffcc11, 0xff2222];
@@ -237,6 +237,11 @@ export class Car {
     this.rLat = this.halfW;
     this.vehicle = makeVehicle(type, colorHex, game.shadows);
     this.mesh = this.vehicle.group;
+    if (type !== 'boat') {
+      this.beam = makeBeams(this.halfL, this.halfW, type === 'auto' ? 0.95 : 0.62);
+      this.beam.visible = !!(game.atmo && game.atmo.isNight);
+      this.mesh.add(this.beam);
+    }
     game.scene.add(this.mesh);
 
     // Autos are slower; everyone varies a little.
@@ -331,10 +336,12 @@ export class Car {
     g.fx.explosion(this.x, (this.y || 0) + 0.9, this.z, 1);
     g.blast(this.x, this.z, 8, this, byPlayer);
     // Burnt shell: black and charred, lights out, it hops up and crashes down.
+    if (this.beam) { this.mesh.remove(this.beam); this.beam = null; }
     this.mesh.traverse((o) => { if (o.isMesh) { o.material = BURNT; o.castShadow = false; } });
     this.hopT = 0;
     if (this.onExploded) this.onExploded();
-    if (this.isPolice && byPlayer && g.rewards) g.rewards.event('POLICE CAR DESTROYED', 300, 25);
+    if (this.isPolice && byPlayer && g.rewards) { g.rewards.event('POLICE CAR DESTROYED', 300, 25); g.emit('policecar'); }
+    g.emit('explosion');
   }
 
   update(dt) {

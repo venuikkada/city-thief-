@@ -34,6 +34,7 @@ export class Hud {
       boss: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), race: $('race-hud'), raceBig: $('race-pos'), raceSub: $('race-sub'),
       count: $('countdown'), card: $('mission-card'), rank: $('rankup'), armor: $('armor-fill'), takedown: $('btn-takedown'),
     };
+    if (!/fps/.test(location.search)) this.el.fps.style.display = 'none';   // add ?fps to the address to see it
     this.bigT = 0; this.frames = 0; this.fpsT = 0; this.flashT = 0; this.flash = false; this.toastT = 0;
     this.ppm = 0.8;
     this.cache = {};

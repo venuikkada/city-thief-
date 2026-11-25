@@ -17,6 +17,7 @@ const SPEC = {
   police: { accel: 10, top: 38, grip: 9.5, wheelBase: 2.8, mass: 1.35, lat: 16 },
   sports: { accel: 12, top: 43, grip: 10, wheelBase: 2.6, mass: 1.05, lat: 17 },
   auto: { accel: 5, top: 18, grip: 7, wheelBase: 1.9, mass: 0.6, lat: 11 },
+  boat: { accel: 7.5, top: 23, grip: 2.4, wheelBase: 3.2, mass: 1.3, lat: 10 },
 };
 const GRAVITY = 18;
 
@@ -176,7 +177,8 @@ export class Driving {
       const latMax = (hand ? s.lat * 1.6 : s.lat) * (car.spiked ? 0.6 : 1);
       const maxRate = latMax / Math.max(4, Math.abs(vF));
       yawRate = clamp(yawRate, -maxRate, maxRate) * (hand ? 1.35 : 1);
-      car.yaw += yawRate * dt;
+      // (+x is on the car's LEFT in this world: steering right makes the heading angle smaller.)
+      car.yaw -= yawRate * dt;
       // Grip kills sideways sliding; the handbrake lets the back slide (drift).
       vL *= Math.exp(-(hand ? 1.4 : s.grip * (car.spiked ? 0.55 : 1)) * dt);
     }
@@ -194,7 +196,7 @@ export class Driving {
     car.syncMesh();
     // Body: pitch with the jump, roll in turns and slides.
     car.mesh.rotation.x = this.air ? -Math.atan2(this.vy, Math.max(4, Math.abs(vF))) * 0.6 : car.mesh.rotation.x * 0.8;
-    car.mesh.rotation.z = -vL * 0.012 - yawRate * Math.abs(vF) * 0.0025;
+    car.mesh.rotation.z = -vL * 0.012 + yawRate * Math.abs(vF) * 0.0025;
 
     // Nitro flames, sparks from burst tyres.
     if (this.boosting || car.spiked) {
@@ -213,9 +215,20 @@ export class Driving {
     if (input.horn) g.audio.horn(1);
   }
 
-  // Kerbs, ramps, jumps, landing; water at the beach.
+  // Kerbs, ramps, jumps, landing; water at the beach. Boats float on the flood.
   vertical(dt, vF) {
     const g = this.game, W = g.world, car = this.car;
+    const flood = g.atmo && g.atmo.floodLevel != null ? g.atmo.floodLevel : null;
+    if (car.type === 'boat') {
+      const water = flood ?? -0.55, ground = W.groundAt(car.x, car.z);
+      if (water > ground + 0.3) car.y = water - 0.2 + Math.sin(g.time * 2.3) * 0.05;
+      else { car.y = ground; this.vx *= 0.9; this.vz *= 0.9; }   // run aground
+      if (Math.abs(vF) > 3) { this.sprayT = (this.sprayT || 0) - dt; if (this.sprayT <= 0) { this.sprayT = 0.06; g.fx.wake(car.x - Math.sin(car.yaw) * car.halfL, water, car.z - Math.cos(car.yaw) * car.halfL); } }
+      return;
+    }
+    if (flood !== null && flood - W.groundAt(car.x, car.z) > 0.45) {   // car in deep flood water: barely moves
+      const k = Math.exp(-2.5 * dt); this.vx *= k; this.vz *= k;
+    }
     const rampH = W.rampAt(car.x, car.z);
     const ground = Math.max(W.groundAt(car.x, car.z), rampH);
     if (this.air) {

@@ -73,7 +73,7 @@ export class GameAudio {
   burst(volume, freqFrom, freqTo, length, type = 'lowpass') {
     if (!this.enabled || volume <= 0.01) return;
     const ctx = this.ctx, now = ctx.currentTime;
-    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = length > 0.5;   // long rumbles loop the noise
     const f = ctx.createBiquadFilter(); f.type = type;
     f.frequency.setValueAtTime(freqFrom, now);
     f.frequency.exponentialRampToValueAtTime(Math.max(40, freqTo), now + length);
@@ -126,12 +126,48 @@ export class GameAudio {
     this.siren.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
   }
 
+  // One footstep: a soft scuff + a tiny thump (sand is muffled, water splashes).
+  footstep(volume, surface = 'hard') {
+    if (!this.enabled) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = surface === 'water' ? 'bandpass' : 'lowpass';
+    f.frequency.value = (surface === 'sand' ? 450 : surface === 'water' ? 1400 : 1100) * (0.85 + Math.random() * 0.3);
+    const g = ctx.createGain();
+    const len = surface === 'water' ? 0.16 : 0.07;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(volume * (surface === 'sand' ? 0.5 : 0.8), t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(t, Math.random() * 0.4); src.stop(t + len + 0.02);
+    if (surface === 'hard') this.thump(volume * 0.35, 95 + Math.random() * 20, 0.06);
+  }
+
   // Big BOOM: deep thump + rumbling noise.
   explosion(volume = 1) {
     if (!this.enabled) return;
     this.burst(0.9 * volume, 2400, 60, 1.4);
     this.thump(1.0 * volume, 55, 0.7);
     this.thump(0.6 * volume, 38, 1.1);
+  }
+
+  // Steady rain hiss (level 0..1).
+  rain(level) {
+    if (!this.enabled) return;
+    if (!this.rainGain) {
+      const ctx = this.ctx, n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.4;
+      this.rainGain = ctx.createGain(); this.rainGain.gain.value = 0;
+      n.connect(f).connect(this.rainGain).connect(this.master); n.start();
+    }
+    if (Math.abs((this.rainLevel ?? -1) - level) > 0.02) { this.rainLevel = level; this.rainGain.gain.setTargetAtTime(level * 0.22, this.ctx.currentTime, 0.4); }
+  }
+
+  // Rolling thunder.
+  thunder(volume = 1) {
+    if (!this.enabled) return;
+    this.burst(0.5 * volume, 600, 40, 2.8);
+    this.thump(0.7 * volume, 42, 1.6);
   }
 
   // Helicopter loudness 0..1.
