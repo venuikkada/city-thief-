@@ -137,6 +137,7 @@ export class Driving {
       if (input.left || input.right) steerIn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     }
     if (dead || car.sinking) { throttle = 0; brake = 0; }
+    if (g.raceHold) { throttle = 0; brake = 1; }   // waiting for the race to start
     const hand = input.handbrake;
     const drain = g.rewards && g.rewards.has('nitro') ? 0.14 : 0.28;
     this.boosting = !dead && !this.air && input.boost && this.nitro > 0.02 && throttle > 0;

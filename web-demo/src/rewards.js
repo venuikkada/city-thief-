@@ -96,7 +96,10 @@ export class Rewards {
     const label = airTime > 1.3 ? 'INSANE STUNT' : airTime > 0.9 ? 'GREAT STUNT' : 'STUNT JUMP';
     this.addCash(cash, `${label} ${distance.toFixed(0)}m`, 'combo');
     this.addXP(15 + airTime * 10);
-    if (g.mission) g.mission.stats.stunts = (g.mission.stats.stunts || 0) + 1;
+    if (g.mission) {
+      g.mission.stats.stunts = (g.mission.stats.stunts || 0) + 1;
+      if (g.mission.timeLeft !== null) { g.mission.timeLeft += 5; g.hud.popup('+5 SECONDS', 'bonus'); }
+    }
   }
 
   // Anything else worth a pat on the back.

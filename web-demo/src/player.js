@@ -185,6 +185,7 @@ export class Player {
       if (strength > 0.12) {
         want = this.crouching ? this.crouchSpeed : this.sprinting ? this.sprintSpeed
           : strength < 0.62 ? this.walkSpeed * Math.max(0.55, strength / 0.62) : this.jogSpeed;
+        if (this.carrying) want = Math.min(want, 2.6);   // heavy gold bag
         const diff = angleDiff(this.yaw, yawOf(wx, wz)), ad = Math.abs(diff);
         const turn = (this.speed < 2 ? 520 : this.speed < 4.5 ? 340 : 210) * DEG * dt * air;
         this.yaw += clamp(diff, -turn, turn);

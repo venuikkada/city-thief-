@@ -84,7 +84,7 @@ export class Dispatch {
   witnessed() {
     const g = this.game, T = this.target;
     for (const c of g.policeCars) if (!c.wrecked && canSee(g.world, c.x, c.z, Math.sin(c.yaw), Math.cos(c.yaw), T, 55, 200)) return true;
-    for (const o of g.officers) if (!o.dead && canSee(g.world, o.x, o.z, Math.sin(o.yaw), Math.cos(o.yaw), T, 45, 220)) return true;
+    for (const o of g.officers) if (!o.dead && !o.gang && canSee(g.world, o.x, o.z, Math.sin(o.yaw), Math.cos(o.yaw), T, 45, 220)) return true;
     if (this.heli && this.heli.sees()) return true;
     return false;
   }
@@ -318,8 +318,15 @@ export class Officer {
     this.game = game; this.car = car;
     this.x = x; this.z = z; this.yaw = yaw; this.groundY = game.world.groundAt(x, z);
     this.rLong = 0.35; this.rLat = 0.35; this.radius = 0.35;
-    this.swat = opts.swat ?? game.dispatch.stars >= 3;
-    this.health = this.swat ? 150 : 100; this.dead = false; this.deadT = 0;
+    // Gang members, guards and bosses use this class too (gang: true): they never call the police.
+    this.gang = !!opts.gang; this.boss = !!opts.boss; this.bossName = opts.name || '';
+    this.group = opts.group || null; this.dmgMul = opts.damage ?? 1;
+    this.swat = !this.gang && (opts.swat ?? game.dispatch.stars >= 3);
+    this.health = this.maxHealth = opts.health ?? (this.swat ? 150 : this.gang ? 80 : 100);
+    this.dead = false; this.deadT = 0;
+    if (opts.hostile) this.forceHostile = true;
+    this.post = opts.post ? { x, z, yaw } : null; this.engaged = !opts.post;
+    this.guard = opts.patrol ? { path: opts.patrol, i: 0, wait: 0, seen: 0, alerted: false } : null;
     this.returning = false; this.catchT = 0; this.sightT = Math.random() * 0.2;
     this.fireT = 1 + Math.random(); this.burst = 0; this.seesPlayer = false; this.speed = 0; this.aimW = 0;
     this.vx = 0; this.vz = 0;
@@ -327,16 +334,52 @@ export class Officer {
     this.strafe = Math.random() < 0.5 ? 1 : -1; this.strafeT = 1 + Math.random() * 2;
     this.search = null;
     this.isOfficer = true;
-    this.rig = new CharacterRig(this.swat ? 'swat' : 'police', { castShadow: game.shadows });
+    this.rig = new CharacterRig(opts.model || (this.swat ? 'swat' : 'police'), { castShadow: game.shadows });
     this.mesh = this.rig.root;
     game.scene.add(this.mesh);
-    this.weapon = this.swat ? 'smg' : 'pistol';
+    this.weapon = opts.weapon || (this.swat ? 'smg' : 'pistol');
     this.gun = makeGun(this.weapon);
     this.gun.visible = false;
     game.scene.add(this.gun);
+    // Marker over the head: red = enemy; guards show ? when suspicious and ! when they spot you.
+    if (this.gang || opts.marker) {
+      this.marker = new THREE.Sprite(markerMat(this.guard ? 'sus' : this.boss ? 'boss' : 'enemy'));
+      this.marker.center.set(0.5, 0);
+      this.marker.position.y = 2.05;
+      this.marker.scale.setScalar(0.034);
+      this.marker.renderOrder = 999;
+      this.marker.visible = !this.guard;
+      this.mesh.add(this.marker);
+    }
   }
 
-  standDown() { this.returning = true; }
+  standDown() { if (!this.gang) this.returning = true; }
+
+  setMarker(kind) { if (this.marker) { this.marker.material = markerMat(kind); this.marker.visible = kind !== 'none'; } }
+
+  // A guard (stealth missions) notices you: he and his whole group attack.
+  alert() {
+    if (this.dead) return;
+    if (this.guard && !this.guard.alerted) {
+      this.guard.alerted = true;
+      this.setMarker('alert');
+      const g = this.game;
+      if (g.mission && g.mission.onAlert) g.mission.onAlert(this);
+      for (const o of g.officers) if (o !== this && o.group && o.group === this.group && o.guard && !o.guard.alerted) o.alert();
+    }
+    this.forceHostile = true; this.engaged = true;
+  }
+
+  // Silent takedown from behind (stealth).
+  takedown() {
+    const g = this.game, P = g.player;
+    this.health = 0; this.dead = true;
+    this.rig.die(this.x - P.x, this.z - P.z);
+    this.gun.visible = false; this.setMarker('none');
+    g.stats.kills++;
+    if (g.rewards) { g.rewards.event('SILENT TAKEDOWN', 200, 20); g.slowmo(0.5, 0.35); }
+    if (g.mission && g.mission.onKill) g.mission.onKill(this);
+  }
 
   remove() {
     this.inactive = true;
@@ -350,19 +393,23 @@ export class Officer {
     if (this.dead) return;
     this.health -= amount;
     const g = this.game;
+    if (this.boss && g.mission && g.mission.onBossHit) g.mission.onBossHit(this);
     if (this.health <= 0) {
       this.dead = true;
       this.rig.die(this.x - fromX, this.z - fromZ);
-      this.gun.visible = false;
+      this.gun.visible = false; this.setMarker('none');
       if (byPlayer) {
-        g.dispatch.crime('kill_cop', this.x, this.z);
+        if (!this.gang) g.dispatch.crime('kill_cop', this.x, this.z);
         g.stats.kills++;
         if (g.mission && g.mission.onKill) g.mission.onKill(this);
       }
-      g.pickups.spawn(Math.random() < 0.7 ? 'ammo' : 'health', this.x, this.z);
+      // Gangs drop cash (sometimes a JACKPOT); police drop ammo or health.
+      if (this.gang) g.pickups.spawn('cash', this.x, this.z, { value: Math.random() < 0.06 ? 1000 : 60 + Math.floor(Math.random() * 5) * 30 });
+      if (!this.gang || Math.random() < 0.35) g.pickups.spawn(Math.random() < 0.7 ? 'ammo' : 'health', this.x + 0.6, this.z + 0.4);
       g.alarm(this.x, this.z, 25);
     } else if (byPlayer) {
-      g.dispatch.crime('hit_cop', this.x, this.z);
+      if (!this.gang) g.dispatch.crime('hit_cop', this.x, this.z);
+      else this.alert();
       this.fireT = Math.min(this.fireT, 0.5);   // shoot back quickly
       this.strafe = -this.strafe;
     }
@@ -395,6 +442,9 @@ export class Officer {
       return;
     }
 
+    if (this.marker) this.marker.visible = camD < 75 && (!this.guard || this.guard.alerted || this.guard.seen > 0.12);
+    if (this.guard && !this.guard.alerted) { this.patrol(dt, camD); return; }
+
     let gx = this.x, gz = this.z, speed = 0, shooting = false;
     const T = D.target;
     const dP = dist(this.x, this.z, T.x, T.z);
@@ -404,8 +454,10 @@ export class Officer {
     if (this.sightT <= 0) {
       this.sightT = 0.2;
       this.seesPlayer = !P.dead && canSee(g.world, this.x, this.z, Math.sin(this.yaw), Math.cos(this.yaw), T, 48, 230);
-      if (this.seesPlayer) D.report(T.x, T.z);
+      if (this.seesPlayer && !this.gang) D.report(T.x, T.z);
+      if (this.seesPlayer && dP < 32) this.engaged = true;
     }
+    if (!this.engaged) { this.idle(dt, camD); return; }
 
     if (this.returning || (!D.active && !this.forceHostile)) {
       if (this.car && !this.car.inactive) {
@@ -413,7 +465,7 @@ export class Officer {
         if (dist(this.x, this.z, gx, gz) < 3) { this.car.officerBack(this); this.remove(); return; }
       } else if (camD > 60) { this.remove(); return; }
       if (D.active) this.returning = false;
-    } else if (hostile && this.seesPlayer && dP < (this.swat ? 40 : 34)) {
+    } else if (hostile && this.seesPlayer && dP < (this.weapon === 'pistol' ? 34 : 42)) {
       // Engage: aim at the player, side-step, shoot. Walk closer if far.
       shooting = true;
       this.strafeT -= dt;
@@ -426,15 +478,16 @@ export class Officer {
       if (g.world.pathBlocked(this.x, this.z, this.x + sx * 1.5, this.z + sz * 1.5, 0.2)) this.strafe = -this.strafe;
       this.fireT -= dt;
       if (this.fireT <= 0) {
-        if (this.swat) {
+        if (this.weapon === 'smg') {
           this.shoot(T, dP);
           this.burst++;
           if (this.burst >= 3) { this.burst = 0; this.fireT = 1.1 + Math.random() * 0.7; } else this.fireT = 0.11;
-        } else { this.shoot(T, dP); this.fireT = 0.95 + Math.random() * 0.7; }
+        } else { this.shoot(T, dP); this.fireT = (this.weapon === 'rifle' ? 0.7 : this.weapon === 'shotgun' ? 1.4 : 0.95) + Math.random() * 0.7; }
       }
     } else {
       // Chase the last place they saw you, or search nearby.
-      if (D.sinceSeen < 4 || this.forceHostile) { gx = D.lastX; gz = D.lastZ; this.search = null; }
+      if (this.gang) { gx = T.x; gz = T.z; this.search = null; }
+      else if (D.sinceSeen < 4 || this.forceHostile) { gx = D.lastX; gz = D.lastZ; this.search = null; }
       else {
         if (!this.search || dist(this.x, this.z, this.search.x, this.search.z) < 2) {
           const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 16;
@@ -448,7 +501,7 @@ export class Officer {
       // Arrest at 1 star: grab the player when he is slow (walking, aiming, stopped car).
       const pSpeed = P.inCar ? g.driving.speed : Math.hypot(P.vx, P.vz);
       const reach = P.inCar ? g.driving.car.halfL + 1.5 : 1.7;
-      if (D.stars === 1 && dP < reach && pSpeed < (P.inCar ? 1.2 : 3.4) && P.controlsEnabled) {
+      if (!this.gang && D.stars === 1 && dP < reach && pSpeed < (P.inCar ? 1.2 : 3.4) && P.controlsEnabled) {
         this.catchT += dt;
         if (this.catchT >= (P.inCar ? 1.0 : 0.55)) { this.catchT = 0; D.caught(); }
       } else this.catchT = 0;
@@ -491,13 +544,60 @@ export class Officer {
     if (this.gun.visible) placeGun(this.rig, this.gun, shooting ? _dir : null);
   }
 
+  // Stand guard at a post (gang lookouts): look around until they see you or get shot.
+  idle(dt, camD) {
+    const p = this.post;
+    if (p) this.yaw = p.yaw + Math.sin(this.game.time * 0.5 + this.x) * 0.9;
+    this.mesh.position.set(this.x, this.groundY, this.z);
+    this.mesh.rotation.y = this.yaw;
+    this.rig.setMotion(0); this.rig.setAim(0, null);
+    this.rig.update(dt, camD);
+    this.gun.visible = false;
+  }
+
+  // Stealth guard: walk the patrol route, stop and look around; slowly notice the player
+  // (faster when close, slower when he crouches) - at 100% he raises the alarm.
+  patrol(dt, camD) {
+    const g = this.game, G = this.guard, P = g.player;
+    let speed = 0;
+    const pt = G.path[G.i];
+    if (G.wait > 0) {
+      G.wait -= dt;
+      this.yaw += Math.sin(g.time * 1.3 + this.x) * dt * 0.9;
+    } else if (dist(this.x, this.z, pt[0], pt[1]) < 0.7) {
+      G.i = (G.i + 1) % G.path.length; G.wait = G.path.length > 1 ? 1.5 + Math.random() * 2 : 3;
+    } else {
+      speed = 1.25;
+      this.yaw = rotateTowards(this.yaw, yawOf(pt[0] - this.x, pt[1] - this.z), 4 * dt);
+    }
+    this.x += Math.sin(this.yaw) * speed * dt; this.z += Math.cos(this.yaw) * speed * dt;
+    g.world.resolveCircle(this, this.radius);
+    // Eyes: 110 degree cone, 18 m (10 m if Vikram crouches); very close = noticed even from the side.
+    const T = g.dispatch.target, d = dist(this.x, this.z, T.x, T.z);
+    let rate = -0.3;
+    if (!P.dead && d < 18) {
+      const range = P.crouching && !P.inCar ? 10 : 18;
+      const cos = ((T.x - this.x) * Math.sin(this.yaw) + (T.z - this.z) * Math.cos(this.yaw)) / (d || 1);
+      const inView = (cos > 0.57 && d < range) || d < 2.2;
+      if (inView && !g.world.segmentBlocked(this.x, this.z, T.x, T.z)) rate = (d < 5 ? 2.4 : d < 10 ? 1.2 : 0.7) * (P.crouching ? 0.6 : 1) * (P.inCar ? 1.8 : 1);
+    }
+    G.seen = clamp(G.seen + rate * dt, 0, 1);
+    if (G.seen >= 1) { this.alert(); return; }
+    this.setMarker(G.seen > 0.12 ? 'sus' : 'none');
+    this.mesh.position.set(this.x, this.groundY, this.z);
+    this.mesh.rotation.y = this.yaw;
+    this.rig.setMotion(speed); this.rig.setAim(0, null);
+    this.rig.update(dt, camD);
+    this.gun.visible = false;
+  }
+
   // Fire at the player. Accuracy drops with distance and if the player moves or crouches.
   shoot(target, d) {
     const g = this.game, P = g.player;
     this.rig.handPose(_from, _hd);
-    const muzzle = _from.clone().addScaledVector(_dir, this.swat ? 0.4 : 0.2);
+    const muzzle = _from.clone().addScaledVector(_dir, this.weapon === 'pistol' ? 0.2 : 0.45);
     const moving = Math.hypot(P.vx || 0, P.vz || 0) > 2 || P.inCar;
-    let chance = (this.swat ? 0.42 : 0.5) - d * 0.012 - (moving ? 0.18 : 0) - (P.crouching ? 0.12 : 0);
+    let chance = (this.weapon === 'smg' ? 0.42 : this.weapon === 'shotgun' ? 0.7 - d * 0.03 : 0.5) - d * 0.012 - (moving ? 0.18 : 0) - (P.crouching ? 0.12 : 0);
     chance = Math.max(0.06, Math.min(0.5, chance)) * g.difficulty;
     const aimY = (target.y || 0) + (P.crouching ? 0.9 : 1.25);
     const dir = new THREE.Vector3(target.x - muzzle.x, aimY - muzzle.y, target.z - muzzle.z).normalize();
@@ -508,7 +608,8 @@ export class Officer {
     g.fx.muzzle(muzzle);
     g.fx.tracer(muzzle, end, 0.8);
     g.audio.gunshot(this.weapon, Math.max(0, 1 - dist(this.x, this.z, g.camera.position.x, g.camera.position.z) / 70));
-    if (res.hit && hit) P.takeDamage(this.swat ? 5 + Math.random() * 2 : 6 + Math.random() * 3, this.x, this.z);
+    const dmg = { smg: 5 + Math.random() * 2, rifle: 10 + Math.random() * 4, shotgun: 16 + Math.random() * 6 }[this.weapon] || 6 + Math.random() * 3;
+    if (res.hit && hit) { P.takeDamage(dmg * this.dmgMul, this.x, this.z); if (g.mission) g.mission.stats.hurt = (g.mission.stats.hurt || 0) + dmg; }
     else if (res.t < 60) g.fx.impact(end, dir.clone().negate(), false);
   }
 }
@@ -729,3 +830,24 @@ class Helicopter {
   }
 }
 const _down = new THREE.Vector3(0, -1, 0);
+
+// Head markers drawn once: red arrow (enemy), gold crown arrow (boss), yellow ? (suspicious), red ! (alert).
+const MARKERS = {};
+function markerMat(kind) {
+  if (MARKERS[kind]) return MARKERS[kind];
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.lineWidth = 5; x.strokeStyle = 'rgba(0,0,0,0.75)';
+  if (kind === 'enemy' || kind === 'boss') {
+    x.fillStyle = kind === 'boss' ? '#ffc531' : '#ff3b30';
+    x.beginPath(); x.moveTo(10, 14); x.lineTo(54, 14); x.lineTo(32, 52); x.closePath(); x.stroke(); x.fill();
+  } else {
+    x.fillStyle = kind === 'alert' ? '#ff3b30' : '#ffd21f';
+    x.beginPath(); x.arc(32, 32, 26, 0, Math.PI * 2); x.stroke(); x.fill();
+    x.fillStyle = '#111'; x.font = 'bold 40px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(kind === 'alert' ? '!' : '?', 32, 35);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  MARKERS[kind] = new THREE.SpriteMaterial({ map: t, depthTest: false, sizeAttenuation: false, transparent: true });
+  return MARKERS[kind];
+}

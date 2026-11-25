@@ -36,6 +36,7 @@ export class Controls {
       ['btn-gas', 'gas', true], ['btn-brake', 'brake', true], ['btn-handbrake', 'handbrake', true],
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
       ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
+      ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -43,7 +44,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown' };
         if (map[k]) this.pending[map[k]] = true;
       }
       this.keys.add(k);
@@ -197,6 +198,7 @@ export class Controls {
       gas: h('gas') || k.has('w') || k.has('arrowup'), brake: h('brake') || k.has('s') || k.has('arrowdown'),
       handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
+      takedownPressed: !!p.takedown || !!p.pickup, drivemodePressed: !!p.drivemode,
     };
     this.lookX = 0; this.lookY = 0;
     this.pending = {};

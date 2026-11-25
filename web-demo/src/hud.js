@@ -30,6 +30,9 @@ export class Hud {
       enter: $('btn-enter'), pickup: $('btn-pickup'), objective: $('objective-text'), mTitle: $('mission-title'),
       timer: $('timer'), money: $('money'), subtitle: $('subtitle'), hurt: $('hurt'), panel: $('mission-panel'),
       boost: $('boost-fill'), toast: $('toast'), bigmap: $('bigmap'), bigCanvas: $('bigmap-canvas'),
+      popups: $('popups'), drift: $('drift-hud'), progress: $('progress'), progLabel: $('progress-label'), progFill: $('progress-fill'),
+      boss: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), race: $('race-hud'), raceBig: $('race-pos'), raceSub: $('race-sub'),
+      count: $('countdown'), card: $('mission-card'), rank: $('rankup'), armor: $('armor-fill'), takedown: $('btn-takedown'),
     };
     this.bigT = 0; this.frames = 0; this.fpsT = 0; this.flashT = 0; this.flash = false; this.toastT = 0;
     this.ppm = 0.8;
@@ -107,6 +110,65 @@ export class Hud {
   hurt() { this.hurtT = 0.35; this.el.hurt.classList.remove('hidden'); }
   hitMarker(kill) { this.hitT = 0.2; this.el.hit.classList.toggle('kill', !!kill); this.el.hit.classList.remove('hidden'); }
 
+  // ---------- Juice: pop-ups, meters, cards ----------
+  // Floating reward text (+₹500, HEADSHOT, DOUBLE KILL...).
+  popup(text, kind = 'cash') {
+    const box = this.el.popups;
+    while (box.children.length > 5) box.firstChild.remove();
+    const d = document.createElement('div');
+    d.className = 'pop ' + kind; d.textContent = text;
+    d.addEventListener('animationend', () => d.remove());
+    box.appendChild(d);
+  }
+  setDrift(points, mult = 1) {
+    const e = this.el.drift;
+    if (!points) { e.classList.add('hidden'); return; }
+    e.classList.remove('hidden');
+    e.innerHTML = `DRIFT <b>${Math.round(points).toLocaleString('en-IN')}</b>${mult > 1 ? ` <i>x${mult}</i>` : ''}`;
+  }
+  setProgress(label, frac, color = '#ffc531') {
+    const E = this.el;
+    E.progress.classList.remove('hidden');
+    this.set('pl', E.progLabel, label);
+    E.progFill.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+    E.progFill.style.background = color;
+  }
+  hideProgress() { this.el.progress.classList.add('hidden'); }
+  setBoss(name, frac) {
+    const E = this.el;
+    if (!name) { E.boss.classList.add('hidden'); return; }
+    E.boss.classList.remove('hidden');
+    this.set('bn', E.bossName, name);
+    E.bossFill.style.width = Math.round(Math.max(0, frac) * 100) + '%';
+  }
+  setRace(big, sub) {
+    const E = this.el;
+    if (!big) { E.race.classList.add('hidden'); return; }
+    E.race.classList.remove('hidden');
+    this.set('rb', E.raceBig, big); this.set('rs', E.raceSub, sub || '');
+  }
+  countdown(text) {
+    const c = this.el.count;
+    c.textContent = text; c.classList.remove('hidden');
+    c.style.animation = 'none'; void c.offsetWidth; c.style.animation = '';
+    clearTimeout(this.countT); this.countT = setTimeout(() => c.classList.add('hidden'), 900);
+  }
+  // Big cinematic title when a mission starts.
+  card(small, title, brief) {
+    const c = this.el.card;
+    c.innerHTML = `<div class="small">${small}</div><div class="title">${title}</div><div class="brief">${brief}</div>`;
+    c.classList.remove('hidden');
+    c.style.animation = 'none'; void c.offsetWidth; c.style.animation = '';
+    clearTimeout(this.cardT); this.cardT = setTimeout(() => c.classList.add('hidden'), 3600);
+  }
+  rankUp(rank) {
+    const r = this.el.rank;
+    r.innerHTML = `<div class="small">RANK UP!</div><div class="title">${rank.name}</div>${rank.perk ? `<div class="perk">Unlocked: ${rank.perk}</div>` : ''}`;
+    r.classList.remove('hidden');
+    r.style.animation = 'none'; void r.offsetWidth; r.style.animation = '';
+    clearTimeout(this.rankT); this.rankT = setTimeout(() => r.classList.add('hidden'), 3800);
+  }
+
   // Where the GPS leads: the waypoint you set on the map, else the mission marker.
   get goal() { return this.game.waypoint || this.game.marker; }
 
@@ -151,7 +213,8 @@ export class Hud {
     this.set('wn', E.weaponName, P.weaponDef.name);
     this.set('ammo', E.ammo, `${a.mag} / ${a.reserve}`);
     E.reloading.classList.toggle('hidden', P.reloadT <= 0);
-    this.set('hp', E.health.style, Math.max(0, P.health).toFixed(0) + '%', 'width');
+    this.set('hp', E.health.style, Math.max(0, P.health / P.maxHealth * 100).toFixed(0) + '%', 'width');
+    this.set('ar', E.armor.style, Math.max(0, Math.min(100, P.armor / 60 * 100)).toFixed(0) + '%', 'width');
     E.health.classList.toggle('low', P.health < 35);
     this.set('money', E.money, '₹ ' + g.save.coins.toLocaleString('en-IN'));
 
@@ -168,6 +231,7 @@ export class Hud {
     E.enter.classList.toggle('hidden', !canEnter);
     const canPick = !P.inCar && !P.dead && !!g.pickups.near(P.x, P.z);
     E.pickup.classList.toggle('hidden', !canPick);
+    E.takedown.classList.toggle('hidden', !g.takedownTarget);
 
     E.aim.classList.toggle('active', P.aiming);
     E.crouch.classList.toggle('active', P.crouching);
@@ -202,8 +266,8 @@ export class Hud {
     const g = this.game, goal = this.goal, P = g.player;
     this.routeT -= dt;
     if (!goal || Math.hypot(goal.x - P.x, goal.z - P.z) < 30) { this.route = null; return; }
-    if (this.routeT > 0 && this.routeFor === goal) return;
-    this.routeT = 1; this.routeFor = goal;
+    if (this.routeT > 0 && this.routeFor && Math.hypot(goal.x - this.routeFor.x, goal.z - this.routeFor.z) < 8) return;
+    this.routeT = 1; this.routeFor = { x: goal.x, z: goal.z };
     const net = g.network, car = g.driving.car;
     const from = car ? net.nearest(car.x, car.z, Math.sin(car.yaw), Math.cos(car.yaw)) : net.nearest(P.x, P.z);
     const to = net.nearest(goal.x, goal.z);
@@ -247,8 +311,18 @@ export class Hud {
       c.fillStyle = p.pursuing || p.roadblock ? (this.flash ? '#ff2a2a' : '#2a5cff') : '#4d7dff';
       c.beginPath(); c.arc(p.x, p.z, 5 / k, 0, Math.PI * 2); c.fill();
     }
-    c.fillStyle = '#ff5a4d';
-    for (const o of g.officers) { if (o.dead) continue; c.beginPath(); c.arc(o.x, o.z, 3.2 / k, 0, Math.PI * 2); c.fill(); }
+    // Guards' eyes (stealth): what they can see.
+    for (const o of g.officers) {
+      if (o.dead || !o.guard || o.guard.alerted) continue;
+      c.fillStyle = o.guard.seen > 0.12 ? 'rgba(255,210,30,0.35)' : 'rgba(255,255,255,0.18)';
+      const range = P.crouching ? 10 : 18;
+      c.beginPath(); c.moveTo(o.x, o.z);
+      c.arc(o.x, o.z, range, Math.PI / 2 - o.yaw - 0.96, Math.PI / 2 - o.yaw + 0.96);
+      c.closePath(); c.fill();
+    }
+    for (const o of g.officers) { if (o.dead) continue; c.fillStyle = o.boss ? '#ffc531' : o.gang ? '#ff3b30' : '#ff5a4d'; c.beginPath(); c.arc(o.x, o.z, (o.boss ? 4.5 : 3.2) / k, 0, Math.PI * 2); c.fill(); }
+    for (const cr of g.cars) { if (!cr.hostile || cr.exploded) continue; c.fillStyle = '#ff3b30'; c.fillRect(cr.x - 3.5 / k, cr.z - 3.5 / k, 7 / k, 7 / k); }
+    for (const pn of g.pins || []) { c.fillStyle = pn.color; c.strokeStyle = '#000'; c.lineWidth = 1 / k; c.beginPath(); c.arc(pn.x, pn.z, 4 / k, 0, Math.PI * 2); c.fill(); c.stroke(); }
     if (D.heli) { c.fillStyle = '#fff'; c.beginPath(); c.arc(D.heli.x, D.heli.z, 5 / k, 0, Math.PI * 2); c.fill(); }
     // Mission marker + waypoint (clamped to the edge if far away).
     c.setTransform(R, 0, 0, R, 0, 0);

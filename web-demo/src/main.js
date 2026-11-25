@@ -17,19 +17,23 @@ import { loadCharacters, loadMoreCrowd, setCharacterQuality } from './characters
 import { Effects } from './weapons.js';
 import { Driving } from './driving.js';
 import { buildStreetLife, buildWarehouse, Pickups, SpotLife } from './ambient.js';
-import { MISSIONS, MissionRunner, loadSave, writeSave } from './missions.js';
+import { MISSIONS, CHAPTERS, MissionRunner, loadSave, writeSave } from './missions.js';
+import { Music } from './music.js';
+import { Rewards, RANKS, SHOP, DAILY, rankOf, rankProgress } from './rewards.js';
+import { WEAPONS } from './weapons.js';
 import { makeSky } from './sky.js';
 import { dist, yawOf } from './util.js';
 
 // ---------- Settings + quality ----------
 const SETTINGS_KEY = 'cityThief.settings.v1';
 const isTouch = matchMedia('(pointer: coarse)').matches;
-const DEFAULTS = { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, diff: 1, gfx: null, assist: isTouch, drive: 'joystick' };
+const DEFAULTS = { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, music: true, diff: 1, gfx: null, assist: isTouch, drive: 'buttons', v: 5 };
 function loadSettings() {
   try { return Object.assign({ ...DEFAULTS }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch (e) { return { ...DEFAULTS }; }
 }
 const settings = loadSettings();
+if (settings.v !== 5) { settings.drive = 'buttons'; settings.music = true; settings.v = 5; }   // v5: arrow buttons for cars by default
 const params = new URLSearchParams(location.search);
 const mem = navigator.deviceMemory || 8;
 let quality = settings.gfx || (isTouch ? (mem <= 4 ? 'low' : 'medium') : 'high');
@@ -58,7 +62,8 @@ class Game {
     this.difficulty = Number(settings.diff) || 1;
     this.save = loadSave();
     this.stats = { kills: 0, shots: 0 };
-    this.marker = null;
+    this.marker = null; this.pins = [];
+    this.timeScale = 1; this.slowT = 0; this.raceGo = true; this.raceHold = false; this.takedownTarget = null;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: quality === 'high', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, { low: 1, medium: 1.5, high: 2 }[quality]));
@@ -125,6 +130,8 @@ class Game {
     this.dispatch = new Dispatch(this);
     this.controls = new Controls();
     this.hud = new Hud(this);
+    this.music = new Music(this.audio);
+    this.rewards = new Rewards(this);
 
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
@@ -141,8 +148,13 @@ class Game {
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
     this.dispatch.onMessage = (t) => this.hud.toast(t);
     this.dispatch.onBusted = () => {
-      this.hud.showBig('BUSTED!', '#ff2626', 2.5);
-      setTimeout(() => { if (this.mission) this.mission.fail('You were arrested by the Navapur police'); else this.respawnFree(); }, 2500);
+      const m = this.mission;
+      this.endScreen('PAKDE GAYE!', 'Busted by the Navapur police');
+      setTimeout(() => {
+        if (this.mission !== m) return;   // a new mission already started
+        this.endScreen(null);
+        if (m) m.fail('You were arrested by the Navapur police'); else if (this.mode === 'play') this.respawnFree();
+      }, 2800);
     };
 
     // Mission marker: tall glowing beam + ring on the ground.
@@ -245,18 +257,89 @@ class Game {
     return p;
   }
 
-  spawnOfficer(x, z, yaw, car) {
-    const o = new Officer(this, x, z, yaw, car);
+  spawnOfficer(x, z, yaw, car, opts) {
+    const o = new Officer(this, x, z, yaw, car, opts);
     this.officers.push(o);
     return o;
   }
 
   spawnParkedCar(type, color, x, z, yaw) {
     const c = new Car(this, type, color);
-    c.x = x; c.z = z; c.yaw = yaw; c.parked = true; c.speed = 0;
+    c.x = x; c.z = z; c.yaw = yaw; c.parked = true; c.speed = 0; c.y = this.world.groundAt(x, z);
     c.syncMesh();
     this.cars.push(c);
     return c;
+  }
+
+  // A parked police SUV (police parking, missions).
+  spawnPoliceCarParked(x, z, yaw) {
+    const c = new PoliceCar(this);
+    c.x = x; c.z = z; c.yaw = yaw; c.parked = true; c.speed = 0; c.y = this.world.groundAt(x, z);
+    c.syncMesh();
+    this.cars.push(c); this.policeCars.push(c);
+    return c;
+  }
+
+  // ---------- Big moments ----------
+  // Slow motion for a moment (explosions, last kills, stunt jumps).
+  slowmo(sec, scale = 0.35) {
+    if (this.slowT > 0 && this.timeScale <= scale) return;
+    this.slowT = sec; this.slowScale = scale;
+    this.music.whoosh();
+  }
+
+  // An explosion at (x, z): hurts people and cars around it (cars can blow up in a chain).
+  blast(x, z, r, source, byPlayer) {
+    const P = this.player, cam = this.camera.position;
+    const dc = dist(cam.x, cam.z, x, z);
+    this.camera3p.shake(Math.max(0, 1.2 - dc / 40));
+    this.audio.explosion(Math.max(0.15, 1 - dc / 120));
+    if (dc < 35 && this.mode === 'play') this.slowmo(0.7, 0.4);
+    if (P.inCar && this.driving.car === source) { P.health = 0; P.die(x, z - 1); }
+    else if (!P.dead) {
+      const d = P.inCar ? dist(this.driving.car.x, this.driving.car.z, x, z) : dist(P.x, P.z, x, z);
+      if (d < r) P.takeDamage(110 * (1 - d / r) * (P.inCar ? 1.5 : 1), x, z);
+    }
+    for (const h of this.humans()) {
+      if (h.dead) continue;
+      const d = dist(h.x, h.z, x, z);
+      if (d < r) {
+        const wasAlive = !h.dead;
+        h.takeDamage(240 * (1 - d / r), byPlayer, x, z);
+        if (byPlayer && wasAlive && h.dead && this.rewards && h.isOfficer) this.rewards.kill(h, false);
+      }
+    }
+    for (const c of this.cars) {
+      if (c === source || c.exploded) continue;
+      const d = dist(c.x, c.z, x, z);
+      if (d < r * 0.9) { c.takeDamage(140 * (1 - d / (r * 0.9)), byPlayer); if (c.wrecked && c.burnT > 0.8) c.burnT = 0.5 + Math.random() * 0.5; }
+    }
+    this.alarm(x, z, 60);
+    if (byPlayer) this.dispatch.crime('gunfire', x, z);
+  }
+
+  // A loud noise (gunshot): guards nearby come running.
+  noise(x, z, r) {
+    for (const o of this.officers) if (o.guard && !o.guard.alerted && !o.dead && dist(o.x, o.z, x, z) < r) o.alert();
+  }
+
+  onRankUp(i, rank) { this.hud.rankUp(rank); this.music.rankUp(); }
+
+  // Rank perks and shop items: max health, armour, guns you own.
+  applyPerks() {
+    const P = this.player, r = this.rewards.rank;
+    P.maxHealth = 100 + (r >= 1 ? 20 : 0) + (r >= 5 ? 20 : 0);
+    if (P.health > P.maxHealth || !this.mission) P.health = Math.min(P.maxHealth, Math.max(P.health, 0));
+    for (const id of this.save.weapons) if (!P.owned.includes(id)) P.giveWeapon(id, WEAPONS[id].mag * 3);
+  }
+
+  // Big end text (death / busted) with grey slow motion.
+  endScreen(title, sub) {
+    const e = document.getElementById('death');
+    if (!title) { e.classList.add('hidden'); document.body.classList.remove('dead'); this.slowT = 0; return; }
+    e.innerHTML = `<div class="t">${title}</div><div class="s">${sub}</div>`;
+    e.classList.remove('hidden'); document.body.classList.add('dead');
+    this.slowT = 2.6; this.slowScale = 0.3;
   }
 
   removeCar(c) {
@@ -289,11 +372,13 @@ class Game {
   }
 
   setMarker(m) {
+    if (m && this.marker && this.marker.x === m.x && this.marker.z === m.z && this.marker.r === m.r) return;
     this.marker = m;
     this.markerMesh.visible = !!m;
     if (m) {
       this.markerMesh.position.set(m.x, this.world.groundAt(m.x, m.z), m.z);
-      this.markerMesh.scale.set(m.r, 1, m.r);
+      const r = m.moving ? Math.max(1.5, m.r) : m.r;
+      this.markerMesh.scale.set(r, m.moving ? 0.25 : 1, r);
     }
   }
 
@@ -302,7 +387,9 @@ class Game {
   // ---------- Resetting the city between missions ----------
   resetCity() {
     const P = this.player;
-    if (P.inCar) this.driving.exit();
+    if (this.mission) { this.mission.cleanup(); this.mission = null; }
+    this.endScreen(null);
+    if (P.inCar) this.driving.exit(true);
     this.dispatch.clear(false);
     this.dispatch.reportTimer = -1; this.dispatch.busting = false;
     for (const o of [...this.officers]) o.remove();
@@ -326,8 +413,14 @@ class Game {
     this.waypoint = null;
     this.ravi = null;
     P.owned = ['pistol']; P.weapon = 'pistol';
-    P.ammo = { pistol: { mag: 12, reserve: 48 }, smg: { mag: 0, reserve: 0 } };
-    P.reloadT = 0; P.aiming = false;
+    for (const id of Object.keys(P.ammo)) P.ammo[id] = { mag: 0, reserve: 0 };
+    P.ammo.pistol = { mag: P.magSize('pistol'), reserve: 48 };
+    P.reloadT = 0; P.aiming = false; P.carrying = false;
+    this.applyPerks();
+    if (this.save.weapons.includes('gold')) P.weapon = 'gold';
+    P.armor = this.rewards.has('armour') ? 60 : 0;
+    P.health = P.maxHealth;
+    this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.driving.nitro = 1;
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -347,6 +440,8 @@ class Game {
     this.mode = 'play';
     this.clock.getDelta();
     this.audio.start();
+    this.music.start();
+    this.music.setEnabled(!!settings.music);
     this.audio.setMuted(!settings.sound);
     this.controls.lockMouse();
     if (isTouch) {
@@ -374,7 +469,6 @@ class Game {
     this.hud.setMission(`MISSION ${def.id} · ${def.title.toUpperCase()}`, '');
     this.mission.start();
     this.enterPlay();
-    this.hud.showBig(def.title.toUpperCase(), '#ffc531', 2.5);
   }
 
   respawnFree() {
@@ -384,31 +478,45 @@ class Game {
   }
 
   onPlayerDied() {
-    this.hud.showBig('YOU WERE KILLED', '#ff2626', 3);
-    setTimeout(() => { if (this.mission) this.mission.fail('Vikram was killed'); else this.respawnFree(); }, 3000);
+    const m = this.mission;
+    this.endScreen('KHATAM!', 'Vikram was killed');
+    setTimeout(() => {
+      if (this.mission !== m) return;   // a new mission already started
+      this.endScreen(null);
+      if (m) m.fail('Vikram was killed'); else if (this.mode === 'play' || this.mode === 'cutscene') this.respawnFree();
+    }, 3000);
   }
 
-  missionPassed(def, stars, chapterDone) {
+  missionPassed(def, res) {
     this.hud.showBig('MISSION PASSED', '#ffc531', 2.5);
-    const coins = def.reward + stars * 100;
-    this.save.coins += coins;
-    this.save.stars[def.id] = Math.max(this.save.stars[def.id] || 0, stars);
+    this.music.passed();
+    this.slowmo(1.2, 0.35);
+    const total = res.bonuses.reduce((a, b) => a + b[1], 0);
+    const xpBefore = this.save.xp;
+    this.save.coins += total;
+    this.save.stars[def.id] = Math.max(this.save.stars[def.id] || 0, res.stars);
     this.save.unlocked = Math.max(this.save.unlocked, def.id + 1);
+    const best = this.save.best[def.id];
+    if (!best || this.mission.elapsed < best) this.save.best[def.id] = Math.round(this.mission.elapsed);
+    this.rewards.addXP(res.xp);
     writeSave(this.save);
+    const text = res.chapterEnd ? `CHAPTER ${res.chapterEnd} COMPLETE! ${def.next}` : def.next;
+    const m = this.mission;
     setTimeout(() => {
+      if (this.mission !== m) return;
       this.dispatch.clear(false);
-      this.showResult(true, stars, chapterDone
-        ? `CHAPTER 1 COMPLETE! ₹${coins.toLocaleString('en-IN')} earned. Chapter 2 (bikes and traffic chases) is coming soon.`
-        : `₹${coins.toLocaleString('en-IN')} earned. ${def.goal}.`, def);
+      this.showResult(true, res.stars, text, def, { ...res, total, xpBefore, xpAfter: this.save.xp });
     }, 2200);
   }
 
   missionFailed(def, reason) {
     this.hud.showBig('MISSION FAILED', '#ff4a3d', 2.5);
-    setTimeout(() => this.showResult(false, 0, reason + '. Try again!', def), 2200);
+    this.music.failed();
+    const m = this.mission;
+    setTimeout(() => { if (this.mission === m) this.showResult(false, 0, reason + '. Try again!', def); }, 2200);
   }
 
-  showResult(passed, stars, text, def) {
+  showResult(passed, stars, text, def, res) {
     this.mode = 'result';
     this.controls.enabled = false; this.controls.releaseAll();
     document.exitPointerLock?.();
@@ -418,6 +526,7 @@ class Game {
     t.classList.toggle('fail', !passed);
     [...document.getElementById('result-stars').children].forEach((el, i) => el.classList.toggle('on', i < stars));
     document.getElementById('result-text').textContent = text;
+    animateResult(this, passed, stars, res);
     const next = document.getElementById('btn-next');
     next.classList.toggle('hidden', !passed || !MISSIONS.find((m) => m.id === def.id + 1));
     this.lastDef = def;
@@ -425,14 +534,17 @@ class Game {
   }
 
   goMenu() {
-    this.mission = null;
+    if (this.mission) { this.mission.cleanup(); this.mission = null; }
     this.mode = 'menu';
     this.controls.enabled = false; this.controls.releaseAll();
     document.exitPointerLock?.();
     document.getElementById('hud').classList.add('hidden');
-    document.getElementById('menu-coins').textContent = this.save.coins.toLocaleString('en-IN');
+    this.resetCity();
+    updateMenu();
     this.showScreen('menu');
     this.audio.engine(false);
+    this.music.setLevel(0);
+    if (!this.dailyChecked) { this.dailyChecked = true; setTimeout(showDaily, 600); }
   }
 
   pause() {
@@ -502,6 +614,7 @@ class Game {
     document.body.classList.toggle('drive-buttons', this.driving.mode === 'buttons');
     document.documentElement.style.setProperty('--bs', settings.btn);
     if (this.audio.enabled) this.audio.setMuted(!settings.sound);
+    if (this.music) this.music.setEnabled(!!settings.music);
   }
 
   resize() {
@@ -529,6 +642,7 @@ class Game {
     for (const a of [...this.ambient]) a.update(dt);
     for (const o of [...this.officers]) o.update(dt);
     this.pickups.update(dt);
+    this.rewards.update(dt);
     this.spotLife.update(dt);
     this.recycleT = (this.recycleT || 0) - dt;
     if (this.recycleT <= 0) { this.recycleT = 0.5; this.recycle(); }
@@ -538,7 +652,10 @@ class Game {
 
   loop() {
     requestAnimationFrame(this.loop);
-    const dt = Math.min(this.clock.getDelta(), 0.05);
+    const raw = Math.min(this.clock.getDelta(), 0.05);
+    if (this.slowT > 0) { this.slowT -= raw; this.timeScale += ((this.slowT > 0 ? this.slowScale : 1) - this.timeScale) * Math.min(1, raw * 12); }
+    else this.timeScale += (1 - this.timeScale) * Math.min(1, raw * 6);
+    const dt = raw * this.timeScale;
     this.refreshLists();
 
     if (this.mode === 'menu' || this.mode === 'result') {
@@ -573,12 +690,28 @@ class Game {
       if (P.inCar) this.driving.exit();
       else { const car = this.driving.nearestCar(P.x, P.z); if (car) this.driving.enter(car); }
     }
+    // Silent takedown: behind an unaware guard.
+    this.takedownTarget = null;
+    if (!P.inCar && !P.dead) {
+      for (const o of this.officers) {
+        if (!o.guard || o.guard.alerted || o.dead) continue;
+        const dx = P.x - o.x, dz = P.z - o.z, d = Math.hypot(dx, dz);
+        if (d < 1.8 && (dx * Math.sin(o.yaw) + dz * Math.cos(o.yaw)) / (d || 1) < -0.15) { this.takedownTarget = o; break; }
+      }
+    }
+    if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
+    if (input.drivemodePressed) {
+      settings.drive = this.driving.mode === 'buttons' ? 'joystick' : 'buttons';
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* fine */ }
+      this.applySettings();
+      this.hud.toast(settings.drive === 'buttons' ? 'CAR CONTROLS: ARROW BUTTONS' : 'CAR CONTROLS: JOYSTICK');
+    }
     if (input.pickupPressed && !P.inCar) {
       const pk = this.pickups.near(P.x, P.z);
       if (pk) {
-        if (pk.type === 'health') P.health = 100;
-        else if (pk.type === 'ammo') { P.ammo.pistol.reserve += 24; if (P.owned.includes('smg')) P.ammo.smg.reserve += 30; }
-        else if (pk.type === 'smg') { P.giveWeapon('smg', 90); P.weapon = 'smg'; this.hud.showBig('SMG', '#ffc531', 1.5); }
+        if (pk.type === 'health') P.health = P.maxHealth;
+        else if (pk.type === 'ammo') { for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2); }
+        else if (WEAPONS[pk.type]) { P.giveWeapon(pk.type, WEAPONS[pk.type].mag * 3); P.weapon = pk.type; this.hud.showBig(WEAPONS[pk.type].name, '#ffc531', 1.5); }
         this.pickups.take(pk);
         this.audio.reload();
       }
@@ -598,6 +731,8 @@ class Game {
     let siren = Infinity;
     for (const p of this.policeCars) if (p.pursuing) siren = Math.min(siren, dist(p.x, p.z, P.x, P.z));
     this.audio.update(siren);
+    const mLevel = this.mission ? Math.max(this.mission.music ?? 1, this.dispatch.stars ? 2 : 0) : (this.dispatch.stars ? 2 : 0);
+    this.music.setLevel(Math.min(3, mLevel + (this.dispatch.stars >= 4 ? 1 : 0)));
     this.render();
   }
 }
@@ -614,16 +749,109 @@ game.load((p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; })
 function renderMissionList() {
   const list = $('mission-list');
   list.innerHTML = '';
-  for (const m of MISSIONS) {
-    const locked = m.id > game.save.unlocked;
-    const st = game.save.stars[m.id] || 0;
-    const card = document.createElement('div');
-    card.className = 'mcard' + (locked ? ' locked' : '');
-    card.innerHTML = `<div class="num">${m.id}</div><div><div class="t">${m.title}${locked ? ' &#128274;' : ''}</div><div class="d">${m.brief}</div></div>
-      <div class="s">${[0, 1, 2].map((i) => `<span class="${i < st ? '' : 'off'}">&#9733;</span>`).join('')}</div>`;
-    if (!locked) card.addEventListener('click', () => game.startMission(m.id));
-    list.appendChild(card);
+  for (const ch of CHAPTERS) {
+    const h = document.createElement('div');
+    h.className = 'chapter' + (ch.soon ? ' soon' : '');
+    const total = ch.soon ? 0 : MISSIONS.filter((m) => m.id >= ch.from && m.id <= ch.to).reduce((a, m) => a + (game.save.stars[m.id] || 0), 0);
+    h.innerHTML = `<b>CHAPTER ${ch.id}</b> ${ch.title}${ch.soon ? ' <span class="tag">COMING SOON</span>' : ` <span class="tag">&#9733; ${total} / 30</span>`}${ch.teaser ? `<div class="teaser">${ch.teaser}</div>` : ''}`;
+    list.appendChild(h);
+    if (ch.soon) continue;
+    for (const m of MISSIONS.filter((x) => x.id >= ch.from && x.id <= ch.to)) {
+      const locked = m.id > game.save.unlocked;
+      const st = game.save.stars[m.id] || 0;
+      const card = document.createElement('div');
+      card.className = 'mcard' + (locked ? ' locked' : '');
+      card.innerHTML = `<div class="num">${m.id}</div><div><div class="t">${m.title}${locked ? ' &#128274;' : ''}</div><div class="d">${locked ? 'Finish the mission before to unlock.' : m.brief}</div></div>
+        <div class="s">${[0, 1, 2].map((i) => `<span class="${i < st ? '' : 'off'}">&#9733;</span>`).join('')}<div class="cash">&#8377;${m.reward.toLocaleString('en-IN')}</div></div>`;
+      if (!locked) card.addEventListener('click', () => game.startMission(m.id));
+      list.appendChild(card);
+    }
   }
+}
+
+// Menu: wallet, rank and XP bar.
+function updateMenu() {
+  const s = game.save, r = rankOf(s.xp);
+  $('menu-coins').textContent = s.coins.toLocaleString('en-IN');
+  $('menu-rank').textContent = RANKS[r].name;
+  $('menu-xp-fill').style.width = Math.round(rankProgress(s.xp) * 100) + '%';
+  $('menu-xp-text').textContent = r < RANKS.length - 1 ? `${s.xp} / ${RANKS[r + 1].xp} XP` : `${s.xp} XP · MAX RANK`;
+}
+
+// Shop: spend your cash on guns and upgrades (no real money).
+function renderShop() {
+  const list = $('shop-list'), R = game.rewards;
+  $('shop-coins').textContent = game.save.coins.toLocaleString('en-IN');
+  list.innerHTML = '';
+  for (const it of SHOP) {
+    const owned = R.has(it.id), rankOk = R.rank >= it.rank;
+    const d = document.createElement('div');
+    d.className = 'scard' + (owned ? ' owned' : '');
+    let btn;
+    if (owned) btn = '<span class="own">OWNED &#10003;</span>';
+    else if (!rankOk) btn = `<span class="need">RANK: ${RANKS[it.rank].name}</span>`;
+    else btn = `<button class="buy${game.save.coins >= it.price ? '' : ' poor'}">&#8377;${it.price.toLocaleString('en-IN')}</button>`;
+    d.innerHTML = `<div class="ic">${it.icon}</div><div class="nm">${it.name}</div><div class="ds">${it.desc}</div>${btn}`;
+    const b = d.querySelector('button');
+    if (b) b.addEventListener('click', () => {
+      if (R.buy(it.id)) { game.music.start(); game.music.cash(); renderShop(); updateMenu(); }
+      else b.textContent = 'NOT ENOUGH CASH';
+    });
+    list.appendChild(d);
+  }
+}
+
+// Daily reward: a bigger present every day in a row.
+function showDaily() {
+  const r = game.rewards.dailyAvailable();
+  if (!r || game.mode !== 'menu') return;
+  const box = $('daily-days');
+  box.innerHTML = DAILY.map((a, i) => `<div class="day${i + 1 === Math.min(r.day, 7) ? ' today' : i + 1 < r.day ? ' got' : ''}"><small>DAY ${i + 1}</small>&#8377;${a.toLocaleString('en-IN')}</div>`).join('');
+  $('daily-title').textContent = `DAILY REWARD · DAY ${r.day}`;
+  $('daily').classList.remove('hidden');
+}
+$('btn-daily').addEventListener('click', () => {
+  const r = game.rewards.claimDaily();
+  $('daily').classList.add('hidden');
+  if (r) { updateMenu(); flashCoins(`+₹${r.amount.toLocaleString('en-IN')}`); }
+});
+function flashCoins(text) {
+  const f = $('coin-burst');
+  f.textContent = text; f.classList.remove('hidden');
+  f.style.animation = 'none'; void f.offsetWidth; f.style.animation = '';
+  setTimeout(() => f.classList.add('hidden'), 1800);
+}
+
+// Results: stars pop in, cash counts up line by line, XP bar fills.
+function animateResult(g, passed, stars, res) {
+  const cashEl = $('result-cash'), list = $('result-bonus'), xpBox = $('result-xp');
+  [...$('result-stars').children].forEach((el, i) => { el.classList.remove('on'); if (i < stars) setTimeout(() => { el.classList.add('on'); g.music.checkpoint(); }, 400 + i * 350); });
+  list.innerHTML = ''; cashEl.textContent = ''; xpBox.classList.add('hidden');
+  if (!passed || !res) return;
+  let shown = 0;
+  res.bonuses.forEach(([label, amount], i) => setTimeout(() => {
+    const row = document.createElement('div'); row.className = 'brow';
+    row.innerHTML = `<span>${label}</span><b>+&#8377;${amount.toLocaleString('en-IN')}</b>`;
+    list.appendChild(row);
+    const from = shown; shown += amount;
+    const t0 = performance.now();
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / 350);
+      cashEl.textContent = '₹' + Math.round(from + (shown - from) * k).toLocaleString('en-IN');
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick); g.music.cash();
+  }, 1500 + i * 380));
+  setTimeout(() => {
+    xpBox.classList.remove('hidden');
+    const r0 = rankOf(res.xpBefore), r1 = rankOf(res.xpAfter);
+    $('result-xp-text').textContent = `+${res.xp} XP` + (r1 > r0 ? ` · RANK UP: ${RANKS[r1].name}!` : ` · ${RANKS[r1].name}`);
+    const fill = $('result-xp-fill');
+    fill.style.transition = 'none'; fill.style.width = (r1 > r0 ? 0 : Math.round(rankProgress(res.xpBefore) * 100)) + '%';
+    void fill.offsetWidth; fill.style.transition = 'width 1s ease-out';
+    fill.style.width = Math.round(rankProgress(res.xpAfter) * 100) + '%';
+    if (res.earned) { const row = document.createElement('div'); row.className = 'brow dim'; row.innerHTML = `<span>Picked up during the mission</span><b>&#8377;${res.earned.toLocaleString('en-IN')}</b>`; list.appendChild(row); }
+  }, 1600 + res.bonuses.length * 380);
 }
 
 let settingsReturn = 'menu';
@@ -632,13 +860,13 @@ function openSettings(from) {
   $('set-look').value = settings.look; $('set-aim').value = settings.aim; $('set-btn').value = settings.btn;
   $('set-invert').checked = !!settings.invert; $('set-sound').checked = !!settings.sound;
   $('set-diff').value = String(settings.diff); $('set-gfx').value = quality;
-  $('set-assist').checked = !!settings.assist; $('set-drive').value = settings.drive;
+  $('set-assist').checked = !!settings.assist; $('set-drive').value = settings.drive; $('set-music').checked = !!settings.music;
   game.showScreen('settings-screen');
 }
 function saveSettings() {
   settings.look = $('set-look').value; settings.aim = $('set-aim').value; settings.btn = $('set-btn').value;
   settings.invert = $('set-invert').checked; settings.sound = $('set-sound').checked; settings.diff = $('set-diff').value;
-  settings.assist = $('set-assist').checked; settings.drive = $('set-drive').value;
+  settings.assist = $('set-assist').checked; settings.drive = $('set-drive').value; settings.music = $('set-music').checked;
   const gfx = $('set-gfx').value;
   const gfxChanged = gfx !== quality;
   settings.gfx = gfx;
@@ -646,7 +874,8 @@ function saveSettings() {
   game.applySettings();
   if (gfxChanged) location.href = location.pathname;   // new graphics level needs a reload
 }
-for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive']) $(id).addEventListener('change', saveSettings);
+for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive', 'set-music']) $(id).addEventListener('change', saveSettings);
+$('btn-shop').addEventListener('click', () => { renderShop(); game.showScreen('shop-screen'); });
 $('set-gfx').addEventListener('change', saveSettings);
 
 $('btn-story').addEventListener('click', () => { renderMissionList(); game.showScreen('missions-screen'); });

@@ -39,15 +39,22 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   beach and sea). Traffic and people follow you around the city, so it always feels busy.
 - **Real people:** motion-captured humans (Vikram, Ravi, police, SWAT and 17 city people) who walk, run, sit on
   benches, drink chai, talk on phones, dance, cheer, shop at the bazaar, and run away from gunfire.
-- **Story:** Chapter 1 (5 missions with timers, win/fail, coins + stars, cutscenes with Ravi) and Free Roam.
+- **Story: 20 missions in 2 chapters** - escapes, a street race, chases where the target car explodes,
+  a cash hunt, a speed-bomb van (jump it into the sea), boss fights (Kaali, Inspector Rana), tailing a car,
+  stealing a police SUV, gang waves, a drift challenge, a getaway-driver job, a stunt courier, a stealth
+  mission with silent takedowns, a bomb squad, the big gold heist with a boat escape. Plan for 21-40: `Docs/MISSION_PLAN.md`.
+- **Rewards:** cash pop-ups, kill combos, headshots, near-miss / drift / stunt-jump bonuses, slow motion,
+  street rank (XP) with unlocks, a shop (armour, shotgun, rifle, golden pistol, nitro, big magazines), daily reward streak,
+  animated results (stars, cash count-up, XP bar). Indian-style action music that rises with the chase.
 - **Combat:** pistol + SMG, aim help on phones (slows on target, snaps when you press AIM), strafe and walk
   backwards while aiming, sprint lock (drag the joystick far up).
 - **Police (5 stars):** arrest at 1 star, shooting at 2, SWAT + roadblocks at 3, helicopter with searchlight +
   spike strips at 4-5. Officers find their way round buildings; cars predict where you go and ram you.
 - **Escaping:** a red search circle on the map. Get out of it while nobody sees you and the stars go.
   A different car the police did not see also helps.
-- **Driving (PUBG-style):** joystick drives (up = gas, down = brake/reverse) or arrow buttons + GAS/BRAKE
-  (Settings), BOOST (nitro), DRIFT, horn, camera; crashes, burst tyres on spikes.
+- **Driving:** arrow buttons (left/right + up = gas / down = brake) by default, or the joystick (switch button in the car);
+  BOOST (nitro), DRIFT, FIRE from the window, horn, camera; stunt ramps, crashes, burst tyres, cars that catch fire and explode.
+- **On foot:** realistic walk / jog / sprint with weight (like GTA), smooth follow camera.
 - **Map:** mini-map with GPS route; tap it for the full map and set a waypoint.
 - **Settings:** sensitivity, aim help, car controls, button size, difficulty, graphics level, sound.
 

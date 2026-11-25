@@ -126,6 +126,14 @@ export class GameAudio {
     this.siren.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
   }
 
+  // Big BOOM: deep thump + rumbling noise.
+  explosion(volume = 1) {
+    if (!this.enabled) return;
+    this.burst(0.9 * volume, 2400, 60, 1.4);
+    this.thump(1.0 * volume, 55, 0.7);
+    this.thump(0.6 * volume, 38, 1.1);
+  }
+
   // Helicopter loudness 0..1.
   heli(level) {
     if (!this.enabled) return;

@@ -621,6 +621,22 @@ export class World {
     }
   }
 
+  // A speedboat at the water's edge (missions). Set userData.sail = true to send it out to sea.
+  makeBoat(x, z, color) {
+    const g = new THREE.Group();
+    const hull = new THREE.Mesh(BOAT_HULL, new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
+    hull.scale.set(0.7, 0.7, 0.75);
+    const deck = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6 }));
+    deck.scale.set(1.6, 0.9, 1.4); deck.position.set(0, 0.9, 0.4);
+    const stripe = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.5 }));
+    stripe.scale.set(2.3, 0.15, 5.9); stripe.position.y = 0.45;
+    g.add(hull, deck, stripe);
+    g.position.set(x, SEA_LEVEL, z); g.rotation.y = Math.PI;
+    this.scene.add(g);
+    this.animated.push({ obj: g, t: 0 });
+    return g;
+  }
+
   buildSea(normalTex) {
     normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
     normalTex.repeat.set(60, 60);
@@ -637,6 +653,7 @@ export class World {
     if (this.seaTex) { this.seaTex.offset.x = t * 0.004; this.seaTex.offset.y = t * 0.006; }
     for (const b of this.animated) {
       b.t += dt;
+      if (b.obj.userData.sail) { b.st = (b.st || 0) + dt; b.obj.position.z -= dt * Math.min(16, 3 + b.st * 3); }
       b.obj.position.y = SEA_LEVEL + Math.sin(b.t * 1.1) * 0.15;
       b.obj.rotation.z = Math.sin(b.t * 0.9) * 0.04;
       b.obj.rotation.x = Math.sin(b.t * 0.7) * 0.03;

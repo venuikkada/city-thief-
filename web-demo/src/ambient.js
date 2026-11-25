@@ -302,7 +302,9 @@ export class SpotLife {
 export class Pickups {
   constructor(game) { this.game = game; this.list = []; }
 
-  spawn(type, x, z) {
+  // type: health / ammo / smg / shotgun / rifle (PICK UP button) or, picked up by touching them:
+  // cash (money dropped by gangsters), bag (mission cash bag), intel (papers), gold (gold bars).
+  spawn(type, x, z, opts = {}) {
     const g = new THREE.Group();
     const y = this.game.world.groundAt(x, z);
     let body;
@@ -310,40 +312,63 @@ export class Pickups {
       body = new THREE.Mesh(mergeParts([part(BOX, 0xf4f4f4, 0, 0, 0, 0.42, 0.3, 0.3), part(BOX, 0xd62828, 0, 0, 0.16, 0.24, 0.07, 0.02), part(BOX, 0xd62828, 0, 0, 0.16, 0.07, 0.24, 0.02)]), vertexColorMaterial);
     } else if (type === 'ammo') {
       body = new THREE.Mesh(mergeParts([part(BOX, 0x4b5d2a, 0, 0, 0, 0.45, 0.26, 0.3), part(BOX, 0xd9b44a, 0, 0.14, 0, 0.3, 0.03, 0.2)]), vertexColorMaterial);
+    } else if (type === 'cash') {
+      body = new THREE.Mesh(mergeParts([part(BOX, 0x3f9b4f, 0, 0, 0, 0.34, 0.14, 0.2), part(BOX, 0x2e7d3c, 0.05, 0.12, 0.02, 0.34, 0.1, 0.2, 0, 0.3, 0), part(BOX, 0xf2f2e8, 0, 0.0, 0, 0.08, 0.15, 0.21)]), vertexColorMaterial);
+    } else if (type === 'bag') {
+      body = new THREE.Mesh(mergeParts([part(SACK, 0x8a6a3a, 0, 0, 0, 0.32, 0.36, 0.3), part(BOX, 0x5a4020, 0, 0.32, 0, 0.12, 0.1, 0.12), part(BOX, 0x3f9b4f, 0, 0.05, 0.27, 0.16, 0.16, 0.02)]), vertexColorMaterial);
+    } else if (type === 'intel') {
+      body = new THREE.Mesh(mergeParts([part(BOX, 0xe8c547, 0, 0, 0, 0.4, 0.05, 0.3), part(BOX, 0xffffff, 0, 0.03, 0, 0.36, 0.02, 0.26), part(BOX, 0xd62828, 0.1, 0.05, 0.06, 0.1, 0.01, 0.06)]), vertexColorMaterial);
+    } else if (type === 'gold') {
+      body = new THREE.Mesh(mergeParts([part(BOX, 0xffc531, -0.17, 0, 0, 0.3, 0.12, 0.16), part(BOX, 0xffc531, 0.17, 0, 0, 0.3, 0.12, 0.16), part(BOX, 0xffd75e, 0, 0.12, 0, 0.3, 0.12, 0.16)]),
+        new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 1, roughness: 0.25, emissive: 0x553300 }));
     } else {
-      body = makeGun('smg');
+      body = makeGun(type);
       body.scale.setScalar(2.2);
     }
     body.position.y = 0.55;
     g.add(body);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 2.2, 12, 1, true),
-      new THREE.MeshBasicMaterial({ color: type === 'health' ? 0xff5050 : type === 'ammo' ? 0x80ff60 : 0xffc531, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
+    const beamColor = { health: 0xff5050, ammo: 0x80ff60, cash: 0x60ff80, bag: 0x60ff80, intel: 0x6fb7ff, gold: 0xffc531 }[type] || 0xffc531;
+    const beam = new THREE.Mesh(BEAM_GEO, new THREE.MeshBasicMaterial({ color: beamColor, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
     beam.position.y = 1.1;
     g.add(beam);
     g.position.set(x, y, z);
     this.game.scene.add(g);
-    this.list.push({ type, x, z, g, body, t: Math.random() * 6 });
+    const p = { type, x, z, g, body, t: Math.random() * 6, auto: ['cash', 'bag', 'intel', 'gold'].includes(type), car: true, ...opts };
+    this.list.push(p);
+    return p;
   }
 
-  // Nearest pick-up within reach of the player.
+  // Nearest pick-up within reach of the player (PICK UP button).
   near(px, pz) {
     let best = null, bd = 1.8;
-    for (const p of this.list) { const d = dist(p.x, p.z, px, pz); if (d < bd) { bd = d; best = p; } }
+    for (const p of this.list) { if (p.auto) continue; const d = dist(p.x, p.z, px, pz); if (d < bd) { bd = d; best = p; } }
     return best;
   }
 
   take(p) {
+    p.taken = true;
     this.game.scene.remove(p.g);
     this.list = this.list.filter((q) => q !== p);
   }
 
-  clear() { for (const p of this.list) this.game.scene.remove(p.g); this.list = []; }
+  clear() { for (const p of this.list) { p.taken = true; this.game.scene.remove(p.g); } this.list = []; }
 
   update(dt) {
-    for (const p of this.list) {
+    const G = this.game, P = G.player;
+    for (const p of [...this.list]) {
       p.t += dt;
       p.body.rotation.y = p.t * 2;
       p.body.position.y = 0.55 + Math.sin(p.t * 3) * 0.08;
+      if (!p.auto || P.dead) continue;
+      const reach = P.inCar ? (p.car ? 3 : -1) : 1.5;
+      if (dist(p.x, p.z, P.x, P.z) < reach) {
+        this.take(p);
+        if (p.type === 'cash' && G.rewards) G.rewards.addCash(p.value || 100, p.value >= 1000 ? 'JACKPOT!' : '', p.value >= 1000 ? 'combo' : 'cash');
+        if (p.onTake) p.onTake(p);
+      }
     }
   }
 }
+
+const SACK = new THREE.SphereGeometry(1, 10, 8);
+const BEAM_GEO = new THREE.CylinderGeometry(0.35, 0.35, 2.2, 12, 1, true);
