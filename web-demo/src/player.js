@@ -116,6 +116,7 @@ export class Player {
     this.health = this.maxHealth; this.controlsEnabled = true;
     if (this.rig.dead) {   // fresh body after dying
       this.game.scene.remove(this.mesh);
+      this.rig.dispose();
       this.rig = new CharacterRig(this.outfit || 'vikram', { castShadow: this.game.shadows });
       this.mesh = this.rig.root;
       this.game.scene.add(this.mesh);
@@ -130,6 +131,7 @@ export class Player {
     this.outfit = id || null;
     const vis = this.mesh.visible;
     g.scene.remove(this.mesh);
+    this.rig.dispose();
     this.rig = new CharacterRig(id || 'vikram', { castShadow: g.shadows });
     this.mesh = this.rig.root;
     this.mesh.visible = vis;

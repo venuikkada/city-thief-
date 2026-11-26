@@ -166,6 +166,12 @@ export class CharacterRig {
     this.moveCrouch = crouch * (1 - idle);   // bend the legs in code only while moving crouched
   }
 
+  // Free this body's bone data on the graphics card (the body shape and clothes are shared and stay).
+  // Call it when the person is gone for good; if the body is shown again, three.js simply rebuilds it.
+  dispose() {
+    for (const m of this.meshes) if (m.isSkinnedMesh && m.skeleton) m.skeleton.dispose();
+  }
+
   setGesture(name, weight = 1) {
     if (name && !this.actions[name]) name = name === 'agree' || name === 'headShake' ? 'listen' : 'talk';
     this.gesture = name;

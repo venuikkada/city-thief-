@@ -719,6 +719,7 @@ export class Pedestrian {
       const d = dist(x, z, P.x, P.z);
       if (d < 45 || d > 95 || dist(x, z, cam.x, cam.z) < 40) continue;
       g.scene.remove(this.mesh);
+      this.rig.dispose();   // the old body is gone for good
       this.rig = randomPersonRig(g.shadows);
       this.mesh = this.rig.root;
       g.scene.add(this.mesh);

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d0e11">
-  <meta name="description" content="City Thief - free browser game. A big Indian coastal city: 20 story missions, races, stunts, gang wars, police chases with roadblocks and a helicopter. No login.">
+  <meta name="description" content="City Thief - free 3D crime game in a big Indian coastal city: 76 story missions, walk into any shop, police chases, cars, guns. Plays in the browser, on Android and on PC. No login.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/icon-32.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
@@ -187,107 +187,119 @@
 
   <!-- ===================== SCREENS ===================== -->
   <div id="menu" class="screen hidden">
-    <div class="panel left">
-      <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
-      <p class="built-by">BUILT BY <b>VENU BRUSHWOOD</b></p>
-      <p class="tag">NAVAPUR &middot; 76 STORY MISSIONS &middot; 8 CHAPTERS</p>
-      <p class="tag2">A big coastal city &middot; day, night &amp; monsoon storms &middot; cops, SWAT &amp; a helicopter</p>
-      <div id="menu-rankbox"><span class="lbl">RANK</span> <b id="menu-rank">STREET KID</b><div class="xp"><div id="menu-xp-fill"></div></div><small id="menu-xp-text"></small></div>
-      <div class="menu-buttons">
-        <button class="big-btn" id="btn-story">STORY MISSIONS</button>
-        <button class="big-btn alt" id="btn-free">FREE ROAM</button>
-        <button class="big-btn alt" id="btn-shop">SHOP</button>
-        <button class="big-btn alt" id="btn-settings">SETTINGS</button>
+    <div class="lobby">
+      <header class="lobby-top">
+        <div class="brand">
+          <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
+          <p class="built-by">BUILT BY <b>VENU BRUSHWOOD</b></p>
+        </div>
+        <div class="lobby-stats">
+          <div id="menu-rankbox" class="chip rank"><span class="lbl">RANK</span><b id="menu-rank">STREET KID</b><div class="xp"><div id="menu-xp-fill"></div></div><small id="menu-xp-text"></small></div>
+          <div class="chip cash"><span class="rs">&#8377;</span><span id="menu-coins">0</span></div>
+          <button class="icon-btn" id="btn-settings" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg></button>
+        </div>
+      </header>
+      <p class="tag">NAVAPUR &middot; 76 STORY MISSIONS &middot; 8 CHAPTERS &middot; DAY, NIGHT &amp; MONSOON</p>
+      <div class="modes">
+        <button class="mode story" id="btn-story"><i><svg viewBox="0 0 24 24"><path d="M4 4h7a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H4zM20 4h-3a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H20z"/></svg></i><b>STORY</b><small id="menu-story-sub">76 missions &middot; 8 chapters</small></button>
+        <button class="mode free" id="btn-free"><i><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></i><b>FREE ROAM</b><small>Shops, cars, police chases</small></button>
+        <button class="mode shop" id="btn-shop"><i><svg viewBox="0 0 24 24"><path d="M6 7V6a6 6 0 0 1 12 0v1h3l-1.5 14h-15L3 7zm2 0h8V6a4 4 0 0 0-8 0zm-1 4a1 1 0 1 0 2 0 1 1 0 0 0-2 0zm8 0a1 1 0 1 0 2 0 1 1 0 0 0-2 0z"/></svg></i><b>SHOP</b><small>Guns, armour, nitro</small></button>
       </div>
-      <div class="menu-row">
-        <button class="big-btn alt small" id="btn-fullscreen">FULL SCREEN</button>
-        <button class="big-btn alt small hidden" id="btn-install">INSTALL APP</button>
-      </div>
-      <div class="menu-row web-only">
-        <a class="big-btn alt small dl" href="download/CityThief.apk" download>&#129302; ANDROID APP (APK)</a>
-        <a class="big-btn alt small dl" href="download/CityThief-Windows.zip" download>&#128187; WINDOWS PC (ZIP)</a>
-      </div>
+      <footer class="lobby-bottom">
+        <div class="menu-row">
+          <button class="mini-btn" id="btn-fullscreen">FULL SCREEN</button>
+          <button class="mini-btn hidden" id="btn-install">INSTALL APP</button>
+          <a class="mini-btn dl web-only" href="download/CityThief.apk" download>&#129302; ANDROID APP</a>
+          <a class="mini-btn dl web-only" href="download/CityThief-Windows.zip" download>&#128187; WINDOWS PC</a>
+          <a class="mini-btn wa" id="btn-feedback" target="_blank" rel="noopener">&#128172; FEEDBACK</a>
+          <a class="mini-btn wa" id="btn-share" target="_blank" rel="noopener">&#128228; SHARE</a>
+        </div>
+        <button class="play-btn" id="btn-continue"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></span><span class="txt"><b>PLAY</b><small id="continue-sub">MISSION 1</small></span></button>
+      </footer>
       <div id="pc-help" class="pc-only">
         <b>PC CONTROLS</b>
         <span><i>W A S D</i> move / drive &middot; <i>Mouse</i> look &middot; <i>Left click</i> fire &middot; <i>Right click</i> aim</span>
         <span><i>Shift</i> sprint / nitro &middot; <i>Space</i> jump / handbrake &middot; <i>E</i> get in / out of a car</span>
-        <span><i>R</i> reload &middot; <i>Q</i> switch gun &middot; <i>C</i> crouch &middot; <i>G</i> pick up &middot; <i>T</i> takedown</span>
-        <span><i>Y</i> talk &middot; <i>U</i> rob &middot; <i>O</i> push &middot; <i>H</i> hire / horn &middot; <i>K</i> photo</span>
+        <span><i>1</i> <i>2</i> <i>Wheel</i> guns &middot; <i>R</i> reload &middot; <i>C</i> crouch &middot; <i>G</i> pick up &middot; <i>T</i> takedown</span>
+        <span><i>Y</i> talk &middot; <i>U</i> rob &middot; <i>I</i> buy &middot; <i>O</i> push &middot; <i>H</i> hire / horn &middot; <i>K</i> photo</span>
         <span><i>M</i> map &middot; <i>V</i> car camera &middot; <i>F11</i> full screen &middot; <i>Esc</i> pause</span>
       </div>
-      <p class="coins">&#8377; <span id="menu-coins">0</span> earned &middot; best with sound &#128266;</p>
-      <p class="small-note">Free &middot; no login &middot; all names, places and police are fictional.</p>
+      <p class="small-note fine">Free &middot; no login &middot; all names, places and police are fictional &middot; best with sound &#128266;</p>
     </div>
   </div>
 
-  <div id="missions-screen" class="screen hidden">
-    <div class="panel wide">
-      <h2>CHAPTER 1 &mdash; STREET ESCAPE</h2>
-      <div id="mission-list"></div>
-      <button class="big-btn alt small" data-back>BACK</button>
-    </div>
+  <div id="missions-screen" class="screen page hidden">
+    <header class="page-top"><button class="back-btn" data-back>&#8249; BACK</button><h2>STORY MISSIONS</h2><span class="page-meta" id="missions-meta"></span></header>
+    <div class="page-body"><div id="mission-list"></div></div>
   </div>
 
-  <div id="shop-screen" class="screen hidden">
-    <div class="panel wide">
-      <h2>SHOP <span class="shop-coins">&#8377; <span id="shop-coins">0</span></span></h2>
-      <p class="small-note">Earn cash in missions, races, stunts and the daily reward. No real money.</p>
+  <div id="shop-screen" class="screen page hidden">
+    <header class="page-top"><button class="back-btn" data-back>&#8249; BACK</button><h2>SHOP</h2><span class="page-meta shop-coins">&#8377; <span id="shop-coins">0</span></span></header>
+    <div class="page-body">
+      <p class="small-note">Earn cash in missions, races, stunts, shops and the daily reward. No real money.</p>
       <div id="shop-list"></div>
-      <button class="big-btn alt small" data-back>BACK</button>
     </div>
   </div>
 
-  <div id="settings-screen" class="screen hidden">
-    <div class="panel wide">
-      <h2>SETTINGS</h2>
-      <label>Look sensitivity <input type="range" id="set-look" min="0.3" max="2.5" step="0.05"></label>
-      <label>Aim sensitivity <input type="range" id="set-aim" min="0.2" max="1.5" step="0.05"></label>
-      <label>Button size <input type="range" id="set-btn" min="0.8" max="1.3" step="0.05"></label>
-      <label class="row">Invert look (up/down) <input type="checkbox" id="set-invert"></label>
-      <label class="row">Aim help (touch screens) <input type="checkbox" id="set-assist"></label>
-      <label class="row">Car controls
-        <select id="set-drive"><option value="buttons">Buttons: left/right + up (gas) / down (brake)</option><option value="joystick">Joystick</option></select></label>
-      <label class="row">Sound <input type="checkbox" id="set-sound"></label>
-      <label class="row">Music <input type="checkbox" id="set-music"></label>
-      <label class="row">Voices (Indian English) <input type="checkbox" id="set-voice"></label>
-      <label class="row">Difficulty
-        <select id="set-diff"><option value="0.7">Easy</option><option value="1">Normal</option><option value="1.3">Hard</option></select></label>
-      <label class="row">Graphics
-        <select id="set-gfx"><option value="low">Low (old phones)</option><option value="medium">Medium (phones)</option><option value="high">High (computers)</option></select></label>
+  <div id="settings-screen" class="screen page hidden">
+    <header class="page-top"><button class="back-btn" data-back>&#8249; BACK</button><h2>SETTINGS</h2><span class="page-meta"></span></header>
+    <div class="page-body">
+      <div class="settings-grid">
+        <label>Look sensitivity <input type="range" id="set-look" min="0.3" max="2.5" step="0.05"></label>
+        <label>Aim sensitivity <input type="range" id="set-aim" min="0.2" max="1.5" step="0.05"></label>
+        <label>Button size <input type="range" id="set-btn" min="0.8" max="1.3" step="0.05"></label>
+        <label class="row">Invert look (up/down) <input type="checkbox" id="set-invert"></label>
+        <label class="row">Aim help (touch screens) <input type="checkbox" id="set-assist"></label>
+        <label class="row">Car controls
+          <select id="set-drive"><option value="buttons">Buttons (arrows)</option><option value="joystick">Joystick</option></select></label>
+        <label class="row">Sound <input type="checkbox" id="set-sound"></label>
+        <label class="row">Music <input type="checkbox" id="set-music"></label>
+        <label class="row">Voices (Indian English) <input type="checkbox" id="set-voice"></label>
+        <label class="row">Difficulty
+          <select id="set-diff"><option value="0.7">Easy</option><option value="1">Normal</option><option value="1.3">Hard</option></select></label>
+        <label class="row">Graphics
+          <select id="set-gfx"><option value="low">Low (old phones)</option><option value="medium">Medium (phones)</option><option value="high">High (computers)</option></select></label>
+      </div>
       <button class="big-btn alt small" id="btn-layout">CUSTOMIZE CONTROLS (move &amp; resize buttons)</button>
-      <p class="small-note">Phone: left thumb = joystick (push to the edge to sprint, drag far up to lock sprint). In a car the joystick drives: up = gas, down = brake/reverse. Tap the mini-map for the full map.<br>Computer: click the game to capture the mouse. WASD move/drive, Shift sprint/nitro, Space jump/drift, C crouch, R reload, Q switch gun, E enter/exit car, G pick up, H horn, V car camera, M map, right-click aim, left-click fire, Esc release mouse.</p>
-      <button class="big-btn alt small" data-back>BACK</button>
+      <p class="small-note">Phone: left thumb = joystick (push to the edge to sprint, drag far up to lock sprint). In a car: arrow buttons or the joystick. Tap the mini-map for the full map.<br>Computer: click the game to capture the mouse. WASD move/drive, Shift sprint/nitro, Space jump/drift, C crouch, R reload, 1 / 2 / wheel guns, E car, G pick up, H horn, V car camera, M map, right-click aim, left-click fire, Esc release the mouse.</p>
     </div>
   </div>
 
   <div id="pause-screen" class="screen hidden">
-    <div class="panel">
-      <h2>PAUSED</h2>
-      <div class="menu-buttons">
+    <div class="pause-wrap">
+      <div class="pause-left">
+        <h2>PAUSED</h2>
         <button class="big-btn" id="btn-resume">RESUME</button>
-        <div id="time-row" class="time-row"><span>TIME</span><button data-time="day">DAY</button><button data-time="night">NIGHT</button><button data-time="storm">STORM</button></div>
         <button class="big-btn alt" id="btn-restart">RESTART MISSION</button>
-        <button class="big-btn alt red" id="btn-pause-cops">CALL THE COPS (start a chase)</button>
         <button class="big-btn alt" id="btn-pause-settings">SETTINGS</button>
         <button class="big-btn alt" id="btn-pause-layout">CUSTOMIZE CONTROLS</button>
         <button class="big-btn alt" id="btn-quit">MAIN MENU</button>
+      </div>
+      <div class="pause-right">
+        <div class="pause-card"><small id="pause-mtitle">FREE ROAM</small><p id="pause-obj"></p></div>
+        <div id="time-row" class="time-row"><span>TIME OF DAY</span><div class="seg"><button data-time="day">DAY</button><button data-time="night">NIGHT</button><button data-time="storm">STORM</button></div></div>
+        <button class="big-btn alt red" id="btn-pause-cops">CALL THE COPS</button>
       </div>
     </div>
   </div>
 
   <div id="result-screen" class="screen hidden">
-    <div class="panel">
-      <h2 id="result-title">MISSION PASSED</h2>
-      <div id="result-stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
-      <div id="result-cash"></div>
-      <div id="result-bonus"></div>
-      <div id="result-xp" class="hidden"><div class="xp"><div id="result-xp-fill"></div></div><small id="result-xp-text"></small></div>
-      <p id="result-text"></p>
-      <div class="menu-buttons">
-        <button class="big-btn" id="btn-next">NEXT MISSION</button>
-        <button class="big-btn hidden" id="btn-retry-cp">RETRY FROM CHECKPOINT</button>
-        <button class="big-btn alt" id="btn-retry">RETRY</button>
-        <button class="big-btn alt" id="btn-result-menu">MAIN MENU</button>
+    <div class="panel result-card">
+      <div class="res-left">
+        <h2 id="result-title">MISSION PASSED</h2>
+        <div id="result-stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
+        <div id="result-cash"></div>
+        <p id="result-text"></p>
+      </div>
+      <div class="res-right">
+        <div id="result-bonus"></div>
+        <div id="result-xp" class="hidden"><div class="xp"><div id="result-xp-fill"></div></div><small id="result-xp-text"></small></div>
+        <div class="res-buttons">
+          <button class="big-btn" id="btn-next">NEXT MISSION</button>
+          <button class="big-btn hidden" id="btn-retry-cp">RETRY FROM CHECKPOINT</button>
+          <button class="big-btn alt" id="btn-retry">RETRY</button>
+          <button class="big-btn alt" id="btn-result-menu">MENU</button>
+        </div>
       </div>
     </div>
   </div>
@@ -300,6 +312,6 @@
     <div id="load-text">Loading Navapur...</div>
   </div>
 
-  <script type="module" src="src/main.js?v=8"></script>
+  <script type="module" src="src/main.js?v=9"></script>
 </body>
 </html>

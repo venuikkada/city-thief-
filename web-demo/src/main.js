@@ -507,7 +507,7 @@ class Game {
     // Street life back to normal.
     for (const a of [...this.ambient]) {
       if (!a.home) { a.remove(); continue; }
-      if (a.dead) { this.scene.remove(a.mesh); const fresh = new a.constructor(this, a.home.x, a.home.z, a.home.yaw, { gesture: a.home.gesture }); fresh.home = a.home; this.ambient[this.ambient.indexOf(a)] = fresh; continue; }
+      if (a.dead) { this.scene.remove(a.mesh); a.rig.dispose(); const fresh = new a.constructor(this, a.home.x, a.home.z, a.home.yaw, { gesture: a.home.gesture }); fresh.home = a.home; this.ambient[this.ambient.indexOf(a)] = fresh; continue; }
       a.x = a.home.x; a.z = a.home.z; a.yaw = a.home.yaw; a.state = 'idle'; a.speed = 0; a.rig.setGesture(a.home.gesture);
     }
     for (const p of this.peds) if (p.dead) { p.deadT = 99; p.respawnElsewhere(); }
@@ -673,6 +673,9 @@ class Game {
     document.getElementById('btn-pause-cops').classList.toggle('hidden', !!this.mission);
     document.getElementById('time-row').classList.toggle('hidden', !!this.mission);
     for (const x of document.querySelectorAll('[data-time]')) x.classList.toggle('on', x.dataset.time === (settings.time || 'day'));
+    // What you are doing right now (shown beside the pause buttons).
+    document.getElementById('pause-mtitle').textContent = document.getElementById('mission-title').textContent;
+    document.getElementById('pause-obj').textContent = document.getElementById('objective-text').textContent;
     this.showScreen('pause-screen');
     this.audio.setMuted(true);
     this.voice.pause(true);
@@ -953,6 +956,8 @@ game.load((p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; })
 function renderMissionList() {
   const list = $('mission-list');
   list.innerHTML = '';
+  const stars = Object.values(game.save.stars).reduce((a, b) => a + b, 0);
+  $('missions-meta').innerHTML = `&#9733; ${stars} / ${MISSIONS.length * 3}`;
   for (const ch of CHAPTERS) {
     const h = document.createElement('div');
     h.className = 'chapter' + (ch.soon ? ' soon' : '');
@@ -974,9 +979,24 @@ function renderMissionList() {
   }
 }
 
-// Menu: wallet, rank and XP bar.
+// Is a mission open to play? (chapters 1-2 open one by one; later chapters start open)
+function missionOpen(m) {
+  const s = game.save;
+  if (m.id < 21) return m.id <= s.unlocked;
+  const ch = CHAPTERS.find((c) => !c.soon && m.id >= c.from && m.id <= c.to);
+  return !!ch && (m.id === ch.from || (s.stars[m.id - 1] || 0) > 0);
+}
+function nextMission() {
+  const s = game.save;
+  return MISSIONS.find((m) => missionOpen(m) && !(s.stars[m.id] > 0)) || MISSIONS.filter(missionOpen).pop() || MISSIONS[0];
+}
+
+// Menu: wallet, rank and XP bar, story progress, the PLAY button.
 function updateMenu() {
   const s = game.save, r = rankOf(s.xp);
+  const done = MISSIONS.filter((m) => (s.stars[m.id] || 0) > 0).length, nm = nextMission();
+  $('menu-story-sub').textContent = `${done} / ${MISSIONS.length} done · ★ ${Object.values(s.stars).reduce((a, b) => a + b, 0)}`;
+  $('continue-sub').textContent = `MISSION ${nm.id} · ${nm.title.toUpperCase()}`;
   $('menu-coins').textContent = s.coins.toLocaleString('en-IN');
   $('menu-rank').textContent = RANKS[r].name;
   $('menu-xp-fill').style.width = Math.round(rankProgress(s.xp) * 100) + '%';
@@ -1089,6 +1109,8 @@ $('set-gfx').addEventListener('change', saveSettings);
 
 $('btn-story').addEventListener('click', () => { renderMissionList(); game.showScreen('missions-screen'); });
 $('btn-free').addEventListener('click', () => game.startFreeRoam());
+// PLAY: carry on with the story (the first open mission not finished yet).
+$('btn-continue').addEventListener('click', () => game.startMission(nextMission().id));
 $('btn-settings').addEventListener('click', () => openSettings('menu'));
 for (const b of document.querySelectorAll('[data-back]')) {
   b.addEventListener('click', () => {
@@ -1121,6 +1143,13 @@ $('btn-retry').addEventListener('click', () => game.startMission(game.lastDef.id
 $('btn-retry-cp').addEventListener('click', () => { const cp = game.checkpoint; game.startMission(game.lastDef.id, { fromAct: cp && cp.id === game.lastDef.id ? cp.act : 1 }); });
 $('btn-result-menu').addEventListener('click', () => game.goMenu());
 $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(); game.hud.clearSubs(); game.endCutscene(); });
+
+// ---------- Feedback + share on WhatsApp (friends test the game and tell Venu what to fix) ----------
+const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
+const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
+const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------
 // Inside the Android app or the Windows app the game is already an app (no install button).

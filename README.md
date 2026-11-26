@@ -90,6 +90,13 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9 new look (UI):** the main menu is a game lobby that fits any phone screen (STORY, FREE ROAM, SHOP cards, a big PLAY
+  button that continues the story, rank, cash and settings at the top). Missions, shop and settings are full-screen pages
+  with a BACK button; the pause menu shows what you are doing; the result card fits on one phone screen. In the game:
+  cleaner glass buttons, a short 2-line objective (a new objective shows in full for a few seconds), a health + armour
+  bar under the gun slots, short chase messages, and warning banners that never cover the mission box.
+- **Feedback from friends:** FEEDBACK and SHARE buttons on the main menu open WhatsApp with a ready message (rating,
+  what I liked, what to fix, phone model). QR code + "scan to play" poster: `marketing/`.
 - **Voices (Indian English):** every story line is spoken in the character's voice, Vikram says each new objective
   ("Okay. First, I have to go to Ravi's garage"), reminds you if you stand around, and greets people he talks to.
   Uses the phone's / PC's own voices (free, works offline). Settings -> Voices.
@@ -139,7 +146,7 @@ The **Unity project stays the real game** - the demo is for feedback and promoti
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).
-- Size: about 9 MB to download; draw calls about 60-140 on Low quality (cheap phones).
+- Size: about 9.8 MB to download; draw calls about 60-140 on Low quality (cheap phones).
 - Deploy target is saved in `.hostinger/site.json`.
 
 ---

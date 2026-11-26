@@ -73,7 +73,7 @@ export class Hud {
 
   showBig(text, color, seconds) {
     const b = this.el.big;
-    b.textContent = text; b.style.color = color;
+    b.textContent = text; b.style.color = color; b.style.setProperty('--c', color);
     b.classList.remove('hidden');
     b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
     this.bigT = seconds;
@@ -101,7 +101,14 @@ export class Hud {
   }
 
   setObjective(text) {
-    this.el.objective.textContent = text;
+    const o = this.el.objective;
+    if (o.textContent !== text) {
+      // A new objective is shown in full (highlighted) for a few seconds, then shrinks to 2 lines.
+      o.textContent = text;
+      this.el.panel.classList.add('fresh');
+      clearTimeout(this.freshT);
+      this.freshT = setTimeout(() => { this.el.panel.classList.remove('fresh'); document.documentElement.style.setProperty('--mp-h', this.el.panel.offsetHeight + 6 + 'px'); }, 7000);
+    }
     requestAnimationFrame(() => document.documentElement.style.setProperty('--mp-h', this.el.panel.offsetHeight + 6 + 'px'));
   }
 
@@ -243,11 +250,11 @@ export class Hud {
     if (D.active) {
       const T = D.target;
       const outside = Math.hypot(T.x - D.circle.x, T.z - D.circle.z) > D.circle.r;
-      if (D.sinceSeen < 1) { s = D.stars >= 2 ? 'POLICE ARE SHOOTING - break their line of sight!' : 'SPOTTED - run! Don\'t let them grab you'; color = '#ff6a5c'; }
-      else if (outside) { s = `OUT OF THE SEARCH AREA - stay hidden ${Math.max(0, D.escapeTime - D.outsideT).toFixed(1)}s`; color = '#7dff8a'; }
-      else { s = `HIDDEN - get out of the red circle (or hide ${Math.ceil(D.loseTime - D.sinceSeen)}s)`; color = '#ffd633'; }
+      if (D.sinceSeen < 1) { s = D.stars >= 2 ? 'UNDER FIRE · get out of sight' : 'SPOTTED · run, don\'t get caught'; color = '#ff6a5c'; }
+      else if (outside) { s = `OUT OF AREA · hide ${Math.max(0, D.escapeTime - D.outsideT).toFixed(1)}s`; color = '#7dff8a'; }
+      else { s = `HIDDEN · leave red circle ${Math.ceil(D.loseTime - D.sinceSeen)}s`; color = '#ffd633'; }
     }
-    if (this.cache.status !== s) { this.cache.status = s; E.status.textContent = s; E.status.style.color = color; }
+    if (this.cache.status !== s) { this.cache.status = s; E.status.textContent = s; E.status.style.color = color; E.status.style.setProperty('--c', color); E.status.classList.toggle('on', !!s); }
 
     // Wanted stars.
     const key = D.stars * 10 + (D.active && D.sinceSeen >= 1 ? 1 : 0);

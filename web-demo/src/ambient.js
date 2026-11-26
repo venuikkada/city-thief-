@@ -114,6 +114,7 @@ export class AmbientPerson {
   remove() {
     this.removed = true;
     this.game.scene.remove(this.mesh);
+    this.rig.dispose();
     const i = this.game.ambient.indexOf(this);
     if (i >= 0) this.game.ambient.splice(i, 1);
   }

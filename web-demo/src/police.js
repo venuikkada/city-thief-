@@ -516,6 +516,7 @@ export class Officer {
     this.inactive = true;
     this.game.scene.remove(this.mesh);
     this.game.scene.remove(this.gun);
+    this.rig.dispose();
     const list = this.game.officers, i = list.indexOf(this);
     if (i >= 0) list.splice(i, 1);
   }
