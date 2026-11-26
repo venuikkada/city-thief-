@@ -10,6 +10,7 @@
 // A CHECKPOINT is saved when each act starts: fail in act 2 or 3 and you can retry from there.
 import * as K from './mkit.js';
 import { dist, yawOf, pick } from './util.js';
+import { LINES, HALF_ROAD } from './world.js';
 
 const PI = Math.PI;
 
@@ -219,7 +220,7 @@ const ACTS = {
     end: ['RAVI', 'ravi', 'Kapoor is done. Festival season... and Rana is back.'] },
   // ===== Chapter 7: FESTIVAL CITY =====
   57: { meet: ['chai', 'RAJU', 'm_kurta', ['Happy Diwali! But Rana hid bombs in the cracker stalls.', 'Get the bomb toolkit from the bomb expert.'], 'Only good fireworks tonight.'],
-    prep: [gear('the bomb toolkit', 0)], site: 'the East Bazaar', heat: 1, stash: ['chai'], loot: 'the bomb parts',
+    prep: [gear('the bomb toolkit', 0), { t: 'scout', n: 3 }, { t: 'lookouts', n: 2 }], site: 'the East Bazaar', heat: 1, stash: ['chai'], loot: 'the bomb parts',
     end: ['RAJU', 'm_kurta', 'Spy drones are watching the rooftops now!'] },
   58: { meet: ['yard', 'KITE BOY', 'm_tee', ['Rana\'s drones hide among the kites!', 'Buy a gun scope, bhaiya. They fly high.'], 'Kai po che!'],
     prep: [gear('a gun scope', 300, 'ammo')], site: 'the rooftops', heat: 2, stash: ['hideout'], loot: 'a drone camera',
@@ -256,7 +257,7 @@ const ACTS = {
     prep: [gear('fake number plates', 400)], site: 'Ravi\'s garage', heat: 2, stash: ['hideout', 'press'], loot: 'nothing',
     end: ['RAVI', 'ravi', 'The bank manager\'s key card is next.'] },
   69: { meet: ['promenade', 'SUNNY', 'm_red', ['The manager drinks coffee on the promenade.', 'Practise first: lift two wallets.'], 'Light fingers.'],
-    prep: [{ t: 'cash', n: 2 }], site: 'the promenade cafe', heat: 1, stash: ['garage'], loot: 'the key card',
+    prep: [{ t: 'cash', n: 2 }, gear('a bank visitor pass', 300), { t: 'scout', n: 2 }], site: 'the promenade cafe', heat: 1, stash: ['garage'], loot: 'the key card',
     end: ['RAVI', 'ravi', 'Tools next: quiet or loud?'] },
   70: { meet: ['garage', 'RAVI', 'ravi', ['The drill is in the construction yard.', 'Take out the lookouts outside first.'], 'One by one.'],
     prep: [{ t: 'lookouts', n: 3 }], site: 'the construction yard', heat: 2, stash: ['hideout'], loot: 'the drill',
@@ -274,7 +275,7 @@ const ACTS = {
     prep: [{ t: 'tune', at: 'garage', sec: 18, label: 'LOADING THE GOLD' }], site: 'the van street', heat: 0, stash: ['docks'], loot: 'the gold van',
     end: ['SUNNY', 'm_red', 'Thanks for the gold, bhai. The speedboat is ready... for me.'] },
   75: { meet: ['docks', 'RAVI', 'ravi', ['Sunny took the gold and the fast boat!', 'Fuel the second boat at the dock pump.'], 'Sunny, you snake.'],
-    prep: [{ t: 'tune', at: 'docks', sec: 15, label: 'FUELLING THE BOAT' }], site: 'the jetty', heat: 0, stash: ['docks', 'promenade'], loot: 'the gold',
+    prep: [gear('a life jacket', 200), { t: 'tune', at: 'docks', sec: 15, label: 'FUELLING THE BOAT' }, { t: 'lookouts', n: 2 }], site: 'the jetty', heat: 0, stash: ['docks', 'promenade'], loot: 'the gold',
     end: ['RAVI', 'ravi', 'Sunny worked for the Commissioner all along...'] },
   76: { meet: ['hideout', 'SALIM', 'm_jacket', ['The Commissioner owns every cop in Navapur.', 'Take Imran and the heaviest armour you can buy.'], 'Today Navapur gets a new king.'],
     prep: [{ t: 'crew', who: 'IMRAN', rig: 'm_denim', at: 'parkW' }, gear('heavy armour', 1000, 'armour')], site: 'Marine Drive', heat: 4, stash: ['garage'], loot: 'the Commissioner\'s badge',
@@ -298,6 +299,19 @@ function free(g, x, z) {
   }
   return { x, z };
 }
+// On a road (people standing there would block the traffic)?
+const onRoad = (x, z) => LINES.some((L) => Math.abs(x - L) < HALF_ROAD + 0.8 || Math.abs(z - L) < HALF_ROAD + 0.8);
+// A walkable spot near (x, z) that is NOT on a road.
+function freeOffRoad(g, x, z) {
+  const nav = g.nav;
+  for (let r = 0; r <= 16; r += 1) {
+    for (let k = 0; k < (r ? 16 : 1); k++) {
+      const a = (k / 16) * PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (nav.free(nav.idx(px, pz)) && !onRoad(px, pz)) return { x: px, z: pz };
+    }
+  }
+  return free(g, x, z);
+}
 function spot(g, key) { const s = SPOTS[key] || SPOTS.chai; const p = free(g, s[0], s[1]); return { x: p.x, z: p.z, label: s[2], key }; }
 const subsDone = (g) => g.hud.subT <= 0 && !g.hud.subQueue.length;
 // Free spots around (cx, cz) between r0 and r1 metres (spread out), for lookouts and cameras.
@@ -306,7 +320,7 @@ function ring(g, cx, cz, r0, r1, n, test) {
   for (let k = 0; k < 80 && out.length < n; k++) {
     const a = Math.random() * PI * 2, r = r0 + Math.random() * (r1 - r0);
     const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    if (!g.nav.free(g.nav.idx(x, z))) continue;
+    if (!g.nav.free(g.nav.idx(x, z)) || onRoad(x, z)) continue;
     if (test && !test(x, z)) continue;
     if (out.some((p) => dist(p.x, p.z, x, z) < 12)) continue;
     out.push({ x, z });
@@ -323,7 +337,7 @@ function meetStep(o) {
       let s = o.place || (o.at ? spot(g, o.at) : null);
       if (!s) {   // someone a short walk from the first contact
         const c = m.vars.contact || g.player;
-        const q = ring(g, c.x, c.z, 25, 45, 1, (x, z) => !g.world.insideBlock(x, z))[0] || free(g, c.x + 30, c.z);
+        const q = ring(g, c.x, c.z, 25, 45, 1, (x, z) => !g.world.insideBlock(x, z))[0] || freeOffRoad(g, c.x + 30, c.z);
         s = { x: q.x, z: q.z, label: 'the street nearby' };
       }
       label = s.label;
@@ -442,7 +456,7 @@ function lookoutStep(o, site) {
     start: (g, m) => {
       const pts = ring(g, site.x, site.z, 12, 38, o.n || 2);
       const list = pts.map((p) => {
-        const a = Math.random() * PI * 2, q = free(g, p.x + Math.cos(a) * 7, p.z + Math.sin(a) * 7);
+        const a = Math.random() * PI * 2, q = freeOffRoad(g, p.x + Math.cos(a) * 7, p.z + Math.sin(a) * 7);
         return [p.x, p.z, a, [[p.x, p.z], [q.x, q.z]]];
       });
       K.guards(g, m, list, null, { group: 'look' });
@@ -469,7 +483,7 @@ function cashStep(o) {
   const spawn = (g, m) => {
     const c = m.vars.contact || g.player;
     const pts = ring(g, c.x, c.z, 8, 30, o.n || 2, (x, z) => !g.world.insideBlock(x, z));
-    const list = pts.map((p) => { const q = free(g, p.x + 8, p.z); return { at: [p.x, p.z], yaw: Math.random() * PI * 2, rig: pick(['m_office', 'f_coat', 'm_sweater', 'f_pink']), name: 'Rich shopper', cash: 600 + Math.floor(Math.random() * 400), walk: [[p.x, p.z], [q.x, q.z]] }; });
+    const list = pts.map((p) => { const q = freeOffRoad(g, p.x + 8, p.z); return { at: [p.x, p.z], yaw: Math.random() * PI * 2, rig: pick(['m_office', 'f_coat', 'm_sweater', 'f_pink']), name: 'Rich shopper', cash: 600 + Math.floor(Math.random() * 400), walk: [[p.x, p.z], [q.x, q.z]] }; });
     pp = K.pickpocket(list, 'Pickpocket the rich shoppers (walk up from BEHIND, tap ROB)', { need: list.length });
     pp.start(g, m);
   };
