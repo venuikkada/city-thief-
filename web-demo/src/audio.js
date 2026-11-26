@@ -14,7 +14,10 @@ export class GameAudio {
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
     this.master.gain.value = 0.7;
-    this.master.connect(ctx.destination);
+    // A soft limiter at the end: many sounds at once never crackle.
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -8; lim.knee.value = 6; lim.ratio.value = 10; lim.attack.value = 0.003; lim.release.value = 0.2;
+    this.master.connect(lim).connect(ctx.destination);
 
     // City rumble: filtered noise.
     const len = ctx.sampleRate * 2;
@@ -212,6 +215,65 @@ export class GameAudio {
       g.gain.linearRampToValueAtTime(0, t + 0.17);
       o.connect(g).connect(this.master);
       o.start(t); o.stop(t + 0.2);
+    }
+  }
+
+  // ---------- v9.2: sounds that make the world feel real ----------
+  // Empty shells tinkling on the ground after a shot.
+  casings(n = 1) {
+    if (!this.enabled) return;
+    const t = this.ctx.currentTime + 0.28 + Math.random() * 0.15;
+    for (let k = 0; k < n; k++) {
+      const s = t + k * (0.07 + Math.random() * 0.06), f = 3600 + Math.random() * 2200;
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(); o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, s); g.gain.linearRampToValueAtTime(0.035 / (k + 1), s + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.09);
+      o.connect(g).connect(this.master); o.start(s); o.stop(s + 0.12);
+    }
+  }
+  // A bullet hitting a wall / the road.
+  impact(volume = 1) {
+    if (!this.enabled || volume < 0.03) return;
+    this.burst(0.14 * volume, 3400, 1200, 0.045, 'bandpass'); this.thump(0.05 * volume, 260, 0.04);
+  }
+  // A police bullet flying past your head (pan: -1 left .. 1 right).
+  whiz(pan = 0) {
+    if (!this.enabled) return;
+    const ctx = this.ctx, t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 7; f.frequency.setValueAtTime(3400, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.22, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    let last = g;
+    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); g.connect(p); last = p; }
+    src.connect(f).connect(g); last.connect(this.master); src.start(t, Math.random() * 0.3); src.stop(t + 0.3);
+  }
+  // Tyres squealing while drifting (0..1), nitro roar while boosting.
+  loopNoise(type, freq, q) {
+    const ctx = this.ctx, n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.value = 0; n.connect(f).connect(g).connect(this.master); n.start();
+    return g;
+  }
+  screech(level) {
+    if (!this.enabled) return;
+    if (!this.screechG) { this.screechG = this.loopNoise('bandpass', 2300, 9); this.screech2 = this.loopNoise('bandpass', 3400, 12); }
+    const v = Math.max(0, Math.min(1, level));
+    if (Math.abs((this.screechL ?? -1) - v) > 0.03) { this.screechL = v; const t = this.ctx.currentTime; this.screechG.gain.setTargetAtTime(v * 0.16, t, 0.06); this.screech2.gain.setTargetAtTime(v * 0.09, t, 0.06); }
+  }
+  nitro(on) {
+    if (!this.enabled) return;
+    if (!this.nitroG) this.nitroG = this.loopNoise('highpass', 1500, 0.7);
+    if (this.nitroOn !== on) { this.nitroOn = on; this.nitroG.gain.setTargetAtTime(on ? 0.09 : 0, this.ctx.currentTime, on ? 0.05 : 0.2); if (on) this.burst(0.25, 900, 3200, 0.35, 'bandpass'); }
+  }
+  // Car door slam (getting in / out).
+  carDoor() { if (!this.enabled) return; this.thump(0.35, 120, 0.12); this.burst(0.18, 900, 200, 0.12); }
+  // Shop door: glass doors slide (whoosh) and the bell rings "ding-dong".
+  chime(volume = 1) {
+    if (!this.enabled || volume < 0.05) return;
+    const t = this.ctx.currentTime;
+    this.burst(0.08 * volume, 600, 1800, 0.45, 'bandpass');
+    for (const [f, d] of [[1318.5, 0], [1046.5, 0.32]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(); o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.linearRampToValueAtTime(0.06 * volume, t + d + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 1.1);
+      o.connect(g).connect(this.master); o.start(t + d); o.stop(t + d + 1.2);
     }
   }
 

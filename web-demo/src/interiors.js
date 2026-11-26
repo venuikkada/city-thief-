@@ -656,6 +656,7 @@ export class Interiors {
       let near = !P.inCar && d2(P.x, P.z) < 3.3 * 3.3;
       if (!near) for (const o of g.officers) if (!o.dead && !o.inactive && d2(o.x, o.z) < 9) { near = true; break; }
       if (!near) for (const q of it.npcs) if (!q.dead && d2(q.x, q.z) < 6.5) { near = true; break; }
+      if (near && D.f === 0 && !P.inCar) { const pd = Math.hypot(P.x - D.x, P.z - D.z); if (pd < 9) g.audio.chime(Math.max(0.25, 1 - pd / 9)); }   // doors whoosh + bell
       const f = Math.max(0, Math.min(1, D.f + (near ? 2.6 : -1.4) * dt));
       if (f !== D.f) { D.f = f; this.placeLeaves(D); }
     }

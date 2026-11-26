@@ -26,6 +26,7 @@ import { Atmosphere } from './atmosphere.js';
 import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
 import { Interact } from './interact.js';
 import { Interiors } from './interiors.js';
+import { Ambience } from './ambience.js';
 import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
 
@@ -157,6 +158,7 @@ class Game {
     this.rewards = new Rewards(this);
     this.interact = new Interact(this);
     this.interiors = new Interiors(this);   // walk into any shop or office tower
+    this.ambience = new Ambience(this);     // horns, crowds, birds, crickets, sea, police radio, shop fans
 
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
@@ -854,6 +856,7 @@ class Game {
       this.camera.position.set(x, 15, -268);
       this.camera.lookAt(x + 40, 9, -218);
       this.simulate(dt);
+      this.ambience.update(dt);
       this.render();
       return;
     }
@@ -935,6 +938,7 @@ class Game {
     let siren = Infinity;
     for (const p of this.policeCars) if (p.pursuing) siren = Math.min(siren, dist(p.x, p.z, P.x, P.z));
     this.audio.update(siren);
+    this.ambience.update(dt);
     const mLevel = this.mission ? Math.max(this.mission.music ?? 1, this.dispatch.stars ? 2 : 0) : (this.dispatch.stars ? 2 : 0);
     this.music.setLevel(Math.min(3, mLevel + (this.dispatch.stars >= 4 ? 1 : 0)));
     this.render();
@@ -1109,6 +1113,8 @@ $('set-gfx').addEventListener('change', saveSettings);
 
 $('btn-story').addEventListener('click', () => { renderMissionList(); game.showScreen('missions-screen'); });
 $('btn-free').addEventListener('click', () => game.startFreeRoam());
+// A soft tick on every menu button.
+document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('.big-btn,.mode,.play-btn,.mini-btn,.back-btn,.icon-btn,.mcard,.buy,.time-row button')) game.audio.click(); }, true);
 // PLAY: carry on with the story (the first open mission not finished yet).
 $('btn-continue').addEventListener('click', () => game.startMission(nextMission().id));
 $('btn-settings').addEventListener('click', () => openSettings('menu'));

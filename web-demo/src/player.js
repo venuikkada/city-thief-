@@ -405,11 +405,13 @@ export class Player {
       } else if (hit.t < w.range) {
         g.fx.impact(hit.point, hit.normal || _dir.clone().negate(), false);
         if (hit.normal && p < 2) g.fx.hole(hit.point, hit.normal);
+        if (p === 0) g.audio.impact(Math.max(0, 1 - hit.t / 60));
       }
     }
     g.fx.muzzle(muzzle, w.sound === 'shotgun' ? 1.6 : w.sound === 'rifle' ? 1.3 : w.sound === 'smg' ? 1.05 : 0.85);
     if (!ignore || ignore === this) g.fx.shell(muzzle.x - aimDir.x * (w.muzzle * 0.8), muzzle.y, muzzle.z - aimDir.z * (w.muzzle * 0.8), aimDir.x, aimDir.z);
     g.audio.gunshot(w.sound, 1);
+    if (!this.inCar && (!w.auto || Math.random() < 0.45)) g.audio.casings(w.pellets ? 1 : Math.random() < 0.3 ? 2 : 1);   // shells on the ground
     g.dispatch.crime('gunfire', this.x, this.z);
     g.alarm(this.x, this.z, 35);
     g.stats.shots++;

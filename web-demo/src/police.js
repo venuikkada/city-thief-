@@ -758,6 +758,12 @@ export class Officer {
     const dmg = { smg: 5 + Math.random() * 2, rifle: 10 + Math.random() * 4, shotgun: 16 + Math.random() * 6 }[this.weapon] || 6 + Math.random() * 3;
     if (res.hit && hit) { P.takeDamage(dmg * this.dmgMul, this.x, this.z); if (g.mission) g.mission.stats.hurt = (g.mission.stats.hurt || 0) + dmg; }
     else if (res.t < 60) g.fx.impact(end, dir.clone().negate(), false);
+    // A miss that flies close past Vikram's head: you hear it whiz by.
+    if (!(res.hit && hit) && g.ambience && g.ambience.ready) {
+      const hx = target.x - muzzle.x, hz = target.z - muzzle.z, along = Math.max(0, Math.min(Math.min(res.t, 60), hx * dir.x + hz * dir.z));
+      const cx = muzzle.x + dir.x * along, cz = muzzle.z + dir.z * along;
+      if (Math.hypot(cx - target.x, cz - target.z) < 2.4 && along < Math.min(res.t, 60)) g.audio.whiz(g.ambience.where(cx, cz).pan);
+    }
   }
 }
 

@@ -15,6 +15,11 @@ const KICK3 = [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0];
 const SNARE = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1];
 const BASS = [0, -1, 0, 0, -1, 0, 1, -1, 0, -1, 0, 0, 3, -1, 2, -1];   // scale degrees, -1 = rest
 const LEAD = [4, 4, 5, 4, 3, 2, 3, 1, 4, 5, 7, 5, 4, 3, 2, 0];        // one note per 8th, over 2 bars
+// Plucked "santoor / sitar" tune while exploring (2 bars of 16 steps each, -1 = rest), and an answer phrase.
+const MELODY = [4, -1, -1, 3, 4, -1, 5, -1, 4, -1, 3, -1, 2, -1, -1, -1, 1, -1, 2, -1, 3, -1, 2, 1, 0, -1, -1, -1, -1, -1, -1, -1];
+const MELODY2 = [7, -1, 5, -1, 4, -1, 5, 4, 3, -1, -1, 2, 3, -1, -1, -1, 4, -1, 3, 2, 1, -1, 2, -1, 0, -1, -1, -1, 4, -1, -1, -1];
+// Dhol (bhangra "chaal") in chases: D = deep "dhum", t = stick "tak".
+const DHOL = ['D', '', 't', 'D', '', 't', 'D', '', 't', '', 'D', 't', '', 't', '', ''];
 
 export class Music {
   constructor(audio) {
@@ -87,7 +92,14 @@ export class Music {
       const b = BASS[s];
       if (b >= 0 && (L >= 2 || s % 4 === 0)) this.bass(t, hz(b), 60 / this.bpm / 4 * 1.8, L >= 3 ? 0.32 : 0.24, L >= 3);
     }
+    // Exploring / mission: a plucked melody (rests every 4th bar so it breathes).
+    if (L <= 1 && this.bar % 4 !== 3) {
+      const m = (this.bar % 8 < 4 ? MELODY : MELODY2)[(this.bar % 2) * 16 + s];
+      if (m >= 0) this.pluck(t, hz(m, 2), L === 0 ? 0.2 : 0.15);
+    }
     if (L >= 2) {
+      const dh = DHOL[s];
+      if (dh === 'D') this.dhol(t, L >= 3 ? 0.42 : 0.36, false); else if (dh === 't') this.dhol(t, 0.22, true);
       if ((L >= 3 ? KICK3 : KICK)[s]) this.kick(t, 0.9);
       if (SNARE[s]) this.snare(t, 0.5);
       if (s % 2 === 0) {
@@ -150,6 +162,42 @@ export class Music {
     const vib = this.ctx.createOscillator(); vib.frequency.value = 5.5;
     const vg = this.ctx.createGain(); vg.gain.value = freq * 0.012;
     vib.connect(vg).connect(o.frequency); vib.start(t); vib.stop(t + dur + 0.05);
+  }
+
+  // Plucked string (Karplus-Strong): sounds like a santoor / sitar. Each note is made once and kept.
+  pluckBuf(freq) {
+    const key = Math.round(freq);
+    this.plucks = this.plucks || {};
+    if (this.plucks[key]) return this.plucks[key];
+    const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * 1.5), buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+    const N = Math.max(2, Math.round(sr / freq)), ring = new Float32Array(N);
+    for (let i = 0; i < N; i++) ring[i] = Math.random() * 2 - 1;
+    let k = 0;
+    for (let i = 0; i < len; i++) {
+      const a = ring[k], b = ring[(k + 1) % N];
+      let v = 0.4982 * (a + b);
+      v += 0.08 * (v * Math.abs(v) - v * 0.5);   // a little "jawari" buzz, like a sitar bridge
+      ring[k] = v; d[i] = a * (i > len - 2000 ? (len - i) / 2000 : 1); k = (k + 1) % N;
+    }
+    this.plucks[key] = buf;
+    return buf;
+  }
+  pluck(t, freq, v) {
+    const src = this.ctx.createBufferSource(); src.buffer = this.pluckBuf(freq);
+    src.playbackRate.setValueAtTime(Math.random() < 0.3 ? 0.97 : 1, t); src.playbackRate.linearRampToValueAtTime(1, t + 0.09);   // a small "meend" slide now and then
+    const g = this.ctx.createGain(); g.gain.value = v;
+    src.connect(g).connect(this.bus); src.start(t); src.stop(t + 1.5);
+  }
+  dhol(t, v, high) {
+    if (!high) {   // "dhum": the big skin
+      const g = this.env(t, v, 0.38); g.connect(this.bus);
+      const o = this.osc('sine', 98, t, 0.38, g); o.frequency.exponentialRampToValueAtTime(56, t + 0.26);
+      const n = this.env(t, v * 0.25, 0.05); n.connect(this.bus); this.noise(t, 0.05, n);
+    } else {   // "tak": the stick on the small skin
+      const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1700; f.Q.value = 1.3;
+      const g = this.env(t, v, 0.09); f.connect(g).connect(this.bus); this.noise(t, 0.09, f);
+      const g2 = this.env(t, v * 0.5, 0.06); g2.connect(this.bus); this.osc('triangle', 390, t, 0.06, g2);
+    }
   }
 
   // ---------- Reward sounds ----------

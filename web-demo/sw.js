@@ -1,5 +1,5 @@
 // City Thief offline cache (made by tools/make-sw.py - do not edit by hand).
-const CACHE = 'citythief-7c7013f9ab';
+const CACHE = 'citythief-371d6e0bfb';
 const FILES = [
   './assets/CREDITS.txt',
   './assets/icons/icon-180.png',
@@ -52,6 +52,7 @@ const FILES = [
   './js/vendor/three.module.min.js',
   './manifest.webmanifest',
   './src/acts.js',
+  './src/ambience.js',
   './src/ambient.js',
   './src/atmosphere.js',
   './src/audio.js',

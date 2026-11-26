@@ -54,6 +54,7 @@ export class Driving {
 
   enter(car) {
     const g = this.game, P = g.player;
+    g.audio.carDoor();
     this.car = car;
     const parked = car.parked;
     car.playerControlled = true;
@@ -102,6 +103,7 @@ export class Driving {
     car.playerControlled = false; car.parked = true; car.speed = 0;
     car.mesh.rotation.x = 0; car.mesh.rotation.z = 0;
     this.car = null; this.boosting = false; this.air = false;
+    g.audio.carDoor(); g.audio.screech(0); g.audio.nitro(false);
     g.audio.engine(false);
     g.camera3p.snapBehind();
     if (g.mission && g.mission.onExitCar) g.mission.onExitCar(car);
@@ -147,6 +149,7 @@ export class Driving {
     const hand = input.handbrake;
     const drain = g.rewards && g.rewards.has('nitro') ? 0.14 : 0.28;
     this.boosting = !dead && !this.air && input.boost && this.nitro > 0.02 && throttle > 0;
+    this.game.audio.nitro(this.boosting);
     if (this.boosting) this.nitro = Math.max(0, this.nitro - drain * dt);
     else this.nitro = Math.min(1, this.nitro + 0.07 * dt);
 
@@ -271,6 +274,7 @@ export class Driving {
     const g = this.game;
     if (!g.rewards) return;
     const slide = Math.abs(vL), sp = Math.abs(vF);
+    g.audio.screech(!this.air && sp > 5 && slide > 2.6 ? Math.min(1, (slide - 2.6) / 5) : 0);   // tyres squeal in a slide
     if (!this.air && slide > 2.4 && sp > 7 && !this.car.wrecked) {
       this.driftT += dt; this.driftIdle = 0;
       this.driftMult = Math.min(5, 1 + Math.floor(this.driftT / 1.5));
