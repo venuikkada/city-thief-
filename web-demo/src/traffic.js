@@ -726,6 +726,8 @@ export class Pedestrian {
       this.dir = Math.random() < 0.5 ? 1 : -1;
       this.target = this.dir === 1 ? i + 1 : i;
       this.dead = false; this.health = 40; this.panic = 0; this.speed = 0; this.crossing = null; this.groundY = FOOT_TOP;
+      // A brand new person: new name, full wallet, has not seen anything.
+      this.profile = null; this.seed = undefined; this.robbed = false; this.robbedT = 0; this.given = false; this.alert = false;
       return true;
     }
     this.deadT = Math.min(this.deadT || 0, 15);
