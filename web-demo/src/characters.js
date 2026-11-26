@@ -47,9 +47,25 @@ function fixClipNames(gltf) {
   const out = {};
   for (const a of gltf.animations) {
     for (const t of a.tracks) t.name = t.name.replace(/^(.+?)_\d+(\.(quaternion|position))$/, '$1$2');
+    a.speedMps = inPlace(a);
     out[a.name] = a;
   }
   return out;
+}
+
+// The walk / run clips move the hips forward by themselves (root motion: 1.2 m a step cycle when walking,
+// 3.5 m when sprinting). The game already moves people, so the body slid ahead and snapped back every
+// cycle: it looked like running on the spot, in double time. Keep the clips in place (the up-down bob
+// stays) and remember how fast each clip walks, so the legs move exactly as fast as the person does.
+function inPlace(clip) {
+  const t = clip.tracks.find((k) => k.name === 'Bip01.position');
+  if (!t) return 0;
+  const v = t.values, ts = t.times, n = ts.length, span = ts[n - 1] - ts[0];
+  if (n < 2 || span <= 0) return 0;
+  const dx = v[(n - 1) * 3] - v[0], dz = v[(n - 1) * 3 + 2] - v[2], drift = Math.hypot(dx, dz);
+  if (drift < 0.1) return 0;
+  for (let i = 0; i < n; i++) { const f = (ts[i] - ts[0]) / span; v[i * 3] -= dx * f; v[i * 3 + 2] -= dz * f; }
+  return drift / span;
 }
 
 export async function loadCharacters(manager) {
@@ -128,6 +144,9 @@ export class CharacterRig {
     }
     // Some names share one clip (women: look / wait = idle, listen = talk): weights are added up per clip,
     // otherwise one name would switch off the other and leave a stiff T-pose.
+    // Natural speed of this body's walk / run / sprint clips (m/s), so the feet do not slide.
+    const sp = (k) => (clips[names[k]] && clips[names[k]].speedMps) || GAIT[k];
+    this.gait = { walk: sp('walk'), run: sp('run'), sprint: sp('sprint') };
     this.uniq = [...new Set(Object.values(this.actions))];
     this.uniq.forEach((act, i) => { act.wi = i; });
     this.wts = new Float32Array(this.uniq.length);
@@ -156,9 +175,9 @@ export class CharacterRig {
     const W = this.wts;
     W.fill(0);
     if (a.idle) W[a.idle.wi] += idle * k;
-    if (a.walk) { W[a.walk.wi] += walk * k; a.walk.timeScale = dir * clamp(s / GAIT.walk, 0.5, 1.75); }
-    if (a.run) { W[a.run.wi] += run * k; a.run.timeScale = dir * clamp(s / GAIT.run, 0.7, 1.45); }
-    if (a.sprint) { W[a.sprint.wi] += sprint * k; a.sprint.timeScale = clamp(s / GAIT.sprint, 0.85, 1.3); }
+    if (a.walk) { W[a.walk.wi] += walk * k; a.walk.timeScale = dir * clamp(s / this.gait.walk, 0.5, 1.8); }
+    if (a.run) { W[a.run.wi] += run * k; a.run.timeScale = dir * clamp(s / this.gait.run, 0.7, 1.6); }
+    if (a.sprint) { W[a.sprint.wi] += sprint * k; a.sprint.timeScale = clamp(s / this.gait.sprint, 0.85, 1.3); }
     if (a.crouch) W[a.crouch.wi] += crouchIdle;
     if (this.gesture && a[this.gesture]) W[a[this.gesture].wi] += ges * (1 - crouchIdle);
     for (let i = 0; i < this.uniq.length; i++) this.uniq[i].setEffectiveWeight(W[i]);
