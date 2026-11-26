@@ -9,7 +9,12 @@ const CAR = ['btn-gas', 'btn-brake', 'btn-left', 'btn-right', 'btn-handbrake', '
 const BOTH = ['btn-pause', 'btn-callcops'];
 
 export function loadLayout() {
-  try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; }
+  try {
+    const L = JSON.parse(localStorage.getItem(KEY) || '{}');
+    // v8: new default car buttons (same places as the reference layout). Old saved car positions are dropped once.
+    if ((L._v || 1) < 2) { for (const id of CAR) if (id !== 'btn-weapon') delete L[id]; L._v = 2; localStorage.setItem(KEY, JSON.stringify(L)); }
+    return L;
+  } catch (e) { return {}; }
 }
 
 // Put every saved button in its place (positions are % of the screen, so they fit any phone).
@@ -18,8 +23,8 @@ export function applyLayout(layout = loadLayout()) {
     const el = $(id);
     if (!el) continue;
     const L = layout[id];
-    if (!L) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; continue; }
-    el.style.left = L.x + '%'; el.style.top = L.y + '%'; el.style.right = 'auto'; el.style.bottom = 'auto';
+    if (!L) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = el.style.translate = ''; continue; }
+    el.style.left = L.x + '%'; el.style.top = L.y + '%'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.translate = 'none';
     el.style.transform = `translate(-50%, -50%) scale(${L.s})`;
     el.style.opacity = L.o;
   }

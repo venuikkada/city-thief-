@@ -4,6 +4,20 @@ Missions 1–76 (Chapters 1–8) are built and playable in the browser demo. Eve
 The research behind these missions is in `Docs/MISSION_RESEARCH.md`.
 This plan lists the built chapters, then what comes next: the Sagarpet chapters, side activities, and daily and weekly events.
 
+## Three acts (v8): every mission lasts 5+ minutes
+
+Every one of the 76 missions now has three acts (data for each mission: `web-demo/src/acts.js`):
+
+| Act | What happens | Takes about |
+|---|---|---|
+| 1 THE PLAN | Meet the contact (spoken dialogue), then 2 preparation jobs: buy gear, photograph CCTV, take out lookouts, pickpocket for cash, chase a snitch, steal the right car, hire crew, tune the car. Then go to the job. | 2-3 min |
+| 2 THE JOB | The mission itself, harder: enemies x1.35 health (bosses x1.5) and x1.2 damage, guards notice 25% faster, timers 8% shorter. | 1.5-4 min |
+| 3 THE GETAWAY | Police stars (raids into buildings), lose them, take the loot to a safehouse (ambush / burned safehouse when you were fast), debrief. | 1.5-3 min |
+
+Checkpoints at the start of acts 2 and 3. The star rating still uses the time of THE JOB (act 2).
+If a player is very fast, the getaway adds more police, an ambush and a backup safehouse, so the
+mission still lasts about 5 minutes.
+
 ## How every mission should feel (the "dopamine" rules)
 
 1. **Clear goal, visible progress.** There is always a yellow GPS line, a counter ("3 / 8") or a bar.
@@ -12,7 +26,7 @@ This plan lists the built chapters, then what comes next: the Sagarpet chapters,
 4. **A big ending.** An explosion, slow motion, a boss going down or a jump into the sea.
 5. **Stars to master it.** You pass with 1 star; 3 stars need speed, no damage or stealth. Players replay for 3 stars.
 6. **Cliffhanger.** Each result screen teases the next mission in one line.
-7. **Short.** 2–4 minutes per mission, so it fits a bus ride or a chai break.
+7. **Long enough to matter (v8).** 5–8 minutes per mission in three acts, with checkpoints so a failure late in the mission does not send you back to the start.
 8. **One new idea per mission.** Every mission brings one thing the player has never done in a crime game (Chapter 3 rule).
 
 ## Chapter 3: NAVAPUR NIGHTS (missions 21–26) — built

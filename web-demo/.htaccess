@@ -2,12 +2,19 @@
 AddType application/javascript .js
 AddType text/css .css
 AddType model/gltf-binary .glb
+AddType application/manifest+json .webmanifest
+AddType application/vnd.android.package-archive .apk
+AddType application/zip .zip
 <IfModule mod_headers.c>
-  <FilesMatch "\.(html|js|css)$">
+  <FilesMatch "\.(html|js|css|webmanifest)$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
   <FilesMatch "\.(glb|hdr|jpg|png|webp)$">
     Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+  <FilesMatch "\.(apk|zip)$">
+    Header set Content-Disposition "attachment"
+    Header set Cache-Control "no-cache"
   </FilesMatch>
 </IfModule>
 <IfModule mod_expires.c>

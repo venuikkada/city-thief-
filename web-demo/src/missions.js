@@ -7,6 +7,7 @@ import { MissionCar } from './mcars.js';
 import { CharacterRig } from './characters.js';
 import { LiveStream, ColorClouds, Rhythm } from './specials.js';
 import { moreMissions, INTROS } from './missions2.js';
+import { installActs } from './acts.js';
 import { part, mergeParts, BOX, vertexColorGlow } from './mesh.js';
 import { FOOT_TOP } from './world.js';
 import { dist, yawOf, pick } from './util.js';
@@ -1141,15 +1142,18 @@ function baraatStep(g, m, dt) {
 
 // ---------- Runs one mission ----------
 export class MissionRunner {
-  constructor(game, def) {
+  constructor(game, def, opts = {}) {
     this.game = game; this.def = def;
+    // v8: missions run in three acts (plan, job, getaway). fromAct = restart at a checkpoint.
+    this.fromAct = opts.fromAct || 1; this.act = 0; this.totalElapsed = 0; this.clockT = 0;
+    this.challenge = def.acts ? 1.25 : 1;   // the job is harder than before
     this.elapsed = 0; this.timeLeft = null; this.done = false;
     this.vars = {}; this.ents = []; this.objectiveText = '';
     this.stats = { kills: 0, heads: 0, hurt: 0, stunts: 0, drift: 0 };
     this.cashEarned = 0; this.music = 1; this.holdStars = false;
     this.steps = def.steps(this); this.si = -1;
     // "EARLIER..." flashback: what Vikram did before the theft (skippable).
-    if (def.intro && !game.noIntros) {
+    if (def.intro && !game.noIntros && this.fromAct <= 1) {
       let done = false;
       this.steps.unshift({
         start: (g) => { done = false; g.playIntro(def.intro, () => { done = true; g.hud.card(`MISSION ${def.id}`, def.title.toUpperCase(), def.brief); }); },
@@ -1159,21 +1163,44 @@ export class MissionRunner {
     }
   }
 
-  objective(text) { if (text !== this.objectiveText) { this.objectiveText = text; this.game.hud.setObjective(text); } }
+  objective(text) {
+    if (text === this.objectiveText) return;
+    this.objectiveText = text; this.game.hud.setObjective(text);
+    if (this.game.voice) this.game.voice.objective(text);   // Vikram says what to do next
+  }
   marker(x, z, r, moving = false) { this.game.setMarker(x === null ? null : { x, z, r, moving }); }
   timer(sec) { this.timeLeft = sec; }
-  track(e) { if (e) { this.ents.push(e); if (e.rig && !e.isOfficer && e.noInteract === undefined && !e.missionTalk) e.noInteract = true; } return e; }
-  onKill(o) { if (this.def.onKill) this.def.onKill(this.game, this, o); }
-  onBossHit(o) { if (this.def.onBossHit) this.def.onBossHit(this.game, this, o); }
-  onAlert(o) { if (this.def.onAlert) this.def.onAlert(this.game, this, o); }
-  onEvent(type, data) { if (this.def.onEvent) this.def.onEvent(this.game, this, type, data); }
+  track(e) {
+    if (e) {
+      this.ents.push(e);
+      if (e.rig && !e.isOfficer && e.noInteract === undefined && !e.missionTalk) e.noInteract = true;
+      // Harder jobs: enemies take more hits and hit harder (bosses even more).
+      if (e.isOfficer && this.def.acts && this.act === 2 && !e.boosted && (e.gang || e.forceHostile || e.boss)) {
+        e.boosted = true;
+        const k = e.boss ? 1.5 : 1.35;
+        e.health = e.maxHealth = Math.round(e.maxHealth * k); e.dmgMul = (e.dmgMul || 1) * 1.2;
+      }
+    }
+    return e;
+  }
+  // The mission's own rules (counters, special systems) only run during the job (act 2).
+  get inJob() { return !this.def.acts || this.act === 2; }
+  onKill(o) { if (this.def.onKill && this.inJob) this.def.onKill(this.game, this, o); if (this.game.voice) this.game.voice.progress(); }
+  onBossHit(o) { if (this.def.onBossHit && this.inJob) this.def.onBossHit(this.game, this, o); }
+  onAlert(o) { if (this.def.onAlert && this.inJob) this.def.onAlert(this.game, this, o); }
+  onEvent(type, data) {
+    if (this.actEvent) this.actEvent(this.game, this, type, data);
+    if (this.def.onEvent && this.inJob) this.def.onEvent(this.game, this, type, data);
+  }
   onEnterCar() {}
 
   start() {
     const g = this.game, d = this.def;
     if (!this.hasIntro) g.hud.card(`MISSION ${d.id}`, d.title.toUpperCase(), d.brief);
-    if (d.timer) this.timer(d.timer);
-    if (d.setup) d.setup(g, this);
+    if (!d.acts) {   // three-act missions start their timer and set-up when the job (act 2) starts
+      if (d.timer) this.timer(d.timer);
+      if (d.setup) d.setup(g, this);
+    }
     this.next();
   }
 
@@ -1196,12 +1223,19 @@ export class MissionRunner {
   update(dt) {
     if (this.done) return;
     const g = this.game;
-    if (g.mode === 'play') this.elapsed += dt;
+    if (g.mode === 'play') { this.elapsed += dt; this.totalElapsed += dt; }
+    // Mission clock + act on the HUD.
+    this.clockT -= dt;
+    if (this.clockT <= 0 && this.def.acts) {
+      this.clockT = 0.5;
+      const t = Math.floor(this.totalElapsed), mm = String(Math.floor(t / 60)).padStart(2, '0'), ss = String(t % 60).padStart(2, '0');
+      g.hud.setClock(`ACT ${Math.max(1, this.act)}/3 · ${['', 'THE PLAN', 'THE JOB', 'THE GETAWAY'][Math.max(1, this.act)]} · ${mm}:${ss}`);
+    }
     if (this.timeLeft !== null && g.mode === 'play') {
       this.timeLeft -= dt;
       if (this.timeLeft <= 0) { this.fail('Time is up'); return; }
     }
-    if (this.def.watch) this.def.watch(g, this, dt);
+    if (this.def.watch && this.inJob) this.def.watch(g, this, dt);
     const st = this.steps[this.si];
     if (st && st.update(g, this, dt)) this.next();
   }
@@ -1211,6 +1245,7 @@ export class MissionRunner {
     if (this.done) return;
     this.done = true; this.passed = true;
     const g = this.game, d = this.def;
+    if (d.acts && this.jobTime != null) this.elapsed = this.jobTime;   // stars are for how fast the JOB was done
     let stars = d.rate ? d.rate(g, this) : (d.par && d.par[0] ? (this.elapsed <= d.par[0] ? 3 : this.elapsed <= d.par[1] ? 2 : 1) : 3);
     stars = Math.max(1, Math.min(3, stars));
     const bonuses = [['MISSION REWARD', d.reward], ['STARS BONUS', stars * 150]];
@@ -1265,3 +1300,5 @@ MISSIONS.push(...moreMissions({
   parkedCar, missionCar, gang, spawnRavi, allyFight, AmbientPerson, CharacterRig, THREE, RACE_CPS, GARAGE, ColorClouds,
 }));
 for (const m of MISSIONS) if (!m.intro && INTROS[m.id]) m.intro = INTROS[m.id];
+// v8: every mission becomes THE PLAN + THE JOB + THE GETAWAY (5+ minutes, harder, with checkpoints).
+installActs(MISSIONS, { place, act, say, wait, goTo, hold, collect, missionCar, THREE });

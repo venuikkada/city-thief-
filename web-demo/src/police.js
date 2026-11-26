@@ -10,13 +10,17 @@
 //   Get OUT of the circle while nobody sees you -> the stars go in a few seconds.
 //   Staying hidden inside it also works, but takes much longer.
 //   Switching to a car they did not see you take also helps.
+// POLICE RAIDS
+//   Hiding in a courtyard, an alley or a yard behind the buildings does not save you: a police van
+//   parks at the block and officers walk in through the gaps to search every corner. If one of them
+//   gets hold of you while you walk (not run) - BUSTED. Run out unseen, or fight your way out.
 import * as THREE from 'three';
 import { Car } from './traffic.js';
 import { CharacterRig, strafeYaw, twistTo } from './characters.js';
 import { makeGun, shotHitsPlayer } from './weapons.js';
 import { part, mergeParts, BOX, vertexColorMaterial } from './mesh.js';
 import { LINES, HALF_ROAD } from './world.js';
-import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp } from './util.js';
+import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp, pick } from './util.js';
 
 const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
 
@@ -46,6 +50,7 @@ export class Dispatch {
     this.reinforceT = 0;
     this.roadblocks = []; this.roadblockT = 4;
     this.heli = null;
+    this.raid = null; this.raidT = 0; this.raidAt = 0; this.raidsOn = true;
     this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {};
   }
 
@@ -77,6 +82,7 @@ export class Dispatch {
     this.stars = 0;
     for (const c of this.game.policeCars) c.endPursuit();
     for (const o of this.game.officers) if (!o.dead) o.standDown();
+    if (this.raid) { this.raid.end(); this.raid = null; }
     if (this.heli) this.heli.leave();
     this.onStars(0, 1);
     if (escaped) this.onEscaped();
@@ -125,12 +131,38 @@ export class Dispatch {
   // An officer has hold of the player (only at 1 star).
   caught() {
     const g = this.game, P = g.player;
-    if (this.busting || this.stars !== 1 || P.dead) return;
+    if (this.busting || this.stars < 1 || this.stars > 3 || P.dead || g.godMode) return;
     this.busting = true;
     if (P.inCar) g.driving.exit();
     P.controlsEnabled = false;
     this.onBusted();
     setTimeout(() => { this.busting = false; }, 2600);
+  }
+
+  // Start a raid when the police think he is hiding off the street (courtyard, alley, yard).
+  updateRaid(dt) {
+    const g = this.game, P = g.player;
+    if (this.raid) {
+      this.raid.update(dt);
+      if (this.raid.done) this.raid = null;
+      return;
+    }
+    this.raidT -= dt;
+    if (this.raidT > 0) return;
+    this.raidT = 1;
+    const m = g.mission;
+    if (!this.raidsOn || P.inCar || P.dead || g.mode !== 'play' || (m && m.def.noRaids) || g.time - this.raidAt < 20) return;
+    const B = g.world.insideBlock(this.lastX, this.lastZ);
+    if (!B || !g.world.insideBlock(P.x, P.z)) { this.raidWait = 0; return; }
+    // A couple of seconds off the street (seen or not) and the raid team is on its way.
+    this.raidWait = (this.raidWait || 0) + 1;
+    if (this.raidWait < 3) return;
+    this.raidWait = 0;
+    const r = new Raid(g, B, this.lastX, this.lastZ, this.stars);
+    if (!r.officers.length) return;
+    this.raid = r; this.raidAt = g.time;
+    this.onMessage('POLICE RAID! They are coming inside to arrest you - get out or fight!');
+    if (g.voice) g.voice.say('POLICE', pick(RAID_START), { prio: 2 });
   }
 
   // A random point (on a road) inside the search circle, for police to check.
@@ -151,10 +183,13 @@ export class Dispatch {
 
     this.sinceSeen += dt;
     if (g.mission && g.mission.holdStars && !g.mission.done) this.sinceSeen = 0;   // no escape during the shoot-out
+    this.updateRaid(dt);
     this.circle.r = moveTowards(this.circle.r, this.radius, 30 * dt);
     const T = this.target;
     const outside = dist(T.x, T.z, this.circle.x, this.circle.z) > this.circle.r;
     this.outsideT = this.sinceSeen > 1 && outside ? this.outsideT + dt : 0;
+    // Hiding in the block they are searching does not work: get out of it.
+    if (this.raid && !this.raid.ending && this.raid.contains(T.x, T.z)) this.sinceSeen = Math.min(this.sinceSeen, this.loseTime * 0.5);
     if (this.outsideT >= this.escapeTime || this.sinceSeen >= this.loseTime) { this.clear(true); return; }
 
     // Reinforcements: keep enough chasing police cars for the star level.
@@ -176,6 +211,98 @@ export class Dispatch {
       if (this.heli) this.heli.remove();
       this.heli = new Helicopter(g);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raid team: a van parks at the block, officers come in through the gaps between the buildings
+// and check every corner (and the place he was last seen). Over when he is gone or the stars are.
+// ---------------------------------------------------------------------------
+const RAID_START = ['Police! He is hiding inside. Search every corner!', 'All units, he went into the building. Go in, go in!',
+  'Block the gaps! Nobody leaves this compound!'];
+const RAID_SEE = ['Ruk jao! Police! Hands up!', 'There he is! Don\'t move!', 'Haath upar! You are under arrest!', 'Stop right there, Vikram!'];
+class Raid {
+  constructor(game, block, lx, lz, stars) {
+    this.game = game; this.block = block; this.officers = []; this.ending = false; this.done = false; this.t = 0; this.seenT = 0;
+    const g = game, nav = g.nav, P = g.player;
+    // Places to search: free spots inside the block (courtyard, alleys), spread out, last-seen place first.
+    const cand = [];
+    for (let x = block.x0 + 1.5; x < block.x1 - 1; x += 3) for (let z = block.z0 + 1.5; z < block.z1 - 1; z += 3) if (nav.free(nav.idx(x, z))) cand.push({ x, z });
+    const pts = [{ x: lx, z: lz }];
+    while (pts.length < 8 && cand.length) {
+      let best = null, bd = -1;
+      for (const c of cand) { let d = Infinity; for (const p of pts) d = Math.min(d, dist(c.x, c.z, p.x, p.z)); if (d > bd) { bd = d; best = c; } }
+      if (bd < 4) break;
+      pts.push(best);
+    }
+    this.points = pts;
+    // Ways in: footpath spots right in front of a gap between the buildings (prefer ones he cannot see).
+    const mouths = [];
+    const f = 2.2;   // just outside the inner area: on the footpath
+    for (let t = 2; t < block.x1 - block.x0 - 2; t += 2.5) {
+      for (const [x, z, ix, iz, side] of [[block.x0 + t, block.z0 - f, block.x0 + t, block.z0 + 2.5, 'S'], [block.x0 + t, block.z1 + f, block.x0 + t, block.z1 - 2.5, 'N']]) mouths.push({ x, z, ix, iz, side });
+    }
+    for (let t = 2; t < block.z1 - block.z0 - 2; t += 2.5) {
+      for (const [x, z, ix, iz, side] of [[block.x0 - f, block.z0 + t, block.x0 + 2.5, block.z0 + t, 'W'], [block.x1 + f, block.z0 + t, block.x1 - 2.5, block.z0 + t, 'E']]) mouths.push({ x, z, ix, iz, side });
+    }
+    const open = mouths.filter((q) => nav.free(nav.idx(q.ix, q.iz)) && nav.free(nav.idx(q.x, q.z)));
+    for (const q of open) {
+      const d = dist(q.x, q.z, P.x, P.z);
+      q.score = (d < 10 ? -50 : 0) + (g.world.segmentBlocked(q.x, q.z, P.x, P.z) ? 20 : 0) - Math.abs(d - 30) * 0.3 + Math.random() * 6;
+    }
+    open.sort((a, b) => b.score - a.score);
+    const n = Math.min(5, stars + 1);
+    const picked = [];
+    for (const q of open) { if (picked.every((p) => dist(p.x, p.z, q.x, q.z) > 6)) picked.push(q); if (picked.length >= n) break; }
+    if (!picked.length) return;
+    // The van parks on the road next to the first way in, lights flashing.
+    const q0 = picked[0];
+    const lane = { S: [q0.x, LINES[block.j] + 2.25, Math.PI / 2], N: [q0.x, LINES[block.j + 1] - 2.25, Math.PI / 2], W: [LINES[block.i] + 2.25, q0.z, 0], E: [LINES[block.i + 1] - 2.25, q0.z, 0] }[q0.side];
+    this.van = g.spawnPoliceCarParked(lane[0], lane[1], lane[2]);
+    this.van.roadblock = true; this.van.raidVan = true;
+    const night = g.atmo && g.atmo.isNight;
+    picked.forEach((q, k) => {
+      const o = g.spawnOfficer(q.x, q.z, yawOf(q.ix - q.x, q.iz - q.z), this.van, { swat: stars >= 3, flashlight: night });
+      o.raid = this; o.engaged = true; o.raidI = (k * 3) % this.points.length; o.raidWait = 0;
+      this.officers.push(o);
+    });
+  }
+  contains(x, z) { const B = this.block; return x > B.x0 - 1 && x < B.x1 + 1 && z > B.z0 - 1 && z < B.z1 + 1; }
+  // Where an officer goes next when nobody can see Vikram.
+  searchTarget(o, dt) {
+    let p = this.points[o.raidI % this.points.length];
+    if (dist(o.x, o.z, p.x, p.z) < 1.6) {
+      o.raidWait += dt;
+      if (o.raidWait > 1.4) { o.raidWait = 0; o.raidI = (o.raidI + 1) % this.points.length; p = this.points[o.raidI]; }
+      else return null;   // look around for a moment
+    }
+    return p;
+  }
+  update(dt) {
+    const g = this.game, D = g.dispatch, P = g.player;
+    this.t += dt;
+    const alive = this.officers.filter((o) => !o.dead && !o.inactive);
+    // Shout when they spot him.
+    this.seenT -= dt;
+    if (!this.ending && this.seenT <= 0 && alive.some((o) => o.seesPlayer && dist(o.x, o.z, P.x, P.z) < 25)) {
+      this.seenT = 7;
+      if (g.voice) g.voice.say('POLICE', pick(RAID_SEE), { prio: 2 });
+    }
+    // Over: he got far away from the block, all officers are down, or no stars any more.
+    const far = dist(P.x, P.z, this.block.cx, this.block.cz) > 75 || P.inCar;
+    if (!this.ending && (!D.active || far || !alive.length || this.t > 150)) this.end();
+    if (this.ending) {
+      this.endT += dt;
+      if (this.endT > 30 || !this.officers.some((o) => !o.inactive && !o.dead)) {
+        if (this.van && !this.van.inactive && !this.van.playerControlled && dist(this.van.x, this.van.z, g.camera.position.x, g.camera.position.z) > 40) g.removeCar(this.van);
+        this.done = true;
+      }
+    }
+  }
+  end() {
+    if (this.ending) return;
+    this.ending = true; this.endT = 0;
+    for (const o of this.officers) if (!o.dead && !o.inactive) { o.raid = null; o.standDown(); }
   }
 }
 
@@ -412,7 +539,7 @@ export class Officer {
       if (!this.gang || Math.random() < 0.35) g.pickups.spawn(Math.random() < 0.7 ? 'ammo' : 'health', this.x + 0.6, this.z + 0.4);
       g.alarm(this.x, this.z, 25);
     } else if (byPlayer) {
-      if (!this.gang) g.dispatch.crime('hit_cop', this.x, this.z);
+      if (!this.gang) { g.dispatch.crime('hit_cop', this.x, this.z); if (this.raid) for (const o of this.raid.officers) o.forceHostile = true; }
       else this.alert();
       this.fireT = Math.min(this.fireT, 0.5);   // shoot back quickly
       this.strafe = -this.strafe;
@@ -452,7 +579,9 @@ export class Officer {
     let gx = this.x, gz = this.z, speed = 0, shooting = false;
     const T = D.target;
     const dP = dist(this.x, this.z, T.x, T.z);
-    const hostile = (D.stars >= 2 || this.forceHostile) && !P.dead;
+    // Raid officers try to ARREST him (up to 2 stars) unless he shoots at them.
+    const arresting = this.raid && !this.forceHostile && D.stars <= 2 && !P.inCar;
+    const hostile = (D.stars >= 2 || this.forceHostile) && !P.dead && !arresting;
 
     this.sightT -= dt;
     if (this.sightT <= 0) {
@@ -491,7 +620,9 @@ export class Officer {
     } else {
       // Chase the last place they saw you, or search nearby.
       if (this.gang) { gx = T.x; gz = T.z; this.search = null; }
+      else if (this.raid && this.seesPlayer) { gx = T.x; gz = T.z; this.search = null; }
       else if (D.sinceSeen < 4 || this.forceHostile) { gx = D.lastX; gz = D.lastZ; this.search = null; }
+      else if (this.raid) { const q = this.raid.searchTarget(this, dt); if (q) { gx = q.x; gz = q.z; } }
       else {
         if (!this.search || dist(this.x, this.z, this.search.x, this.search.z) < 2) {
           const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 16;
@@ -501,11 +632,14 @@ export class Officer {
       }
       if (this.forceHostile && !D.active) { gx = P.x; gz = P.z; }
       const dd = dist(this.x, this.z, gx, gz);
-      speed = dd < 1 ? 0 : (D.sinceSeen < 4 || this.gang) ? (dP < 25 ? 5.5 : 4.4) : 2.2;
-      // Arrest at 1 star: grab the player when he is slow (walking, aiming, stopped car).
+      speed = dd < 1 ? 0 : (D.sinceSeen < 4 || this.gang || (this.raid && this.seesPlayer)) ? (dP < 25 ? 5.5 : 4.4) : this.raid ? 3.0 : 2.2;
+    }
+    // ARREST: grab the player when he is slow (walking, aiming, stopped car). Any officer at 1 star;
+    // a raid team (inside the buildings) up to 3 stars.
+    if (!this.gang && !this.returning && (D.stars === 1 || (this.raid && D.stars <= 3))) {
       const pSpeed = P.inCar ? g.driving.speed : Math.hypot(P.vx, P.vz);
-      const reach = P.inCar ? g.driving.car.halfL + 1.5 : 1.7;
-      if (!this.gang && D.stars === 1 && dP < reach && pSpeed < (P.inCar ? 1.2 : 3.4) && P.controlsEnabled) {
+      const reach = P.inCar ? g.driving.car.halfL + 1.5 : (this.raid ? 1.9 : 1.7);
+      if (dP < reach && pSpeed < (P.inCar ? 1.2 : 3.4) && P.controlsEnabled) {
         this.catchT += dt;
         if (this.catchT >= (P.inCar ? 1.0 : 0.55)) { this.catchT = 0; D.caught(); }
       } else this.catchT = 0;
@@ -592,6 +726,7 @@ export class Officer {
       const sus = P.aiming || Math.hypot(P.vx || 0, P.vz || 0) > 3.8 || P.crouching;
       rate = sus ? rate * 1.2 : d < 1.6 ? 0.3 : -0.3;
     }
+    if (rate > 0 && g.mission && g.mission.act === 2) rate *= g.mission.challenge || 1;   // sharper guards on the job
     G.seen = clamp(G.seen + rate * dt, 0, 1);
     if (G.seen >= 1) { this.alert(); return; }
     this.setMarker(G.seen > 0.12 ? 'sus' : 'none');

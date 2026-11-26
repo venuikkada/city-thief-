@@ -766,6 +766,22 @@ export class World {
   }
 
   // Is the line from A to B blocked by a building? (police eyes; low walls / stalls do not block)
+  // Off the street: in a courtyard, an alley between buildings or a yard inside a city block
+  // (not on a road and not on the footpath along it). Returns the block or null.
+  insideBlock(x, z) {
+    const m = HALF_ROAD + FOOT_W + 0.4;
+    let i = -1, j = -1;
+    for (let k = 0; k < LINES.length - 1; k++) {
+      if (x > LINES[k] + m && x < LINES[k + 1] - m) i = k;
+      if (z > LINES[k] + m && z < LINES[k + 1] - m) j = k;
+    }
+    if (i < 0 || j < 0) return null;
+    const type = BLOCKS[j][i];
+    if (type === 'beach' && z < LINES[0] + m + 4) return null;   // the sea wall side
+    return { i, j, type, x0: LINES[i] + m, x1: LINES[i + 1] - m, z0: LINES[j] + m, z1: LINES[j + 1] - m,
+      cx: (LINES[i] + LINES[i + 1]) / 2, cz: (LINES[j] + LINES[j + 1]) / 2 };
+  }
+
   segmentBlocked(ax, az, bx, bz) {
     const dx = bx - ax, dz = bz - az;
     return this.near('b', Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz),

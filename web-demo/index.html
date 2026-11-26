@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d0e11">
   <meta name="description" content="City Thief - free browser game. A big Indian coastal city: 20 story missions, races, stunts, gang wars, police chases with roadblocks and a helicopter. No login.">
-  <title>City Thief - Browser Demo</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/icon-32.png">
+  <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+  <meta name="theme-color" content="#07080a">
+  <title>City Thief</title>
   <link rel="stylesheet" href="css/game.css">
   <script type="importmap">
     { "imports": { "three": "./js/vendor/three.module.min.js", "three/addons/": "./js/vendor/addons/" } }
@@ -52,7 +56,7 @@
     <div id="memory" class="hidden"></div>
     <!-- People: talk, rob, push, hire, buy -->
     <div id="bubbles"></div>
-    <div id="interact" class="hidden">
+    <div id="interact" class="hidden foot-only">
       <button id="btn-talk" class="int-btn" aria-label="Talk">💬<span>TALK</span></button>
       <button id="btn-rob" class="int-btn rob" aria-label="Rob">🫳<span>ROB</span></button>
       <button id="btn-buy" class="int-btn buy hidden" aria-label="Buy">☕<span id="btn-buy-label">CHAI ₹20</span></button>
@@ -60,7 +64,7 @@
       <button id="btn-hire" class="int-btn hire" aria-label="Hire">🤝<span>HIRE ₹500</span></button>
     </div>
     <div id="disguise-badge" class="hidden"></div>
-    <button id="btn-photo" class="hud-btn round hidden" aria-label="Photo">📷<span>PHOTO</span></button>
+    <button id="btn-photo" class="hud-btn round hidden foot-only" aria-label="Photo">📷<span>PHOTO</span></button>
     <div id="choice" class="hidden"><div id="choice-q"></div><div class="row"><button id="choice-a"></button><button id="choice-b"></button></div></div>
     <div id="profile" class="hidden"><div id="profile-name"></div><div id="profile-job"></div><div id="profile-fact"></div><div id="profile-say"></div><button id="profile-give">GIVE ₹100 🙏</button></div>
     <div id="rhythm" class="hidden"><div class="label">BLEND IN: tap DANCE when a note hits the line</div><div id="rhythm-lane"></div><div class="meter"><div id="rhythm-fill"></div></div><div id="rhythm-judge"></div></div>
@@ -68,6 +72,7 @@
 
     <div id="mission-panel">
       <div id="mission-title">FREE ROAM</div>
+      <div id="mission-clock" class="hidden"></div>
       <div id="objective-text">Explore Navapur. Steal cars, call the cops, find the SMG.</div>
       <div id="timer" class="hidden">2:30</div>
     </div>
@@ -111,30 +116,30 @@
     <button id="btn-crouch" class="hud-btn round foot-only" aria-label="Crouch">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><path d="M8 10h6l3 5-2 1-2-3-1 3 3 5h-2.5l-3-4-2 4H5l3-6z"/></svg><span>CROUCH</span>
     </button>
-    <button id="btn-enter" class="hud-btn round context hidden" aria-label="Enter car">
+    <button id="btn-enter" class="hud-btn round context hidden foot-only" aria-label="Enter car">
       <svg viewBox="0 0 24 24"><path d="M5 16l1.5-5a2 2 0 0 1 2-1.5h7a2 2 0 0 1 2 1.5L19 16v3h-2v-1.5H7V19H5z"/></svg><span>ENTER</span>
     </button>
     <button id="btn-color" class="hud-btn round hidden" aria-label="Throw colour"><span class="holi">COLOR</span><b id="color-count">8</b></button>
-    <button id="btn-dance" class="hud-btn round fire hidden" aria-label="Dance"><svg viewBox="0 0 24 24"><path d="M9 3v10.5a3 3 0 1 0 2 2.8V7h6V3z"/></svg><span>DANCE</span></button>
-    <button id="btn-takedown" class="hud-btn round context hidden" aria-label="Silent takedown">
+    <button id="btn-dance" class="hud-btn round fire hidden foot-only" aria-label="Dance"><svg viewBox="0 0 24 24"><path d="M9 3v10.5a3 3 0 1 0 2 2.8V7h6V3z"/></svg><span>DANCE</span></button>
+    <button id="btn-takedown" class="hud-btn round context hidden foot-only" aria-label="Silent takedown">
       <svg viewBox="0 0 24 24"><path d="M7 3l3 3-2 2 6 6 2-2 3 3-5 5-3-3 2-2-6-6-2 2-3-3z"/></svg><span>TAKEDOWN</span>
     </button>
-    <button id="btn-pickup" class="hud-btn round context hidden" aria-label="Pick up">
+    <button id="btn-pickup" class="hud-btn round context hidden foot-only" aria-label="Pick up">
       <svg viewBox="0 0 24 24"><path d="M12 3l-5 5h3v6h4V8h3zM5 17h14v3H5z"/></svg><span>PICK UP</span>
     </button>
 
     <!-- In car -->
     <button id="btn-gas" class="hud-btn round fire car-only" aria-label="Accelerate"><svg viewBox="0 0 24 24"><path d="M12 4l7 9h-4v7H9v-7H5z"/></svg><span>GAS</span></button>
     <button id="btn-brake" class="hud-btn round car-only" aria-label="Brake or reverse"><svg viewBox="0 0 24 24"><path d="M12 20l-7-9h4V4h6v7h4z"/></svg><span>BRAKE</span></button>
-    <button id="btn-handbrake" class="hud-btn round car-only" aria-label="Handbrake"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M12 8v5"/><circle cx="12" cy="16" r="0.8" fill="#fff"/></svg><span>DRIFT</span></button>
-    <button id="btn-horn" class="hud-btn round car-only" aria-label="Horn"><svg viewBox="0 0 24 24"><path d="M4 10h3l6-4v12l-6-4H4zM16 9a4 4 0 0 1 0 6"/></svg><span>HORN</span></button>
-    <button id="btn-cam" class="hud-btn small car-only" aria-label="Camera"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3" fill="#222"/></svg></button>
-    <button id="btn-exit" class="hud-btn round car-only" aria-label="Exit car"><svg viewBox="0 0 24 24"><path d="M10 4h9v16h-9v-3h2v1h5V6h-5v1h-2zM4 12l4-4v3h7v2H8v3z"/></svg><span>EXIT</span></button>
-    <button id="btn-carfire" class="hud-btn round car-only carfire" aria-label="Shoot from the car">
+    <button id="btn-handbrake" class="hud-btn round car-only" aria-label="Handbrake" data-label="BRAKE"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M12 8v5"/><circle cx="12" cy="16" r="0.8" fill="#fff"/></svg><span>DRIFT</span></button>
+    <button id="btn-horn" class="hud-btn round car-only" aria-label="Horn"><svg viewBox="0 0 24 24"><path d="M2 10.2h2.6v3.6H2zM4.6 10.8h5.2l9.4-5.6v13.6l-9.4-5.6H4.6zM9.8 13.2l1.3 4.3h-2.2l-1.4-4.3z"/></svg><span>HORN</span></button>
+    <button id="btn-cam" class="hud-btn small car-only" aria-label="Camera" data-label="CAMERA"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3" fill="#222"/></svg></button>
+    <button id="btn-exit" class="hud-btn round car-only" aria-label="Exit car" data-label="EXIT VEHICLE"><svg viewBox="0 0 24 24"><path d="M10 4h9v16h-9v-3h2v1h5V6h-5v1h-2zM4 12l4-4v3h7v2H8v3z"/></svg><span>EXIT</span></button>
+    <button id="btn-carfire" class="hud-btn round car-only carfire" aria-label="Shoot from the car" data-label="SHOOT">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg><span>FIRE</span>
     </button>
-    <button id="btn-drivemode" class="hud-btn small car-only" aria-label="Switch car controls"><span>&#11013;&#11014;<br>&#128377;</span></button>
-    <button id="btn-boost" class="hud-btn round fire car-only" aria-label="Nitro boost"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg><span>BOOST</span></button>
+    <button id="btn-drivemode" class="hud-btn small car-only" aria-label="Switch car controls" data-label="CONTROLS"><span>&#11013;&#11014;<br>&#128377;</span></button>
+    <button id="btn-boost" class="hud-btn round fire car-only" aria-label="Nitro boost" data-label="BOOST"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg><span>BOOST</span></button>
     <button id="btn-left" class="hud-btn round car-only steer" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M15 4l-9 8 9 8z"/></svg></button>
     <button id="btn-right" class="hud-btn round car-only steer" aria-label="Steer right"><svg viewBox="0 0 24 24"><path d="M9 4l9 8-9 8z"/></svg></button>
   </div>
@@ -177,6 +182,7 @@
   <div id="menu" class="screen hidden">
     <div class="panel left">
       <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
+      <p class="built-by">BUILT BY <b>VENU BRUSHWOOD</b></p>
       <p class="tag">NAVAPUR &middot; 76 STORY MISSIONS &middot; 8 CHAPTERS</p>
       <p class="tag2">A big coastal city &middot; day, night &amp; monsoon storms &middot; cops, SWAT &amp; a helicopter</p>
       <div id="menu-rankbox"><span class="lbl">RANK</span> <b id="menu-rank">STREET KID</b><div class="xp"><div id="menu-xp-fill"></div></div><small id="menu-xp-text"></small></div>
@@ -185,6 +191,22 @@
         <button class="big-btn alt" id="btn-free">FREE ROAM</button>
         <button class="big-btn alt" id="btn-shop">SHOP</button>
         <button class="big-btn alt" id="btn-settings">SETTINGS</button>
+      </div>
+      <div class="menu-row">
+        <button class="big-btn alt small" id="btn-fullscreen">FULL SCREEN</button>
+        <button class="big-btn alt small hidden" id="btn-install">INSTALL APP</button>
+      </div>
+      <div class="menu-row web-only">
+        <a class="big-btn alt small dl" href="download/CityThief.apk" download>&#129302; ANDROID APP (APK)</a>
+        <a class="big-btn alt small dl" href="download/CityThief-Windows.zip" download>&#128187; WINDOWS PC (ZIP)</a>
+      </div>
+      <div id="pc-help" class="pc-only">
+        <b>PC CONTROLS</b>
+        <span><i>W A S D</i> move / drive &middot; <i>Mouse</i> look &middot; <i>Left click</i> fire &middot; <i>Right click</i> aim</span>
+        <span><i>Shift</i> sprint / nitro &middot; <i>Space</i> jump / handbrake &middot; <i>E</i> get in / out of a car</span>
+        <span><i>R</i> reload &middot; <i>Q</i> switch gun &middot; <i>C</i> crouch &middot; <i>G</i> pick up &middot; <i>T</i> takedown</span>
+        <span><i>Y</i> talk &middot; <i>U</i> rob &middot; <i>O</i> push &middot; <i>H</i> hire / horn &middot; <i>K</i> photo</span>
+        <span><i>M</i> map &middot; <i>V</i> car camera &middot; <i>F11</i> full screen &middot; <i>Esc</i> pause</span>
       </div>
       <p class="coins">&#8377; <span id="menu-coins">0</span> earned &middot; best with sound &#128266;</p>
       <p class="small-note">Free &middot; no login &middot; all names, places and police are fictional.</p>
@@ -220,6 +242,7 @@
         <select id="set-drive"><option value="buttons">Buttons: left/right + up (gas) / down (brake)</option><option value="joystick">Joystick</option></select></label>
       <label class="row">Sound <input type="checkbox" id="set-sound"></label>
       <label class="row">Music <input type="checkbox" id="set-music"></label>
+      <label class="row">Voices (Indian English) <input type="checkbox" id="set-voice"></label>
       <label class="row">Difficulty
         <select id="set-diff"><option value="0.7">Easy</option><option value="1">Normal</option><option value="1.3">Hard</option></select></label>
       <label class="row">Graphics
@@ -237,6 +260,7 @@
         <button class="big-btn" id="btn-resume">RESUME</button>
         <div id="time-row" class="time-row"><span>TIME</span><button data-time="day">DAY</button><button data-time="night">NIGHT</button><button data-time="storm">STORM</button></div>
         <button class="big-btn alt" id="btn-restart">RESTART MISSION</button>
+        <button class="big-btn alt red" id="btn-pause-cops">CALL THE COPS (start a chase)</button>
         <button class="big-btn alt" id="btn-pause-settings">SETTINGS</button>
         <button class="big-btn alt" id="btn-pause-layout">CUSTOMIZE CONTROLS</button>
         <button class="big-btn alt" id="btn-quit">MAIN MENU</button>
@@ -254,6 +278,7 @@
       <p id="result-text"></p>
       <div class="menu-buttons">
         <button class="big-btn" id="btn-next">NEXT MISSION</button>
+        <button class="big-btn hidden" id="btn-retry-cp">RETRY FROM CHECKPOINT</button>
         <button class="big-btn alt" id="btn-retry">RETRY</button>
         <button class="big-btn alt" id="btn-result-menu">MAIN MENU</button>
       </div>
@@ -263,10 +288,11 @@
   <div id="rotate-hint">Turn your phone sideways to play</div>
   <div id="loading">
     <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
+    <div class="built-by opening">BUILT BY <b>VENU BRUSHWOOD</b></div>
     <div id="load-track"><div id="load-bar"></div></div>
     <div id="load-text">Loading Navapur...</div>
   </div>
 
-  <script type="module" src="src/main.js?v=7"></script>
+  <script type="module" src="src/main.js?v=8"></script>
 </body>
 </html>

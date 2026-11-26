@@ -521,6 +521,7 @@ export function choose(question, a, b, stepsA, stepsB) {
     start: (g, m) => {
       picked = null;
       g.controls.releaseAll();
+      document.exitPointerLock?.();   // PC: free the mouse so the choice can be clicked (or press 1 / 2)
       $('choice-q').textContent = question; $('choice-a').textContent = a; $('choice-b').textContent = b;
       $('choice').classList.remove('hidden');
       g.choiceHook = (k) => { picked = k; };

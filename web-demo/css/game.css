@@ -151,6 +151,12 @@ body.cutscene #hud > *:not(#subtitle) { visibility: hidden; }
 .logo span { display: inline-block; margin-right: 10px; }
 .logo .thief { color: var(--accent); }
 .tag { margin: 6px 0 14px; color: var(--accent); font-size: 12px; letter-spacing: 2px; font-weight: 700; }
+/* Opening credit: BUILT BY VENU BRUSHWOOD */
+.built-by { margin: 8px 0 0; font-size: 11px; letter-spacing: 4px; font-weight: 700; color: rgba(255,255,255,0.72); text-transform: uppercase; }
+.built-by b { color: var(--accent); letter-spacing: 3px; font-weight: 900; }
+.built-by.opening { text-align: center; font-size: clamp(12px, 2.6vw, 17px); letter-spacing: 6px; opacity: 0; animation: builtBy 1.6s ease-out 0.3s forwards; text-shadow: 0 2px 12px rgba(0,0,0,0.7); }
+.built-by.opening b { display: block; text-align: center; margin-top: 6px; font-size: 1.35em; letter-spacing: 5px; }
+@keyframes builtBy { from { opacity: 0; transform: translateY(8px); letter-spacing: 12px; } to { opacity: 1; transform: none; } }
 h2 { margin: 4px 0 12px; font-style: italic; letter-spacing: 1px; }
 .menu-buttons { display: grid; gap: 9px; }
 .big-btn {
@@ -441,3 +447,78 @@ body.editing #status, body.editing #mission-panel, body.editing #subtitle { opac
 body.flashback #game canvas { filter: sepia(0.35) saturate(0.85) contrast(1.05); }
 @media (max-height: 430px) { #btn-photo { bottom: 240px; } #flashback b { font-size: 24px; } }
 #profile-say { margin-top: 5px; font-size: 13px; font-weight: 700; color: #ffe08a; }
+
+/* ===== CAR CONTROLS (v8): the same places as the reference layout the player asked for =====
+   Left thumb : GAS (arrow up) above BRAKE / REVERSE (arrow down); the handbrake "BRAKE" sits on their left;
+                BOOST, the speed and the CAMERA button along the bottom.
+   Right thumb: steer LEFT and RIGHT side by side at mid height, the HORN at the far right, SHOOT below it.
+   EXIT VEHICLE sits under the top-right corner. Positions are % of the screen, so they fit every phone.
+   (Settings > CUSTOMIZE CONTROLS can still move any of them.) */
+body.drive-buttons #btn-gas, body.drive-buttons #btn-brake, body.drive-buttons #btn-left, body.drive-buttons #btn-right,
+body.drive-buttons #btn-handbrake, body.drive-buttons #btn-horn, body.drive-buttons #btn-carfire, body.drive-buttons #btn-exit,
+body.drive-buttons #btn-cam, body.drive-buttons #btn-boost, body.drive-buttons #btn-drivemode {
+  right: auto; bottom: auto; translate: -50% -50%;
+}
+body.drive-buttons #btn-gas, body.drive-buttons #btn-brake, body.drive-buttons #btn-left, body.drive-buttons #btn-right {
+  width: calc(66px * var(--bs)); height: calc(66px * var(--bs)); border-radius: 50%;
+  background: rgba(18, 20, 24, 0.42); border: 2.5px solid rgba(255, 255, 255, 0.9);
+}
+body.drive-buttons #btn-gas svg, body.drive-buttons #btn-brake svg, body.drive-buttons #btn-left svg, body.drive-buttons #btn-right svg { width: calc(32px * var(--bs)); height: calc(32px * var(--bs)); }
+body.drive-buttons #btn-gas span, body.drive-buttons #btn-brake span, body.drive-buttons #btn-handbrake span, body.drive-buttons #btn-horn span,
+body.drive-buttons #btn-exit span, body.drive-buttons #btn-carfire span, body.drive-buttons #btn-boost span { display: none; }
+body.drive-buttons #btn-gas   { left: 17.2%; top: 53.3%; }
+body.drive-buttons #btn-brake { left: 17.2%; top: 77.5%; }
+body.drive-buttons #btn-handbrake { left: max(9%, calc(env(safe-area-inset-left) + 30px)); top: 64%; }
+body.drive-buttons #btn-boost { left: max(9%, calc(env(safe-area-inset-left) + 30px)); top: 88%; }
+body.drive-buttons #btn-cam   { left: 25%; top: 86%; }
+body.drive-buttons #btn-left  { left: 69.4%; top: 69.5%; }
+body.drive-buttons #btn-right { left: 82.3%; top: 69.5%; }
+body.drive-buttons #btn-horn  { left: min(91.9%, calc(100% - env(safe-area-inset-right) - 32px)); top: 69.5%; }
+body.drive-buttons #btn-carfire { left: min(91.9%, calc(100% - env(safe-area-inset-right) - 32px)); top: 88%; }
+body.drive-buttons #btn-exit  { left: 89.5%; top: 34.5%; }
+body.drive-buttons #btn-drivemode { left: min(96.6%, calc(100% - env(safe-area-inset-right) - 22px)); top: 47%; }
+body.drive-buttons #btn-handbrake, body.drive-buttons #btn-horn, body.drive-buttons #btn-carfire {
+  width: calc(46px * var(--bs)); height: calc(46px * var(--bs)); background: rgba(18, 20, 24, 0.42); border: 2px solid rgba(255, 255, 255, 0.85);
+}
+body.drive-buttons #btn-carfire { background: rgba(160, 20, 15, 0.42); border-color: rgba(255, 160, 150, 0.9); }
+body.drive-buttons #btn-exit, body.drive-buttons #btn-cam, body.drive-buttons #btn-boost {
+  width: calc(40px * var(--bs)); height: calc(40px * var(--bs)); border-radius: 50%; background: rgba(18, 20, 24, 0.45); border: 2px solid rgba(255, 255, 255, 0.75);
+}
+body.drive-buttons #btn-boost { background: rgba(20, 90, 200, 0.45); border-color: rgba(150, 200, 255, 0.9); }
+body.drive-buttons #btn-exit svg, body.drive-buttons #btn-cam svg, body.drive-buttons #btn-boost svg { width: calc(20px * var(--bs)); height: calc(20px * var(--bs)); }
+/* Small text under a button (like "Brake", "Exit Vehicle") */
+body.drive-buttons #hud .hud-btn[data-label]::after {
+  content: attr(data-label); position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-size: 9px; font-weight: 800; letter-spacing: 0.5px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none;
+}
+body.drive-buttons #hud #btn-carfire::after { top: auto; bottom: calc(100% + 3px); }
+/* Speed under the left arrows, small (like "0 km/h") */
+body.drive-buttons #hud.car #speedo { left: 17.2%; bottom: auto; top: 92%; transform: translate(-50%, -50%); font-size: 17px; }
+body.drive-buttons #hud.car #speedo span { font-size: 9px; }
+@media (max-height: 430px) {
+  body.drive-buttons #btn-gas, body.drive-buttons #btn-brake, body.drive-buttons #btn-left, body.drive-buttons #btn-right { width: calc(58px * var(--bs)); height: calc(58px * var(--bs)); }
+  body.drive-buttons #btn-handbrake, body.drive-buttons #btn-horn, body.drive-buttons #btn-carfire { width: calc(42px * var(--bs)); height: calc(42px * var(--bs)); }
+  body.drive-buttons #btn-exit, body.drive-buttons #btn-cam, body.drive-buttons #btn-boost { width: calc(36px * var(--bs)); height: calc(36px * var(--bs)); }
+  body.drive-buttons #hud.car #speedo { font-size: 15px; }
+}
+
+/* v8: on foot ONLY walking + shooting buttons, in a car ONLY driving + gun buttons.
+   CALL COPS lives in the pause menu (free roam) and the car-controls switch in Settings. */
+#btn-callcops, #btn-drivemode { display: none !important; }
+.big-btn.red { background: rgba(170, 20, 15, 0.75); }
+
+/* Mission clock + act (v8) */
+#mission-clock { font-size: 10px; font-weight: 800; letter-spacing: 1.2px; color: #ffd76a; margin: 1px 0 3px; opacity: 0.95; }
+
+/* PC: keyboard help on the menu, full screen + install buttons (v8) */
+.menu-row { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+.menu-row .big-btn.small { padding: 8px 12px; font-size: 12px; }
+#pc-help { margin: 8px 0 4px; padding: 8px 10px; background: rgba(0,0,0,0.38); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; font-size: 11px; line-height: 1.75; display: flex; flex-direction: column; max-width: 560px; }
+#pc-help b { color: var(--accent); letter-spacing: 2px; font-size: 11px; }
+#pc-help i { font-style: normal; font-weight: 800; color: #fff; background: rgba(255,255,255,0.12); border-radius: 3px; padding: 0 4px; }
+@media (pointer: coarse) { .pc-only { display: none !important; } }
+@media (max-height: 600px) { #pc-help { display: none; } }
+
+/* Download links (website only: hidden inside the Android / Windows apps) */
+.big-btn.dl { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; color: #fff; }
+body.in-app .web-only { display: none !important; }

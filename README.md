@@ -64,6 +64,25 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   - **"EARLIER..." flashback before every mission (all 76):** what Vikram did before the theft (scouting, meeting
     the crew, buying tools), with its own camera shots. Tap SKIP to jump straight in.
   - Plan for more missions: `Docs/MISSION_PLAN.md`.
+- **v8: every mission is a 5+ minute job in THREE ACTS (and harder):**
+  - **Act 1 THE PLAN** - meet the person with the job (they speak, Vikram answers), then two preparation jobs:
+    buy gear at the market (no money? pickpocket someone), photograph the CCTV cameras, take out the lookouts quietly,
+    raise cash by pickpocketing, chase a snitch, steal the right car, hire a crew member, tune the car at the garage.
+  - **Act 2 THE JOB** - the mission itself, tougher: enemies take 35% more hits (bosses 50%) and hit 20% harder,
+    guards notice you 25% faster, timers are 8% shorter.
+  - **Act 3 THE GETAWAY** - police heat, lose them (they raid buildings too), take the loot to a safehouse
+    (sometimes men are waiting there, or the safehouse is burned and you must reach a backup one), and report back.
+  - **Checkpoints:** fail in act 2 or 3 and the result screen offers RETRY FROM ACT 2 / 3. A mission clock and the
+    act show under the mission title. Rewards are 1.6x bigger. All of it is set per mission in `web-demo/src/acts.js`.
+- **Voices (Indian English):** every story line is spoken in the character's voice, Vikram says each new objective
+  ("Okay. First, I have to go to Ravi's garage"), reminds you if you stand around, and greets people he talks to.
+  Uses the phone's / PC's own voices (free, works offline). Settings -> Voices.
+- **Police raids:** hiding in a courtyard or an alley no longer works: a police van parks at the block, officers walk in
+  through the gaps and search every corner. If one grabs you while you walk (not run) - BUSTED (up to 3 stars; SWAT shoot).
+- **Clean controls:** on foot only walking + shooting buttons; in a car only driving + gun buttons. Car buttons sit like
+  the popular mobile shooter layout: gas / brake arrows on the left with BRAKE beside them, steer left / right on the right
+  with the horn, EXIT VEHICLE under the top-right corner, camera and speed at the bottom left. CALL THE COPS is in the pause menu.
+- **Opening:** "BUILT BY VENU BRUSHWOOD" on the loading screen and the main menu.
 - **Living city:** many more cars (hatchbacks, sedans, SUVs, taxis, autos, vans, trucks, buses) and cars parked half on the
   footpath, Indian style. People walk the streets and cross at zebra crossings; cars stop for them.
 - **Talk to anyone:** walk up to a person - TALK (a card shows their name, job and a funny fact), ROB (pickpocket from behind),
@@ -93,6 +112,13 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
 The **Unity project stays the real game** - the demo is for feedback and promotion.
 
 - Live (temporary Hostinger domain): https://worldly-mediumturquoise-anteater-68.hostingersite.com
+- **Android app:** `download/CityThief.apk` on the site (the game inside, offline, full screen, Indian English voices,
+  back button = pause). Source: `android/`, build: `tools/build-android.sh` (Ubuntu android-sdk packages, no Gradle).
+- **Windows PC:** `download/CityThief-Windows.zip` -> unzip -> `CityThief.exe` (offline, F11 full screen). Source: `desktop/`,
+  build: `node tools/build-windows.js <electron-win32-x64.zip> <out>`. Or on any PC: open the site in Chrome / Edge and
+  click INSTALL APP (works offline after the first visit thanks to `sw.js`, made by `tools/make-sw.py`).
+- **PC controls:** W A S D move / drive, mouse look, left click fire, right click aim, Shift sprint / nitro, Space jump /
+  handbrake, E car, R reload, Q switch gun, C crouch, Y talk, U rob, O push, H hire / horn, K photo, T takedown, M map, Esc pause.
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).
@@ -130,6 +156,10 @@ city-thief-/                      <- Unity project root (this repo)
 │       ├── Audio/ (Music, SFX)
 │       ├── Resources/
 │       └── Localization/         Hindi / Telugu labels later
+├── web-demo/                     <- the playable game (Three.js), deployed to the website
+├── android/                      <- Android app (WebView + phone voices), built by tools/build-android.sh
+├── desktop/                      <- Windows app (Electron), built by tools/build-windows.js
+├── tools/                        <- make-sw.py (offline cache), build-android.sh, build-windows.js
 ├── Docs/
 │   ├── GAME_PLAN.md              story, chapters, wanted system, vehicles
 │   ├── STEP1_REVIEW.md           how to test Step 1 + checklist

@@ -88,6 +88,14 @@ export class Hud {
     this.setObjective(objective);
   }
 
+  // "ACT 2/3 · THE JOB · 03:12" under the mission title ('' hides it).
+  setClock(text) {
+    const e = this.clockEl || (this.clockEl = document.getElementById('mission-clock'));
+    if (!e) return;
+    if (e.textContent !== text) e.textContent = text;
+    e.classList.toggle('hidden', !text);
+  }
+
   setObjective(text) {
     this.el.objective.textContent = text;
     requestAnimationFrame(() => document.documentElement.style.setProperty('--mp-h', this.el.panel.offsetHeight + 6 + 'px'));
@@ -105,6 +113,9 @@ export class Hud {
     this.el.subtitle.innerHTML = (who ? `<b>${who}:</b>` : '') + text;
     this.el.subtitle.classList.remove('hidden');
     this.subT = Math.max(2.6, text.length * 0.065);
+    // Spoken out loud in the character's voice (the line stays up until the voice finishes).
+    const V = this.game.voice;
+    if (V && V.enabled && V.say(who, text, { prio: 3 })) this.subT = Math.max(1.2, Math.min(this.subT, text.length * 0.045));
   }
   clearSubs() { this.subQueue = []; this.subT = 0; this.el.subtitle.classList.add('hidden'); }
 
@@ -133,8 +144,9 @@ export class Hud {
     this.set('pl', E.progLabel, label);
     E.progFill.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
     E.progFill.style.background = color;
+    this.progressOn = true;
   }
-  hideProgress() { this.el.progress.classList.add('hidden'); }
+  hideProgress() { this.el.progress.classList.add('hidden'); this.progressOn = false; }
   setBoss(name, frac) {
     const E = this.el;
     if (!name) { E.boss.classList.add('hidden'); return; }
@@ -251,7 +263,10 @@ export class Hud {
 
     if (this.bigT > 0) { this.bigT -= dt; if (this.bigT <= 0) E.big.classList.add('hidden'); }
     if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) E.toast.classList.add('hidden'); }
-    if (this.subT > 0) { this.subT -= dt; if (this.subT <= 0) this.nextSub(); }
+    if (this.subT > 0) {
+      this.subT -= dt;
+      if (this.subT <= 0) { if (this.game.voice && this.game.voice.cur && this.game.voice.cur.prio === 3 && this.game.voice.speaking) this.subT = 0.05; else this.nextSub(); }
+    }
     if (this.hurtT > 0) { this.hurtT -= dt; if (this.hurtT <= 0) E.hurt.classList.add('hidden'); }
     if (this.hitT > 0) { this.hitT -= dt; if (this.hitT <= 0) E.hit.classList.add('hidden'); }
 

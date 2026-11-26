@@ -25,6 +25,7 @@ import { makeSky } from './sky.js';
 import { Atmosphere } from './atmosphere.js';
 import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
 import { Interact } from './interact.js';
+import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
 
 // Cinematic colour grade, done inside the normal tone mapping (no extra screen pass, cheap on phones):
@@ -44,7 +45,7 @@ import { dist, yawOf } from './util.js';
 // ---------- Settings + quality ----------
 const SETTINGS_KEY = 'cityThief.settings.v1';
 const isTouch = matchMedia('(pointer: coarse)').matches;
-const DEFAULTS = { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, music: true, diff: 1, gfx: null, assist: isTouch, drive: 'buttons', v: 5 };
+const DEFAULTS = { look: 1, aim: 0.6, btn: 1, invert: false, sound: true, music: true, voice: true, diff: 1, gfx: null, assist: isTouch, drive: 'buttons', v: 5 };
 function loadSettings() {
   try { return Object.assign({ ...DEFAULTS }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch (e) { return { ...DEFAULTS }; }
@@ -150,6 +151,7 @@ class Game {
     this.dispatch = new Dispatch(this);
     this.controls = new Controls();
     this.hud = new Hud(this);
+    this.voice = new Voice(this, settings);   // Vikram and everyone else speak (Indian English)
     this.music = new Music(this.audio);
     this.rewards = new Rewards(this);
     this.interact = new Interact(this);
@@ -174,7 +176,14 @@ class Game {
       setTimeout(() => {
         if (this.mission !== m) return;   // a new mission already started
         this.endScreen(null);
-        if (m) m.fail('You were arrested by the Navapur police'); else if (this.mode === 'play') this.respawnFree();
+        if (m) m.fail('You were arrested by the Navapur police');
+        else if (this.mode === 'play') {
+          // Free roam: a fine (10% of your cash, at least ₹200) and you are out again.
+          const fine = Math.min(this.save.coins, Math.max(200, Math.round(this.save.coins * 0.1)));
+          this.save.coins -= fine; writeSave(this.save);
+          this.respawnFree();
+          if (fine > 0) this.hud.popup(`POLICE FINE  -₹${fine}`, 'bonus');
+        }
       }, 2800);
     };
 
@@ -467,6 +476,7 @@ class Game {
 
   // ---------- Resetting the city between missions ----------
   resetCity() {
+    this.voice.stop(); this.voice.lastObjKey = '';
     const P = this.player;
     if (this.interact) this.interact.reset();
     this.noParkZones = [];
@@ -480,7 +490,7 @@ class Game {
     this.endScreen(null);
     if (P.inCar) this.driving.exit(true);
     this.dispatch.clear(false);
-    this.dispatch.reportTimer = -1; this.dispatch.busting = false;
+    this.dispatch.reportTimer = -1; this.dispatch.busting = false; this.dispatch.raid = null; this.dispatch.raidAt = -99;
     for (const o of [...this.officers]) o.remove();
     // Remove stolen / parked / wrecked cars and extra police; keep the traffic count.
     for (const c of [...this.cars]) if (c.parked || c.wrecked || c.missionCar) this.removeCar(c);
@@ -542,21 +552,22 @@ class Game {
 
   startFreeRoam() {
     this.resetCity();
+    this.hud.setClock('');
     this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, drive to the beach. Tap the map to set a waypoint. CALL COPS for a chase.');
+    this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, drive to the beach. Tap the map to set a waypoint. Want a chase? Pause > CALL THE COPS.');
     this.pickups.spawn('smg', 41, 41);
     this.pickups.spawn('health', 6.4, 35);
     this.pickups.spawn('ammo', 6.4, 45);
     this.enterPlay();
   }
 
-  startMission(id) {
+  startMission(id, opts = {}) {
     const def = MISSIONS.find((m) => m.id === id);
     if (!def) { this.goMenu(); return; }
     this.resetCity();
     this.atmo.set(def.atmo || 'day', true);
-    this.mission = new MissionRunner(this, def);
+    this.mission = new MissionRunner(this, def, opts);   // opts.fromAct: restart at a checkpoint
     this.hud.setMission(`MISSION ${def.id} · ${def.title.toUpperCase()}`, '');
     this.enterPlay();
     this.mission.start();   // after enterPlay: a flashback can switch to cutscene mode
@@ -588,7 +599,8 @@ class Game {
     this.save.stars[def.id] = Math.max(this.save.stars[def.id] || 0, res.stars);
     this.save.unlocked = Math.max(this.save.unlocked, def.id + 1);
     const best = this.save.best[def.id];
-    if (!best || this.mission.elapsed < best) this.save.best[def.id] = Math.round(this.mission.elapsed);
+    const took = this.mission.totalElapsed || this.mission.elapsed;
+    if (!best || took < best) this.save.best[def.id] = Math.round(took);
     this.rewards.addXP(res.xp);
     writeSave(this.save);
     const text = res.chapterEnd ? `CHAPTER ${res.chapterEnd} COMPLETE! ${def.next}` : def.next;
@@ -621,6 +633,11 @@ class Game {
     const next = document.getElementById('btn-next');
     next.classList.toggle('hidden', !passed || !MISSIONS.find((m) => m.id === def.id + 1));
     this.lastDef = def;
+    // Failed in act 2 or 3? Offer the checkpoint.
+    const cp = this.checkpoint, cpBtn = document.getElementById('btn-retry-cp');
+    const useCp = !passed && cp && cp.id === def.id && cp.act >= 2;
+    cpBtn.classList.toggle('hidden', !useCp);
+    if (useCp) cpBtn.textContent = `RETRY FROM ACT ${cp.act} (CHECKPOINT)`;
     this.showScreen('result-screen');
   }
 
@@ -645,10 +662,12 @@ class Game {
     this.controls.enabled = false; this.controls.releaseAll();
     document.exitPointerLock?.();
     document.getElementById('btn-restart').classList.toggle('hidden', !this.mission);
+    document.getElementById('btn-pause-cops').classList.toggle('hidden', !!this.mission);
     document.getElementById('time-row').classList.toggle('hidden', !!this.mission);
     for (const x of document.querySelectorAll('[data-time]')) x.classList.toggle('on', x.dataset.time === (settings.time || 'day'));
     this.showScreen('pause-screen');
     this.audio.setMuted(true);
+    this.voice.pause(true);
   }
 
   // Full-screen map (game waits while it is open).
@@ -757,6 +776,7 @@ class Game {
     document.documentElement.style.setProperty('--bs', settings.btn);
     if (this.audio.enabled) this.audio.setMuted(!settings.sound);
     if (this.music) this.music.setEnabled(!!settings.music);
+    if (this.voice) { this.voice.enabled = settings.voice !== false; if (!this.voice.enabled) this.voice.stop(); }
   }
 
   resize() {
@@ -861,6 +881,7 @@ class Game {
     }
     if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
     if (!this.rhythm) this.interact.update(dt, input); else this.interact.bar.classList.add('hidden');
+    this.voice.update(dt);
     if (input.photoPressed) this.photoPressed = true;
     if (input.colorPressed) this.throwColor();
     // Mission-only buttons (only touch the page when something changed).
@@ -913,7 +934,10 @@ const game = new Game();
 window.__cityThief = game;
 const $ = (id) => document.getElementById(id);
 
+// The opening shows "BUILT BY VENU BRUSHWOOD" for at least 2.5 seconds, even when loading is fast.
+const openedAt = performance.now();
 game.load((p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; })
+  .then(() => new Promise((ok) => setTimeout(ok, Math.max(0, 2500 - (performance.now() - openedAt)))))
   .then(() => { $('loading').classList.add('hidden'); game.goMenu(); })
   .catch((e) => { console.error(e); $('load-text').textContent = 'Could not load the game. Please check your internet and refresh.'; });
 
@@ -1033,12 +1057,14 @@ function openSettings(from) {
   $('set-invert').checked = !!settings.invert; $('set-sound').checked = !!settings.sound;
   $('set-diff').value = String(settings.diff); $('set-gfx').value = quality;
   $('set-assist').checked = !!settings.assist; $('set-drive').value = settings.drive; $('set-music').checked = !!settings.music;
+  $('set-voice').checked = settings.voice !== false;
   game.showScreen('settings-screen');
 }
 function saveSettings() {
   settings.look = $('set-look').value; settings.aim = $('set-aim').value; settings.btn = $('set-btn').value;
   settings.invert = $('set-invert').checked; settings.sound = $('set-sound').checked; settings.diff = $('set-diff').value;
   settings.assist = $('set-assist').checked; settings.drive = $('set-drive').value; settings.music = $('set-music').checked;
+  settings.voice = $('set-voice').checked;
   const gfx = $('set-gfx').value;
   const gfxChanged = gfx !== quality;
   settings.gfx = gfx;
@@ -1046,7 +1072,7 @@ function saveSettings() {
   game.applySettings();
   if (gfxChanged) location.href = location.pathname;   // new graphics level needs a reload
 }
-for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive', 'set-music']) $(id).addEventListener('change', saveSettings);
+for (const id of ['set-look', 'set-aim', 'set-btn', 'set-invert', 'set-sound', 'set-diff', 'set-assist', 'set-drive', 'set-music', 'set-voice']) $(id).addEventListener('change', saveSettings);
 $('btn-shop').addEventListener('click', () => { renderShop(); game.showScreen('shop-screen'); });
 $('btn-layout').addEventListener('click', () => game.layoutEditor.open(settingsReturn === 'pause' ? 'pause' : 'settings'));
 $('btn-pause-layout').addEventListener('click', () => game.layoutEditor.open('pause'));
@@ -1063,12 +1089,15 @@ for (const b of document.querySelectorAll('[data-back]')) {
 }
 $('btn-pause').addEventListener('pointerdown', (e) => { e.stopPropagation(); game.pause(); });
 document.addEventListener('keydown', (e) => {
+  if (game.choiceHook && (e.key === '1' || e.key === '2')) game.choiceHook(e.key === '1' ? 'a' : 'b');
   if (e.key === 'Escape' && game.mode === 'play' && !document.pointerLockElement) game.pause();
   if (game.mode === 'map' && (e.key === 'Escape' || e.key.toLowerCase() === 'm')) game.closeMap();
 });
-$('btn-resume').addEventListener('click', () => { game.showScreen(null); game.mode = 'play'; game.controls.enabled = true; game.clock.getDelta(); game.audio.setMuted(!settings.sound); game.controls.lockMouse(); });
+$('btn-resume').addEventListener('click', () => { game.showScreen(null); game.mode = 'play'; game.controls.enabled = true; game.clock.getDelta(); game.audio.setMuted(!settings.sound); game.voice.pause(false); game.controls.lockMouse(); });
 $('btn-restart').addEventListener('click', () => { if (game.mission) game.startMission(game.mission.def.id); });
 $('btn-pause-settings').addEventListener('click', () => openSettings('pause'));
+// Free roam: start a police chase from the pause menu (the HUD only shows walking / driving buttons).
+$('btn-pause-cops').addEventListener('click', () => { $('btn-resume').click(); if (!game.mission) game.dispatch.setStars(Math.max(1, game.dispatch.stars)); });
 for (const b of document.querySelectorAll('[data-time]')) {
   b.addEventListener('click', () => {
     settings.time = b.dataset.time;
@@ -1080,5 +1109,33 @@ for (const b of document.querySelectorAll('[data-time]')) {
 $('btn-quit').addEventListener('click', () => game.goMenu());
 $('btn-next').addEventListener('click', () => game.startMission(game.lastDef.id + 1));
 $('btn-retry').addEventListener('click', () => game.startMission(game.lastDef.id));
+$('btn-retry-cp').addEventListener('click', () => { const cp = game.checkpoint; game.startMission(game.lastDef.id, { fromAct: cp && cp.id === game.lastDef.id ? cp.act : 1 }); });
 $('btn-result-menu').addEventListener('click', () => game.goMenu());
 $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(); game.hud.clearSubs(); game.endCutscene(); });
+
+// ---------- App: install, full screen, offline (v8) ----------
+// Inside the Android app or the Windows app the game is already an app (no install button).
+const IN_APP = !!window.AndroidTTS || /CityThiefApp/.test(navigator.userAgent);
+if (IN_APP) document.body.classList.add('in-app');
+// Offline cache (websites only): the game works without internet after the first visit.
+if (!IN_APP && 'serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* fine */ }));
+}
+// "Install app" (Chrome / Edge on PC and Android): the browser offers it, we show the button.
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; $('btn-install').classList.remove('hidden'); });
+$('btn-install').addEventListener('click', async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  try { await installEvent.userChoice; } catch (err) { /* fine */ }
+  installEvent = null; $('btn-install').classList.add('hidden');
+});
+window.addEventListener('appinstalled', () => $('btn-install').classList.add('hidden'));
+// Full screen (PC: like a real game window; phones: hides the browser bars).
+$('btn-fullscreen').addEventListener('click', () => {
+  const d = document;
+  if (d.fullscreenElement) d.exitFullscreen?.();
+  else (d.documentElement.requestFullscreen?.({ navigationUI: 'hide' }) || Promise.resolve()).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+});
+document.addEventListener('fullscreenchange', () => { $('btn-fullscreen').textContent = document.fullscreenElement ? 'EXIT FULL SCREEN' : 'FULL SCREEN'; });
+if (IN_APP && window.AndroidTTS) $('btn-fullscreen').classList.add('hidden');   // the Android app is always full screen
