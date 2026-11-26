@@ -1,7 +1,10 @@
 // HUD: mini-map (turns with the camera, GPS route, police search circle), full-screen map
 // (tap to set a waypoint), compass, wanted stars, mission panel, timer, weapon + ammo, health,
 // car speed + nitro, context buttons (ENTER / PICK UP), subtitles, messages, hit effects.
+import * as THREE from 'three';
+import { WEAPONS, GUN_ICONS } from './weapons.js';
 const $ = (id) => document.getElementById(id);
+const _v3 = new THREE.Vector3();
 
 // The whole city drawn once into a picture (fast: one drawImage per frame).
 const MAP = { x0: -282, z0: -300, x1: 282, z1: 282, s: 1.6 };
@@ -25,7 +28,8 @@ export class Hud {
     this.cctx = this.compass.getContext('2d');
     this.el = {
       status: $('status'), big: $('big-msg'), fps: $('fps'), stars: $('stars'), cross: $('crosshair'),
-      hit: $('hitmarker'), aim: $('btn-aim'), crouch: $('btn-crouch'), weaponName: $('weapon-name'), ammo: $('ammo'),
+      hit: $('hitmarker'), aim: $('btn-aim'), crouch: $('btn-crouch'), slots: [$('btn-slot1'), $('btn-slot2')], scope: $('scope'), ring: $('reload-ring'),
+      dmg: $('dmg-nums'), kf: $('killfeed'),
       reloading: $('reloading'), health: $('health-fill'), carHealth: $('car-health-fill'), speedo: $('speedo'),
       enter: $('btn-enter'), pickup: $('btn-pickup'), objective: $('objective-text'), mTitle: $('mission-title'),
       timer: $('timer'), money: $('money'), subtitle: $('subtitle'), hurt: $('hurt'), panel: $('mission-panel'),
@@ -120,7 +124,39 @@ export class Hud {
   clearSubs() { this.subQueue = []; this.subT = 0; this.el.subtitle.classList.add('hidden'); }
 
   hurt() { this.hurtT = 0.35; this.el.hurt.classList.remove('hidden'); }
-  hitMarker(kill) { this.hitT = 0.2; this.el.hit.classList.toggle('kill', !!kill); this.el.hit.classList.remove('hidden'); }
+  // White X = hit, yellow = headshot, red = kill.
+  hitMarker(kill, head) {
+    const e = this.el.hit;
+    this.hitT = 0.22; e.classList.toggle('kill', !!kill); e.classList.toggle('head', !!head && !kill);
+    e.classList.remove('hidden'); e.style.animation = 'none'; void e.offsetWidth; e.style.animation = '';
+  }
+  // A number floats up where the bullet hit.
+  damageNumber(point, n, head, kill) {
+    const box = this.el.dmg;
+    if (!box || box.children.length > 8) return;
+    _v3.copy(point).project(this.game.camera);
+    if (_v3.z > 1) return;
+    const d = document.createElement('div');
+    d.className = 'dmg' + (kill ? ' kill' : head ? ' head' : '');
+    d.textContent = n;
+    d.style.left = ((_v3.x + 1) / 2 * 100 + (Math.random() - 0.5) * 3) + '%';
+    d.style.top = ((1 - _v3.y) / 2 * 100) + '%';
+    d.addEventListener('animationend', () => d.remove());
+    box.appendChild(d);
+  }
+  // Kill feed: "VIKRAM [gun] SWAT OFFICER  HEADSHOT".
+  killFeed(target, gunName, head) {
+    const box = this.el.kf;
+    if (!box) return;
+    while (box.children.length > 2) box.firstChild.remove();
+    const who = target.bossName ? target.bossName.toUpperCase() : target.swat ? 'SWAT OFFICER' : target.gang ? 'GANG MEMBER' : target.isOfficer ? 'POLICE OFFICER' : 'ENEMY';
+    const id = Object.keys(WEAPONS).find((k) => WEAPONS[k].name === gunName) || 'pistol';
+    const d = document.createElement('div');
+    d.className = 'kf';
+    d.innerHTML = `VIKRAM<svg viewBox="0 0 24 12"><path d="${GUN_ICONS[id]}"/></svg>${who}${head ? '<span class="hs">HEADSHOT</span>' : ''}`;
+    d.addEventListener('animationend', (e) => { if (e.animationName === 'kfout') d.remove(); });
+    box.appendChild(d);
+  }
 
   // ---------- Juice: pop-ups, meters, cards ----------
   // Floating reward text (+₹500, HEADSHOT, DOUBLE KILL...).
@@ -221,11 +257,38 @@ export class Hud {
       E.stars.classList.toggle('blink', D.active && D.sinceSeen >= 1);
     }
 
-    // Weapon + ammo + health.
-    const a = P.ammo[P.weapon];
-    this.set('wn', E.weaponName, P.weaponDef.name);
-    this.set('ammo', E.ammo, `${a.mag} / ${a.reserve}`);
+    // Two gun slots: picture, name, ammo; the one in the hands is lit.
+    for (let n = 1; n <= 2; n++) {
+      const el = E.slots[n - 1], id = P.slots[n];
+      const key = id ? `${id}|${P.ammo[id].mag}|${P.ammo[id].reserve}|${P.weapon === id ? 1 : 0}` : 'empty';
+      if (this.cache['slot' + n] === key) continue;
+      this.cache['slot' + n] = key;
+      el.classList.toggle('empty', !id); el.classList.toggle('on', !!id && P.weapon === id);
+      el.querySelector('path').setAttribute('d', id ? GUN_ICONS[id] : '');
+      el.querySelector('.nm').textContent = id ? WEAPONS[id].name : n === 1 ? 'MAIN GUN' : 'PISTOL';
+      el.querySelector('.am').textContent = id ? `${P.ammo[id].mag} | ${P.ammo[id].reserve}` : 'EMPTY';
+      el.classList.toggle('low', !!id && P.ammo[id].mag <= Math.ceil(WEAPONS[id].mag * 0.2));
+    }
     E.reloading.classList.toggle('hidden', P.reloadT <= 0);
+    // Reload circle + crosshair (opens with spread, red over an enemy, red dot / scope while aiming).
+    if (P.reloadT > 0 && !P.inCar) { E.ring.classList.remove('hidden'); E.ring.style.setProperty('--p', (1 - P.reloadT / (P.reloadTotal || 1)).toFixed(3)); }
+    else E.ring.classList.add('hidden');
+    const cam3 = g.camera3p, w = P.weaponDef, ads = cam3.aimBlend;
+    const fovR = (g.camera.fov * Math.PI) / 360;
+    const gap = Math.max(3, Math.min(70, (P.spreadNow / Math.tan(fovR)) * (innerHeight / 2)));
+    const gapPx = Math.round(gap) + 'px';
+    if (this.cache.gap !== gapPx) { this.cache.gap = gapPx; E.cross.style.setProperty('--gap', gapPx); }
+    this.crossT = (this.crossT || 0) - dt;
+    if (this.crossT <= 0) {
+      this.crossT = 0.1;
+      g.camera.getWorldDirection(_v3);
+      const t = !P.inCar && !P.dead ? cam3.findTarget(g.camera.position, _v3, ads > 0.5 ? 1.0 : 1.6, w.range) : null;
+      E.cross.classList.toggle('enemy', !!t);
+    }
+    const scoped = w.scope === 'scope' && P.scopeHide, dot = w.scope === 'dot' && ads > 0.6;
+    E.scope.classList.toggle('hidden', !scoped);
+    E.cross.classList.toggle('dot', dot);
+    E.cross.classList.toggle('gone', scoped);
     this.set('hp', E.health.style, Math.max(0, P.health / P.maxHealth * 100).toFixed(0) + '%', 'width');
     this.set('ar', E.armor.style, Math.max(0, Math.min(100, P.armor / 60 * 100)).toFixed(0) + '%', 'width');
     E.health.classList.toggle('low', P.health < 35);
@@ -248,9 +311,6 @@ export class Hud {
 
     E.aim.classList.toggle('active', P.aiming);
     E.crouch.classList.toggle('active', P.crouching);
-    // Crosshair opens up while moving / shooting.
-    const spread = 6 + Math.min(14, Math.hypot(P.vx, P.vz) * 1.5 + g.camera3p.recoil * 4) * (P.aiming ? 0.5 : 1);
-    E.cross.style.setProperty('--gap', spread.toFixed(1) + 'px');
 
     // Timer.
     const m = g.mission;

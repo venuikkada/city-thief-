@@ -126,6 +126,11 @@ export class CharacterRig {
       a.time = Math.random() * clip.duration;   // crowds do not move in step
       this.actions[key] = a;
     }
+    // Some names share one clip (women: look / wait = idle, listen = talk): weights are added up per clip,
+    // otherwise one name would switch off the other and leave a stiff T-pose.
+    this.uniq = [...new Set(Object.values(this.actions))];
+    this.uniq.forEach((act, i) => { act.wi = i; });
+    this.wts = new Float32Array(this.uniq.length);
     this.pending = 0;
     this.gesture = null; this.gestureW = 0;
     this.aimW = 0; this.aimDir = new THREE.Vector3(0, 0, 1);
@@ -148,12 +153,15 @@ export class CharacterRig {
     const crouchIdle = a.crouch ? crouch * idle : 0;
     const k = (1 - ges) * (1 - crouchIdle);
     const dir = this.reverse ? -1 : 1;
-    if (a.idle) a.idle.setEffectiveWeight(idle * k);
-    if (a.walk) { a.walk.setEffectiveWeight(walk * k); a.walk.timeScale = dir * clamp(s / GAIT.walk, 0.5, 1.75); }
-    if (a.run) { a.run.setEffectiveWeight(run * k); a.run.timeScale = dir * clamp(s / GAIT.run, 0.7, 1.45); }
-    if (a.sprint) { a.sprint.setEffectiveWeight(sprint * k); a.sprint.timeScale = clamp(s / GAIT.sprint, 0.85, 1.3); }
-    if (a.crouch) a.crouch.setEffectiveWeight(crouchIdle);
-    for (const g of GESTURES) if (a[g]) a[g].setEffectiveWeight(this.gesture === g ? ges * (1 - crouchIdle) : 0);
+    const W = this.wts;
+    W.fill(0);
+    if (a.idle) W[a.idle.wi] += idle * k;
+    if (a.walk) { W[a.walk.wi] += walk * k; a.walk.timeScale = dir * clamp(s / GAIT.walk, 0.5, 1.75); }
+    if (a.run) { W[a.run.wi] += run * k; a.run.timeScale = dir * clamp(s / GAIT.run, 0.7, 1.45); }
+    if (a.sprint) { W[a.sprint.wi] += sprint * k; a.sprint.timeScale = clamp(s / GAIT.sprint, 0.85, 1.3); }
+    if (a.crouch) W[a.crouch.wi] += crouchIdle;
+    if (this.gesture && a[this.gesture]) W[a[this.gesture].wi] += ges * (1 - crouchIdle);
+    for (let i = 0; i < this.uniq.length; i++) this.uniq[i].setEffectiveWeight(W[i]);
     this.crouchW = crouch;
     this.moveCrouch = crouch * (1 - idle);   // bend the legs in code only while moving crouched
   }

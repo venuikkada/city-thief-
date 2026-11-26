@@ -9,6 +9,7 @@ export class NavGrid {
     this.w = Math.ceil((x1 - x0) / cell); this.h = Math.ceil((z1 - z0) / cell);
     const n = this.w * this.h;
     this.blocked = new Uint8Array(n);
+    this.room = new Uint8Array(n);   // inside an opened building (no mission spawns there)
     this.g = new Float32Array(n); this.came = new Int32Array(n); this.seen = new Uint32Array(n); this.gen = 0;
     // Outside the map is blocked.
     for (const b of world.buildings) {
@@ -24,6 +25,26 @@ export class NavGrid {
     const j0 = Math.max(0, Math.ceil((z0 - this.z0) / c - 0.5)), j1 = Math.min(this.h - 1, Math.floor((z1 - this.z0) / c - 0.5));
     for (let j = j0; j <= j1; j++) this.blocked.fill(1, j * this.w + i0, j * this.w + i1 + 1);
   }
+
+  // Squares whose middle is inside the rectangle (x0..x1, z0..z1).
+  eachCell(x0, z0, x1, z1, fn) {
+    const c = this.cell;
+    const i0 = Math.max(0, Math.ceil((x0 - this.x0) / c - 0.5)), i1 = Math.min(this.w - 1, Math.floor((x1 - this.x0) / c - 0.5));
+    const j0 = Math.max(0, Math.ceil((z0 - this.z0) / c - 0.5)), j1 = Math.min(this.h - 1, Math.floor((z1 - this.z0) / c - 0.5));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) fn(j * this.w + i);
+  }
+  // Opened buildings change the map: paint a rectangle free (0) or blocked (1); "undo" keeps the old values.
+  paint(x0, z0, x1, z1, value, undo) {
+    const B = this.blocked;
+    this.eachCell(x0, z0, x1, z1, (id) => { undo.push(id, B[id], this.room[id]); B[id] = value; });
+  }
+  markRoom(x0, z0, x1, z1, undo) { this.eachCell(x0, z0, x1, z1, (id) => { undo.push(id, this.blocked[id], this.room[id]); this.room[id] = 1; }); }
+  restore(undo) {
+    for (let k = undo.length - 3; k >= 0; k -= 3) { this.blocked[undo[k]] = undo[k + 1]; this.room[undo[k]] = undo[k + 2]; }
+    undo.length = 0;
+  }
+  // A good place to put a mission person or car: free and not inside a shop.
+  spawnOk(id) { return id >= 0 && !this.blocked[id] && !this.room[id]; }
 
   idx(x, z) {
     const i = Math.floor((x - this.x0) / this.cell), j = Math.floor((z - this.z0) / this.cell);

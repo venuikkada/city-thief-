@@ -289,12 +289,12 @@ const near = (g, x, z, r) => { const T = g.dispatch.target; return dist(T.x, T.z
 function free(g, x, z) {
   const nav = g.nav;
   const id = nav.nearestFree(nav.idx(x, z));
-  if (id >= 0) return { x: nav.cx(id), z: nav.cz(id) };
+  if (id >= 0 && !nav.room[id]) return { x: nav.cx(id), z: nav.cz(id) };
   // Inside something big (a fountain, a building): look further out, ring by ring.
   for (let r = 2; r <= 14; r += 1) {
     for (let k = 0; k < 16; k++) {
       const a = (k / 16) * PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-      if (nav.free(nav.idx(px, pz))) return { x: px, z: pz };
+      if (nav.spawnOk(nav.idx(px, pz))) return { x: px, z: pz };
     }
   }
   return { x, z };
@@ -307,7 +307,7 @@ function freeOffRoad(g, x, z) {
   for (let r = 0; r <= 16; r += 1) {
     for (let k = 0; k < (r ? 16 : 1); k++) {
       const a = (k / 16) * PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-      if (nav.free(nav.idx(px, pz)) && !onRoad(px, pz)) return { x: px, z: pz };
+      if (nav.spawnOk(nav.idx(px, pz)) && !onRoad(px, pz)) return { x: px, z: pz };
     }
   }
   return free(g, x, z);
@@ -320,7 +320,7 @@ function ring(g, cx, cz, r0, r1, n, test) {
   for (let k = 0; k < 80 && out.length < n; k++) {
     const a = Math.random() * PI * 2, r = r0 + Math.random() * (r1 - r0);
     const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    if (!g.nav.free(g.nav.idx(x, z)) || onRoad(x, z)) continue;
+    if (!g.nav.spawnOk(g.nav.idx(x, z)) || onRoad(x, z)) continue;
     if (test && !test(x, z)) continue;
     if (out.some((p) => dist(p.x, p.z, x, z) < 12)) continue;
     out.push({ x, z });
@@ -592,7 +592,7 @@ function intelStep(o, H) {
       const pts = [];
       for (let k = 0; k < 60 && pts.length < o.n; k++) {
         const x = B.cx + (Math.random() - 0.5) * 22, z = B.cz + (Math.random() - 0.5) * 22;
-        if (g.nav.free(g.nav.idx(x, z)) && pts.every((p) => dist(p[0], p[1], x, z) > 6)) pts.push([x, z]);
+        if (g.nav.spawnOk(g.nav.idx(x, z)) && pts.every((p) => dist(p[0], p[1], x, z) > 6)) pts.push([x, z]);
       }
       if (pts.length < o.n) pts.push([free(g, B.cx + 5, B.cz).x, free(g, B.cx + 5, B.cz).z]);
       K.guards(g, m, [[B.cx - 8, B.cz - 8, 0, [[B.cx - 8, B.cz - 8], [B.cx + 8, B.cz - 8]]], [B.cx + 8, B.cz + 8, PI, [[B.cx + 8, B.cz + 8], [B.cx - 8, B.cz + 8]]]]

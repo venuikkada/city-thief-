@@ -13,6 +13,8 @@ export function loadLayout() {
     const L = JSON.parse(localStorage.getItem(KEY) || '{}');
     // v8: new default car buttons (same places as the reference layout). Old saved car positions are dropped once.
     if ((L._v || 1) < 2) { for (const id of CAR) if (id !== 'btn-weapon') delete L[id]; L._v = 2; localStorage.setItem(KEY, JSON.stringify(L)); }
+    // v9: the gun slots moved to the bottom centre (like PUBG): old saved place dropped once.
+    if (L._v < 3) { delete L['btn-weapon']; L._v = 3; localStorage.setItem(KEY, JSON.stringify(L)); }
     return L;
   } catch (e) { return {}; }
 }

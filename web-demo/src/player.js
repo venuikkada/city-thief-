@@ -12,6 +12,7 @@ import { WEAPONS, WEAPON_ORDER, makeGun, castShot } from './weapons.js';
 import { placeGun } from './police.js';
 
 const _dir = new THREE.Vector3(), _aim = new THREE.Vector3(), _muz = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(), _to = new THREE.Vector3();
+const _bp = new THREE.Vector3(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bm = new THREE.Matrix4();
 
 export class Player {
   constructor(game, x, z, yaw) {
@@ -34,9 +35,11 @@ export class Player {
     game.scene.add(this.mesh);
     this.crouchBlend = 0;
 
-    // Guns.
+    // Guns: two slots like PUBG - slot 1 = main gun, slot 2 = sidearm. Tap a slot to use it.
+    this.slots = { 1: null, 2: 'pistol' };
     this.owned = ['pistol'];
     this.weapon = 'pistol';
+    this.bloom = 0; this.spreadNow = 0.01; this.scopeHide = false;
     this.ammo = {};
     for (const id of WEAPON_ORDER) this.ammo[id] = { mag: 0, reserve: 0 };
     this.ammo.pistol = { mag: 12, reserve: 48 };
@@ -50,12 +53,16 @@ export class Player {
   }
 
   get weaponDef() { return WEAPONS[this.weapon]; }
+  // The gun in the hands. Setting it also puts it in its slot.
+  get weapon() { return this._weapon; }
+  set weapon(id) { this._weapon = id; if (WEAPONS[id] && this.slots) this.slots[WEAPONS[id].slot] = id; }
   // Magazine size (the BIG MAGAZINES upgrade from the shop adds 50%).
   magSize(id = this.weapon) { const r = this.game.rewards; return Math.round(WEAPONS[id].mag * (r && r.has('mags') ? 1.5 : 1)); }
 
   giveWeapon(id, ammo) {
     if (!this.owned.includes(id)) this.owned.push(id);
     this.owned.sort((a, b) => WEAPON_ORDER.indexOf(a) - WEAPON_ORDER.indexOf(b));
+    this.slots[WEAPONS[id].slot] = id;   // a new gun goes into its slot
     const a = this.ammo[id];
     a.reserve += ammo;
     // A new gun comes loaded.
@@ -63,20 +70,30 @@ export class Player {
     a.mag += take; a.reserve -= take;
   }
 
+  // Tap a slot: use that gun. Tap the slot you already hold: the next gun of that kind (SMG -> rifle -> shotgun).
+  selectSlot(n) {
+    const list = this.owned.filter((id) => WEAPONS[id].slot === n);
+    if (!list.length) { this.game.hud.toast(n === 1 ? 'No main gun yet - missions and the SHOP give you one' : 'No pistol'); return; }
+    let next = this.slots[n] && list.includes(this.slots[n]) ? this.slots[n] : list[0];
+    if (WEAPONS[this.weapon].slot === n) { if (list.length < 2) return; next = list[(list.indexOf(this.weapon) + 1) % list.length]; }
+    if (next === this.weapon) return;
+    this.weapon = next;
+    this.reloadT = 0; this.cooldown = 0.35; this.bloom = 0;   // 0.35 s to bring the gun up
+    this.game.audio.equip();
+  }
+  // Swap between the two slots (Q, or the old switch button).
   switchWeapon() {
-    if (this.owned.length < 2) return;
-    const i = this.owned.indexOf(this.weapon);
-    this.weapon = this.owned[(i + 1) % this.owned.length];
-    this.reloadT = 0; this.cooldown = 0.25;
-    this.game.audio.click();
+    const other = WEAPONS[this.weapon].slot === 1 ? 2 : 1;
+    if (this.owned.some((id) => WEAPONS[id].slot === other)) this.selectSlot(other);
+    else this.selectSlot(WEAPONS[this.weapon].slot);
   }
 
   reload(instant = false) {
     const a = this.ammo[this.weapon], w = this.weaponDef;
     if (a.mag >= this.magSize() || a.reserve <= 0 || this.reloadT > 0) return;
     if (instant) { this.finishReload(); return; }
-    this.reloadT = w.reload * (this.game.rewards && this.game.rewards.rank >= 3 ? 0.75 : 1);
-    this.game.audio.reload();
+    this.reloadT = this.reloadTotal = w.reload * (this.game.rewards && this.game.rewards.rank >= 3 ? 0.75 : 1);
+    this.game.audio.reload(this.reloadT);
   }
 
   finishReload() {
@@ -146,8 +163,12 @@ export class Player {
       const c = g.driving.car;
       this.x = c.x; this.z = c.z; this.y = c.y || 0; this.yaw = c.yaw;
       this.tickGuns(dt);
+      this.spreadNow = this.weaponDef.spread * 1.6 + this.bloom;
+      this.bloom = Math.max(0, this.bloom - dt * (0.03 + this.bloom * 4));
       if (this.controlsEnabled && (this.weaponDef.auto ? input.fire : input.firePressed)) this.driveBy();
       if (this.controlsEnabled && input.switchPressed) this.switchWeapon();
+      if (this.controlsEnabled && input.slot1Pressed) this.selectSlot(1);
+      if (this.controlsEnabled && input.slot2Pressed) this.selectSlot(2);
       this.regen(dt);
       return;
     }
@@ -161,6 +182,10 @@ export class Player {
       this.aiming = !this.aiming;
       if (this.aiming) g.camera3p.snapToTarget();
     }
+    // PC: hold the right mouse button to aim (let go = stop aiming).
+    if (on && input.mouseAimChanged) { this.aiming = input.mouseAim; if (this.aiming) g.camera3p.snapToTarget(); }
+    if (on && input.slot1Pressed) this.selectSlot(1);
+    if (on && input.slot2Pressed) this.selectSlot(2);
     if (on && input.crouchPressed) this.crouching = !this.crouching;
     if (on && input.reloadPressed) this.reload();
     if (on && input.switchPressed) this.switchWeapon();
@@ -275,6 +300,12 @@ export class Player {
     // ---- Guns ----
     this.tickGuns(dt);
     const w = this.weaponDef;
+    // Accuracy (the crosshair shows it): tight when still / crouched / aiming, wide when running,
+    // jumping or spraying (every shot adds "bloom", which settles again when you stop).
+    this.bloom = Math.max(0, this.bloom - dt * (0.03 + this.bloom * 4));
+    const ads = g.camera3p.aimBlend, sp2 = Math.hypot(this.vx, this.vz);
+    const stance = lerp(1.25, 0.42, ads) * (this.crouching ? 0.72 : 1) * (!this.grounded ? 2.4 : this.sprinting ? 2.0 : sp2 > 1 ? 1.45 : 1);
+    this.spreadNow = w.spread * stance + this.bloom;
     if (on && (w.auto ? input.fire : input.firePressed)) this.fire();
 
     this.regen(dt);
@@ -303,8 +334,7 @@ export class Player {
     if (!this.useBullet()) return;
     const cam = g.camera;
     cam.getWorldDirection(_aim);
-    const moving = Math.hypot(this.vx, this.vz) > 1;
-    const spread = w.spread * (this.aiming ? 0.5 : 1.4) * (moving ? 1.6 : 1) * (this.crouching ? 0.7 : 1) + g.camera3p.recoil * 0.02;
+    const spread = this.spreadNow;
     // Bullet magnetism (aim help): almost on an enemy = hit him.
     let target = null;
     if (g.aimAssist) target = g.camera3p.findTarget(cam.position, _aim, this.aiming ? 2.6 : 3.6, w.range);
@@ -314,7 +344,8 @@ export class Player {
     _muz.copy(_hp).addScaledVector(_aim, w.muzzle + 0.05);
     _muz.y += 0.04;
     this.shoot(cam.position, _aim, spread, target, startAt, _muz, null);
-    g.camera3p.kick(this.weapon === 'smg' || this.weapon === 'rifle' ? 0.5 : this.weapon === 'shotgun' ? 2.2 : 1);
+    g.camera3p.recoilKick(w.recoil[0], w.recoil[1]);
+    this.bloom = Math.min(w.bloomMax, this.bloom + w.bloom);
     g.noise(this.x, this.z, 38);
   }
 
@@ -328,8 +359,9 @@ export class Player {
     // Driver sits on the right (right-hand drive): the window is on the right side.
     _muz.set(car.x - fz * (car.halfW + 0.15) + fx * 0.3, (car.y || 0) + 1.25, car.z + fx * (car.halfW + 0.15) + fz * 0.3);
     const target = g.camera3p.findTarget(_muz, _aim, 16, w.range, true);
-    this.shoot(_muz, _aim, w.spread * 1.6, target, 0.2, _muz, car);
-    g.camera3p.kick(0.35);
+    this.shoot(_muz, _aim, this.spreadNow, target, 0.2, _muz, car);
+    g.camera3p.recoilKick(w.recoil[0] * 0.5, w.recoil[1] * 0.5);
+    this.bloom = Math.min(w.bloomMax, this.bloom + w.bloom);
     g.noise(this.x, this.z, 38);
   }
 
@@ -354,7 +386,11 @@ export class Player {
         const wasAlive = !hit.target.dead;
         hit.target.takeDamage(dmg, true, this.x, this.z);
         g.fx.hitPerson(hit.point);
-        g.hud.hitMarker(hit.target.dead);
+        const killed = wasAlive && hit.target.dead;
+        g.hud.hitMarker(hit.target.dead, hit.head);
+        g.hud.damageNumber(hit.point, Math.round(dmg), hit.head, killed);
+        g.audio.hit(hit.head, killed);
+        if (killed) g.hud.killFeed(hit.target, w.name, hit.head);
         if (wasAlive && hit.target.dead && g.rewards) g.rewards.kill(hit.target, hit.head);
       } else if (hit.kind === 'car') {
         hit.target.takeDamage(w.damage * 0.35, true);
@@ -365,11 +401,13 @@ export class Player {
         g.fx.impact(hit.point, _dir.clone().negate(), true);
         g.hud.hitMarker(hit.target.dead);
       } else if (hit.t < w.range) {
-        g.fx.impact(hit.point, _dir.clone().negate(), false);
+        g.fx.impact(hit.point, hit.normal || _dir.clone().negate(), false);
+        if (hit.normal && p < 2) g.fx.hole(hit.point, hit.normal);
       }
     }
-    g.fx.muzzle(muzzle);
-    g.audio.gunshot(this.weapon === 'shotgun' || this.weapon === 'rifle' ? 'smg' : this.weapon, this.weapon === 'shotgun' ? 1.3 : 1);
+    g.fx.muzzle(muzzle, w.sound === 'shotgun' ? 1.6 : w.sound === 'rifle' ? 1.3 : w.sound === 'smg' ? 1.05 : 0.85);
+    if (!ignore || ignore === this) g.fx.shell(muzzle.x - aimDir.x * (w.muzzle * 0.8), muzzle.y, muzzle.z - aimDir.z * (w.muzzle * 0.8), aimDir.x, aimDir.z);
+    g.audio.gunshot(w.sound, 1);
     g.dispatch.crime('gunfire', this.x, this.z);
     g.alarm(this.x, this.z, 35);
     g.stats.shots++;
@@ -380,8 +418,12 @@ export class Player {
     this.mesh.rotation.order = 'YXZ';
     this.mesh.rotation.y = this.yaw;
     this.mesh.rotation.z = this.bank || 0;
-    for (const [id, m] of Object.entries(this.guns)) m.visible = !this.inCar && !this.dead && id === this.weapon;
+    const other = WEAPONS[this.weapon].slot === 1 ? this.slots[2] : this.slots[1];
+    const show = !this.inCar && !this.dead && !this.scopeHide;
+    for (const [id, m] of Object.entries(this.guns)) m.visible = show && (id === this.weapon || id === other);
+    if (!this.inCar) this.mesh.visible = !this.scopeHide;
     this.gunMesh = this.guns[this.weapon];
+    this.holster = show && other ? this.guns[other] : null;
     if (dt > 0) {
       this.crouchBlend = moveTowards(this.crouchBlend, this.crouching ? 1 : 0, 5 * dt);
       this.rig.setMotion(Math.hypot(this.vx, this.vz), this.crouchBlend);
@@ -391,8 +433,31 @@ export class Player {
       this.aimW = moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
       this.rig.setAim(this.aimW, _dir);
       this.rig.update(dt, 0);
+      // rig.update() turns the body back on, so hide it again while looking through the scope.
+      if (!this.inCar) this.mesh.visible = !this.scopeHide;
       placeGun(this.rig, this.gunMesh, this.aimW > 0.5 ? _dir : null);
+      if (this.holster) this.placeHolster(this.holster, WEAPONS[this.weapon].slot === 2);
     }
+  }
+
+  // The other gun rides along: a main gun across the back, a pistol in the hip holster.
+  placeHolster(gun, onBack) {
+    const b = this.rig.bones, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), rx = -fz, rz = fx;
+    if (onBack) {
+      if (b.Spine2) b.Spine2.getWorldPosition(_bp); else _bp.set(this.x, this.y + 1.35, this.z);
+      _bp.x -= fx * 0.2; _bp.z -= fz * 0.2; _bp.y -= 0.05;
+      _bz.set(rx * 0.62, 0.78, rz * 0.62).normalize();            // barrel: up over the right shoulder
+      _by.set(-fx, 0, -fz);                                         // sights point away from the back
+    } else {
+      if (b.Pelvis) b.Pelvis.getWorldPosition(_bp); else _bp.set(this.x, this.y + 0.95, this.z);
+      _bp.x += rx * 0.2 + fx * 0.03; _bp.z += rz * 0.2 + fz * 0.03; _bp.y -= 0.12;
+      _bz.set(fx * 0.25, -1, fz * 0.25).normalize();                // barrel down
+      _by.set(rx, 0, rz);
+    }
+    _by.addScaledVector(_bz, -_by.dot(_bz)).normalize();
+    _bx.crossVectors(_by, _bz);
+    _bm.makeBasis(_bx, _by, _bz);
+    gun.position.copy(_bp); gun.quaternion.setFromRotationMatrix(_bm);
   }
 }
 
@@ -409,6 +474,16 @@ export class ThirdPersonCamera {
 
   snapBehind() { this.yaw = this.game.player.yaw; this.pitch = 10 * DEG; this.pivot = null; }
   kick(k) { this.recoil = Math.min(3, this.recoil + k); this.pitch -= 0.9 * DEG * k; this.yaw += (Math.random() - 0.5) * 0.5 * DEG * k; }
+  // Gun recoil (degrees): the view climbs with every shot and a bit to the side; when you stop
+  // firing it comes most of the way back down. Aiming and crouching tame it.
+  recoilKick(up, side) {
+    const P = this.game.player, k = (P.aiming ? 0.72 : 1) * (P.crouching ? 0.8 : 1);
+    const u = up * DEG * k;
+    this.pitch -= u; this.recoilAcc = (this.recoilAcc || 0) + u;
+    this.yaw += (Math.random() - 0.45) * 2 * side * DEG * k;
+    this.recoil = Math.min(3, this.recoil + up * 0.35);
+    this.fovKick = Math.min(4, this.fovKick + up * 0.35);
+  }
   shake(k) { this.shakeT = Math.max(this.shakeT, 0.35 * k); }
   snapToTarget() { if (this.game.aimAssist) this.snapT = 0.2; }
 
@@ -434,6 +509,13 @@ export class ThirdPersonCamera {
     const firing = g.time - P.lastShot < 0.8;
     this.aimBlend = moveTowards(this.aimBlend, P.aiming && !P.inCar ? 1 : 0, 6 * dt);
     this.recoil = Math.max(0, this.recoil - dt * 4);
+    // Recoil recovery: after 0.12 s without a shot, 70% of the climb comes back.
+    if ((this.recoilAcc || 0) > 0 && g.time - P.lastShot > 0.12) {
+      const r = Math.min(this.recoilAcc, this.recoilAcc * dt * 7 + dt * 0.002);
+      this.pitch += r * 0.7; this.recoilAcc -= r;
+    }
+    const W0 = P.weaponDef, scoped = W0.scope === 'scope';
+    P.scopeHide = scoped && this.aimBlend > 0.85 && !P.inCar;   // look through the scope (first person)
 
     // Aim help: slow the camera over a target and follow it a little.
     let slow = 1;
@@ -451,7 +533,7 @@ export class ThirdPersonCamera {
     }
     if (this.snapT > 0) this.snapT -= dt;
 
-    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity, this.aimBlend) * slow;
+    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity * Math.min(1, W0.zoom / 44), this.aimBlend) * slow;
     this.yaw -= look.x * k;
     this.pitch += (this.invert ? -look.y : look.y) * k;
     this.lookIdle = Math.abs(look.x) + Math.abs(look.y) > 0.5 ? 0 : this.lookIdle + dt;
@@ -492,9 +574,10 @@ export class ThirdPersonCamera {
       px = this.pivot.x; py = this.pivot.y + this.pivotH; pz = this.pivot.z;
       // A small bob of the camera with each running step.
       if (P.grounded && P.speed > 3) py += Math.sin(((P.stepDist || 0) / (P.stride || 1)) * Math.PI * 2) * 0.022 * Math.min(1, P.speed / 5.9);
-      wantDist = lerp(firing ? 2.6 : 3.4, 1.45, this.aimBlend);
-      wantShoulder = lerp(firing ? 0.6 : 0.5, 0.65, this.aimBlend);
-      fovBase = lerp(P.sprinting && P.speed > 4.5 ? 65 : 60, 42, this.aimBlend);
+      wantDist = lerp(firing ? 2.6 : 3.4, scoped ? 0.1 : 1.45, this.aimBlend);
+      wantShoulder = lerp(firing ? 0.6 : 0.5, scoped ? 0.08 : 0.65, this.aimBlend);
+      fovBase = lerp(P.sprinting && P.speed > 4.5 ? 65 : 60, W0.zoom, this.aimBlend) + this.fovKick * 0.5;
+      this.fovKick = Math.max(0, this.fovKick - dt * 14);
     }
     this.pitch = clamp(this.pitch, -40 * DEG, 65 * DEG);
 

@@ -3,49 +3,79 @@
 import * as THREE from 'three';
 import { part, mergeParts, BOX } from './mesh.js';
 
+// Two gun slots (like PUBG): slot 1 = MAIN gun (SMG / rifle / shotgun), slot 2 = SIDEARM (pistols).
+// spread / bloom are in radians (bloom grows with every shot, then settles), recoil = [up, side] in degrees
+// per shot, zoom = field of view while aiming (scope 'iron' / 'dot' red dot / 'scope' 3x telescope).
 export const WEAPONS = {
-  pistol: { id: 'pistol', name: 'PISTOL', mag: 12, damage: 34, rate: 0.22, spread: 0.008, auto: false, reload: 1.3, range: 140, muzzle: 0.16 },
-  smg: { id: 'smg', name: 'SMG', mag: 30, damage: 20, rate: 0.085, spread: 0.022, auto: true, reload: 1.8, range: 120, muzzle: 0.38 },
-  shotgun: { id: 'shotgun', name: 'SHOTGUN', mag: 6, damage: 24, pellets: 7, rate: 0.75, spread: 0.055, auto: false, reload: 2.2, range: 40, muzzle: 0.55 },
-  rifle: { id: 'rifle', name: 'RIFLE', mag: 25, damage: 46, rate: 0.13, spread: 0.009, auto: true, reload: 2.0, range: 190, muzzle: 0.6 },
-  gold: { id: 'gold', name: 'GOLDEN PISTOL', mag: 12, damage: 75, rate: 0.2, spread: 0.006, auto: false, reload: 1.1, range: 160, muzzle: 0.16 },
+  pistol: { id: 'pistol', name: 'PISTOL', slot: 2, mag: 12, damage: 34, rate: 0.2, spread: 0.008, bloom: 0.006, bloomMax: 0.03, auto: false, reload: 1.3, range: 140, muzzle: 0.16, zoom: 48, scope: 'iron', recoil: [1.5, 0.45], sound: 'pistol' },
+  smg: { id: 'smg', name: 'SMG', slot: 1, mag: 30, damage: 20, rate: 0.085, spread: 0.02, bloom: 0.0022, bloomMax: 0.034, auto: true, reload: 1.8, range: 120, muzzle: 0.38, zoom: 44, scope: 'dot', recoil: [0.5, 0.4], sound: 'smg' },
+  shotgun: { id: 'shotgun', name: 'SHOTGUN', slot: 1, mag: 6, damage: 24, pellets: 7, rate: 0.75, spread: 0.055, bloom: 0, bloomMax: 0, auto: false, reload: 2.2, range: 40, muzzle: 0.55, zoom: 52, scope: 'iron', recoil: [4.2, 1.0], sound: 'shotgun' },
+  rifle: { id: 'rifle', name: 'RIFLE', slot: 1, mag: 25, damage: 46, rate: 0.13, spread: 0.009, bloom: 0.0018, bloomMax: 0.026, auto: true, reload: 2.0, range: 190, muzzle: 0.6, zoom: 24, scope: 'scope', recoil: [0.7, 0.32], sound: 'rifle' },
+  gold: { id: 'gold', name: 'GOLDEN PISTOL', slot: 2, mag: 12, damage: 75, rate: 0.2, spread: 0.006, bloom: 0.005, bloomMax: 0.025, auto: false, reload: 1.1, range: 160, muzzle: 0.16, zoom: 46, scope: 'iron', recoil: [1.3, 0.35], sound: 'gold' },
 };
 export const WEAPON_ORDER = ['pistol', 'gold', 'smg', 'shotgun', 'rifle'];
+// Small side-view pictures of the guns for the slot buttons (24 x 12 view box).
+export const GUN_ICONS = {
+  pistol: 'M3 3h12v2h1v1H9l-1 1v1H6l-1 4H2l1-5H2V4h1z',
+  gold: 'M3 3h12v2h1v1H9l-1 1v1H6l-1 4H2l1-5H2V4h1z',
+  smg: 'M2 4h3V3h12v1h3v2h-3l-1 1h-2v4h-2V7H9l-1 3H6l1-3H5V6H2z',
+  rifle: 'M1 5h4V4h2V3h6v1h8v1h2v1h-2l-1 1h-3v4h-2V7h-2l-1 3H9l1-3H7L5 7H1z',
+  shotgun: 'M1 5h5l2-1h14v2H11l-1 1H8l-2 1H1z',
+};
 
 const gunGeo = {};
-const gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.7, roughness: 0.35 });
-const goldMat = new THREE.MeshStandardMaterial({ color: 0xffc94a, metalness: 1, roughness: 0.25 });
+const gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.65, roughness: 0.38 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xffc94a, metalness: 1, roughness: 0.22 });
+const CYL8 = new THREE.CylinderGeometry(1, 1, 1, 8);
+// A cylinder along Z (barrels, scopes).
+const tube = (c, x, y, z, r, len) => part(CYL8, c, x, y, z, r, len, r, Math.PI / 2, 0, 0);
 
-// Gun model: points along +Z, grip at the origin.
+// Gun model: points along +Z, grip at the origin. Built from simple parts (no model files).
 export function makeGun(id) {
   if (!gunGeo[id]) {
-    const dark = 0x1c1d20, mid = 0x3a3c41;
+    const dark = 0x1a1b1e, mid = 0x34363b, metal = 0x55585e, poly = 0x2a2b2e;
     const p = [];
     if (id === 'pistol' || id === 'gold') {
-      p.push(part(BOX, mid, 0, 0.045, 0.06, 0.034, 0.034, 0.2));     // slide
-      p.push(part(BOX, dark, 0, 0.018, 0.05, 0.03, 0.024, 0.16));    // frame
-      p.push(part(BOX, dark, 0, -0.035, -0.005, 0.03, 0.1, 0.046, 0.28, 0, 0));   // grip
-      p.push(part(BOX, dark, 0, 0.0, 0.045, 0.008, 0.03, 0.05));     // trigger guard
+      p.push(part(BOX, mid, 0, 0.047, 0.065, 0.032, 0.036, 0.21));     // slide
+      for (let i = 0; i < 5; i++) p.push(part(BOX, dark, 0, 0.048, -0.02 + i * 0.012, 0.034, 0.03, 0.005));   // slide grip lines
+      p.push(part(BOX, dark, 0, 0.02, 0.06, 0.03, 0.022, 0.17));        // frame
+      p.push(tube(metal, 0, 0.047, 0.175, 0.008, 0.02));                // muzzle
+      p.push(part(BOX, poly, 0, -0.035, -0.006, 0.031, 0.105, 0.048, 0.26, 0, 0));   // grip
+      p.push(part(BOX, dark, 0, -0.005, 0.045, 0.008, 0.028, 0.05));    // trigger guard
+      p.push(part(BOX, dark, 0, 0.068, 0.15, 0.006, 0.01, 0.01));       // front sight
+      p.push(part(BOX, dark, 0, 0.068, -0.025, 0.02, 0.01, 0.01));      // rear sight
     } else if (id === 'shotgun') {
-      p.push(part(BOX, 0x5a3a22, 0, 0.03, -0.2, 0.045, 0.08, 0.32));   // wooden stock
-      p.push(part(BOX, dark, 0, 0.05, 0.1, 0.05, 0.07, 0.3));          // receiver
-      p.push(part(BOX, mid, 0, 0.07, 0.45, 0.03, 0.03, 0.5));          // barrel
-      p.push(part(BOX, 0x5a3a22, 0, 0.035, 0.38, 0.045, 0.04, 0.18));  // pump
-      p.push(part(BOX, dark, 0, -0.03, 0.02, 0.03, 0.08, 0.04, 0.3, 0, 0));
+      p.push(part(BOX, 0x5a3a22, 0, 0.025, -0.22, 0.045, 0.085, 0.3, -0.08, 0, 0));   // wooden stock
+      p.push(part(BOX, dark, 0, 0.05, 0.08, 0.052, 0.075, 0.28));       // receiver
+      p.push(tube(metal, 0, 0.075, 0.46, 0.017, 0.56));                 // barrel
+      p.push(tube(dark, 0, 0.045, 0.4, 0.014, 0.42));                   // magazine tube
+      p.push(part(BOX, 0x5a3a22, 0, 0.04, 0.36, 0.05, 0.045, 0.2));     // pump
+      for (let i = 0; i < 4; i++) p.push(part(BOX, 0x3f2918, 0, 0.04, 0.29 + i * 0.045, 0.052, 0.047, 0.012));
+      p.push(part(BOX, dark, 0, -0.035, 0.01, 0.032, 0.09, 0.042, 0.3, 0, 0));   // grip
+      p.push(part(BOX, metal, 0, 0.098, 0.72, 0.008, 0.012, 0.01));     // bead sight
     } else if (id === 'rifle') {
-      p.push(part(BOX, mid, 0, 0.04, 0.12, 0.05, 0.08, 0.42));         // body
-      p.push(part(BOX, dark, 0, 0.055, 0.5, 0.022, 0.022, 0.36));      // barrel
-      p.push(part(BOX, dark, 0, -0.07, 0.18, 0.035, 0.18, 0.06, 0.25, 0, 0));   // curved magazine
-      p.push(part(BOX, dark, 0, 0.03, -0.24, 0.035, 0.09, 0.26));      // stock
-      p.push(part(BOX, dark, 0, 0.12, 0.1, 0.03, 0.04, 0.16));         // scope
-      p.push(part(BOX, dark, 0, -0.03, 0.0, 0.03, 0.09, 0.04, 0.3, 0, 0));
-    } else {
-      p.push(part(BOX, mid, 0, 0.04, 0.1, 0.05, 0.07, 0.34));        // body
-      p.push(part(BOX, dark, 0, 0.05, 0.32, 0.022, 0.022, 0.12));    // barrel
-      p.push(part(BOX, dark, 0, -0.06, 0.14, 0.03, 0.16, 0.045, 0.15, 0, 0));   // magazine
-      p.push(part(BOX, dark, 0, -0.03, -0.01, 0.03, 0.09, 0.04, 0.3, 0, 0));    // grip
-      p.push(part(BOX, dark, 0, 0.035, -0.16, 0.028, 0.045, 0.18));  // stock
-      p.push(part(BOX, dark, 0, 0.09, 0.12, 0.016, 0.03, 0.08));     // sight
+      p.push(part(BOX, mid, 0, 0.045, 0.1, 0.05, 0.085, 0.36));         // receiver
+      p.push(part(BOX, dark, 0, 0.05, 0.38, 0.056, 0.07, 0.26));        // handguard
+      for (let i = 0; i < 6; i++) p.push(part(BOX, metal, 0, 0.087, 0.27 + i * 0.04, 0.034, 0.008, 0.02));   // top rail
+      p.push(tube(metal, 0, 0.055, 0.62, 0.012, 0.24));                 // barrel
+      p.push(tube(dark, 0, 0.055, 0.76, 0.02, 0.06));                   // muzzle brake
+      p.push(part(BOX, dark, 0, -0.075, 0.16, 0.034, 0.17, 0.065, 0.3, 0, 0));   // curved magazine
+      p.push(part(BOX, poly, 0, 0.035, -0.25, 0.04, 0.1, 0.26));        // stock
+      p.push(part(BOX, dark, 0, 0.01, -0.36, 0.044, 0.13, 0.04));       // butt pad
+      p.push(part(BOX, poly, 0, -0.03, 0.0, 0.032, 0.095, 0.045, 0.3, 0, 0));    // grip
+      p.push(tube(dark, 0, 0.135, 0.12, 0.024, 0.26));                  // 3x scope
+      p.push(tube(dark, 0, 0.135, 0.255, 0.03, 0.03));                  // scope front ring
+      p.push(part(BOX, dark, 0, 0.105, 0.06, 0.02, 0.04, 0.02)); p.push(part(BOX, dark, 0, 0.105, 0.18, 0.02, 0.04, 0.02));   // mounts
+    } else {   // SMG
+      p.push(part(BOX, mid, 0, 0.042, 0.1, 0.05, 0.075, 0.32));         // body
+      p.push(tube(metal, 0, 0.05, 0.31, 0.012, 0.12));                  // barrel
+      p.push(tube(dark, 0, 0.05, 0.38, 0.02, 0.05));                    // suppressor-ish muzzle
+      p.push(part(BOX, dark, 0, -0.07, 0.14, 0.03, 0.17, 0.042, 0.08, 0, 0));    // straight magazine
+      p.push(part(BOX, poly, 0, -0.03, -0.01, 0.03, 0.09, 0.04, 0.3, 0, 0));     // grip
+      p.push(part(BOX, dark, 0, 0.035, -0.17, 0.022, 0.035, 0.2));      // folding stock
+      p.push(part(BOX, dark, 0, 0.012, -0.26, 0.03, 0.09, 0.02));       // stock pad
+      p.push(part(BOX, dark, 0, 0.095, 0.1, 0.03, 0.035, 0.06));        // red-dot sight
+      p.push(part(BOX, 0x1a2b2a, 0, 0.1, 0.13, 0.026, 0.03, 0.004));    // sight glass
     }
     gunGeo[id] = mergeParts(p);
   }
@@ -126,6 +156,23 @@ export class Effects {
     const fireTex = glowTexture('rgba(255,240,200,1)', 'rgba(255,120,30,0.85)');
     this.fire = new ParticlePool(scene, 220, 1.7, true, fireTex);     // fireballs, burning cars
     this.smokeBig = new ParticlePool(scene, 140, 3.2, false, puff);    // explosion smoke
+    // Empty brass shells flying out of the gun (tiny bright specks with gravity).
+    const brass = glowTexture('rgba(255,236,170,1)', 'rgba(200,150,60,0.9)');
+    this.shells = new ParticlePool(scene, 60, 0.07, false, brass);
+    // Bullet holes on walls (one draw call for all of them, the oldest is reused).
+    const holeTex = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 32;
+      const g = c.getContext('2d'), gr = g.createRadialGradient(16, 16, 1, 16, 16, 15);
+      gr.addColorStop(0, 'rgba(10,10,10,0.95)'); gr.addColorStop(0.35, 'rgba(25,22,20,0.8)'); gr.addColorStop(0.7, 'rgba(60,55,50,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    })();
+    this.holeMax = quality === 'low' ? 40 : 90;
+    this.holes = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.16, 0.16),
+      new THREE.MeshBasicMaterial({ map: holeTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), this.holeMax);
+    this.holes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.holes.frustumCulled = false; this.holes.count = 0; this.holeI = 0;
+    scene.add(this.holes);
     // Explosion flash ball + ground shock ring (reused).
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
@@ -166,10 +213,11 @@ export class Effects {
     }
   }
 
-  muzzle(pos) {
+  muzzle(pos, size = 1) {
     const f = this.flashes[this.flashI]; this.flashI = (this.flashI + 1) % this.flashes.length;
     f.s.position.copy(pos); f.s.visible = true; f.life = 0.05;
     f.s.material.rotation = Math.random() * Math.PI;
+    f.s.scale.setScalar((0.38 + Math.random() * 0.22) * size);
     if (this.light) { this.light.position.copy(pos); this.light.intensity = 6; this.lightLife = 0.05; }
   }
 
@@ -202,6 +250,26 @@ export class Effects {
         0.55, 0.52, 0.48, 0.6 + Math.random() * 0.3, 0.3);
     }
   }
+
+  // An empty shell jumps out of the gun to the right (dir = where the gun points).
+  shell(x, y, z, dirX, dirZ) {
+    const rx = -dirZ, rz = dirX;   // right of the gun
+    this.shells.emit(x, y, z, rx * (1.6 + Math.random()) + dirX * 0.3, 1.8 + Math.random(), rz * (1.6 + Math.random()) + dirZ * 0.3, 1.6, 1.25, 0.55, 0.7, -9.8);
+  }
+
+  // A bullet hole on a wall: point + the wall's normal.
+  hole(point, normal) {
+    const i = this.holeI; this.holeI = (this.holeI + 1) % this.holeMax;
+    _hm.position.copy(point).addScaledVector(normal, 0.012);
+    _hm.lookAt(_hl.copy(_hm.position).add(normal));
+    _hm.rotation.z = Math.random() * Math.PI * 2;
+    _hm.scale.setScalar(0.7 + Math.random() * 0.6);
+    _hm.updateMatrix();
+    this.holes.setMatrixAt(i, _hm.matrix);
+    this.holes.count = Math.max(this.holes.count, i + 1);
+    this.holes.instanceMatrix.needsUpdate = true;
+  }
+  clearHoles() { this.holes.count = 0; this.holeI = 0; }
 
   // Bullet hits a person: small red puff (no gore).
   hitPerson(point) {
@@ -270,6 +338,7 @@ export class Effects {
   update(dt) {
     this.sparks.update(dt);
     this.puffs.update(dt);
+    this.shells.update(dt);
     this.glows.update(dt);
     this.fire.update(dt);
     this.smokeBig.update(dt);
@@ -310,6 +379,7 @@ export class Effects {
 // Shooting: find what a bullet hits first (buildings, people, cars).
 // ---------------------------------------------------------------------------
 const _o = new THREE.Vector3(), _d = new THREE.Vector3();
+const _hm = new THREE.Object3D(), _hl = new THREE.Vector3();
 
 // Ray against an upright cylinder (a person). Returns distance or -1.
 function rayCylinder(ox, oy, oz, dx, dy, dz, cx, cy, cz, r, h) {
@@ -351,6 +421,8 @@ function rayCar(ox, oy, oz, dx, dy, dz, car) {
 export function castShot(game, origin, dir, maxDist, ignore, startAt = 0) {
   const ox = origin.x, oy = origin.y, oz = origin.z, dx = dir.x, dy = dir.y, dz = dir.z;
   let best = { t: game.world.rayCast(ox, oy, oz, dx, dy, dz, maxDist), kind: 'world', target: null };
+  const wn = game.world.lastNormal;
+  best.normal = wn ? new THREE.Vector3(wn[0], wn[1], wn[2]) : null;
   for (const h of game.humans()) {
     if (h === ignore || h.dead) continue;
     const t = rayCylinder(ox, oy, oz, dx, dy, dz, h.x, h.groundY || 0, h.z, h.radius || 0.32, 1.82);

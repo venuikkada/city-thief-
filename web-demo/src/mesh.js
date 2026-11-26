@@ -61,7 +61,10 @@ export function mergeParts(parts) {
 // The 4 side walls of a box, with UVs in "tiles" (uTile metres wide, vTile metres high),
 // so building windows and shop fronts repeat at real-world size.
 // vOffset shifts the pattern (tiles start at height y0 + vOffset).
-export function wallsGeometry(x0, z0, x1, z1, y0, y1, uTile, vTile, vOffset = 0) {
+// door (optional): { side, s, w, h } cuts a doorway into one wall: side 0..3 (see WALL_SIDES),
+// s = metres from the wall's start corner to the middle of the door, w x h = door size.
+export const WALL_SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // which way each wall faces
+export function wallsGeometry(x0, z0, x1, z1, y0, y1, uTile, vTile, vOffset = 0, door = null) {
   const pos = [], nor = [], uv = [], idx = [];
   const sides = [
     // [ax, az, bx, bz, nx, nz] : wall from a to b, facing out (n)
@@ -70,16 +73,26 @@ export function wallsGeometry(x0, z0, x1, z1, y0, y1, uTile, vTile, vOffset = 0)
     [x1, z1, x0, z1, 0, 1],
     [x0, z1, x0, z0, -1, 0],
   ];
-  for (const [ax, az, bx, bz, nx, nz] of sides) {
-    const len = Math.hypot(bx - ax, bz - az);
+  const v0 = vOffset / vTile;
+  // One piece of a wall: from s0 to s1 metres along it (measured from b), heights ya..yb.
+  const quad = (ax, az, bx, bz, nx, nz, len, s0, s1, ya, yb) => {
     const base = pos.length / 3;
-    // Wall is seen from outside: go b -> a so the face points outwards.
-    pos.push(bx, y0, bz, ax, y0, az, ax, y1, az, bx, y1, bz);
+    const px = (s) => bx + (ax - bx) * (s / len), pz = (s) => bz + (az - bz) * (s / len);
+    pos.push(px(s0), ya, pz(s0), px(s1), ya, pz(s1), px(s1), yb, pz(s1), px(s0), yb, pz(s0));
     for (let i = 0; i < 4; i++) nor.push(nx, 0, nz);
-    const u = len / uTile, v0 = vOffset / vTile, v1 = (y1 - y0 + vOffset) / vTile;
-    uv.push(0, v0, u, v0, u, v1, 0, v1);
+    const va = v0 + (ya - y0) / vTile, vb = v0 + (yb - y0) / vTile;
+    uv.push(s0 / uTile, va, s1 / uTile, va, s1 / uTile, vb, s0 / uTile, vb);
     idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-  }
+  };
+  sides.forEach(([ax, az, bx, bz, nx, nz], i) => {
+    const len = Math.hypot(bx - ax, bz - az);
+    // Wall is seen from outside: go b -> a so the face points outwards.
+    if (!door || door.side !== i) { quad(ax, az, bx, bz, nx, nz, len, 0, len, y0, y1); return; }
+    const d0 = door.s - door.w / 2, d1 = door.s + door.w / 2, top = Math.min(y1, y0 + door.h);
+    quad(ax, az, bx, bz, nx, nz, len, 0, d0, y0, y1);        // left of the door
+    quad(ax, az, bx, bz, nx, nz, len, d1, len, y0, y1);      // right of the door
+    quad(ax, az, bx, bz, nx, nz, len, d0, d1, top, y1);      // above the door
+  });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));

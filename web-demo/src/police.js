@@ -420,7 +420,7 @@ export class PoliceCar extends Car {
       for (const k of [0.55, -0.55]) {
         const c = { x: this.x + fx * this.halfL * k, z: this.z + fz * this.halfL * k };
         const bx = c.x, bz = c.z;
-        g.world.resolveCircle(c, this.halfW);
+        g.world.resolveCircle(c, this.halfW, 0, true);
         this.x += c.x - bx; this.z += c.z - bz;
       }
       this.syncMesh();

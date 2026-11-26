@@ -1,4 +1,4 @@
-# City Thief on Android and PC (v8)
+# City Thief on Android and PC (v9)
 
 The same game runs everywhere: on the website, as an Android app, and as a Windows PC program.
 Built by Venu Brushwood.
@@ -43,15 +43,16 @@ code-signed yet): click **More info -> Run anyway**. F11 = full screen.
 |---|---|---|
 | W A S D / arrows | move | drive / brake / steer |
 | Mouse | look around | look around |
-| Left click / Right click | fire / aim | fire from the window |
+| Left click / Right click (hold) | fire / aim down the sights (rifle: sniper scope) | fire from the window |
 | Shift | sprint | nitro boost |
 | Space | jump | handbrake (drift) |
 | E | get in a car | get out |
-| R / Q / C | reload / switch gun / crouch | - |
-| Y / U / O / H | talk / rob / push / hire | H = horn |
+| R / C | reload / crouch | - |
+| 1 / 2, mouse wheel, Q | main gun / pistol / switch | same |
+| Y / U / I / O / H | talk / rob (in a shop: rob the till) / buy / push / hire | H = horn |
 | K / T / G | photo / takedown / pick up | - |
 | M / V / Esc / F11 | map / car camera / pause / full screen | same |
-| 1 / 2 | pick a choice (quiet or loud) | - |
+| 1 / 2 (when a question shows) | pick a choice (quiet or loud) | - |
 
 ## How the apps are built (for developers)
 

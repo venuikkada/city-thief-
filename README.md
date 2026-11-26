@@ -74,6 +74,22 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     (sometimes men are waiting there, or the safehouse is burned and you must reach a backup one), and report back.
   - **Checkpoints:** fail in act 2 or 3 and the result screen offers RETRY FROM ACT 2 / 3. A mission clock and the
     act show under the mission title. Rewards are 1.6x bigger. All of it is set per mission in `web-demo/src/acts.js`.
+- **v9: shooting like the big mobile shooters, two gun slots, and you can walk into ANY building:**
+  - **Aim and fire:** the crosshair opens up while you run, jump or spray, and closes when you stand still, crouch or
+    aim (ADS). Every gun kicks up (recoil) and most of the kick comes back when you stop firing. Hit markers (gold for a
+    headshot, red for a kill), damage numbers, a kill feed, shell casings and bullet holes in the walls.
+  - **Scopes:** the SMG and pistols aim down a red-dot / iron sight with a small zoom; the RIFLE has a real sniper
+    scope (first-person view, mil-dot reticle, 2.5x zoom).
+  - **Two gun slots (bottom middle, like PUBG):** slot 1 = main gun (SMG, shotgun or rifle), slot 2 = pistol. Tap a slot
+    to switch at any time (on foot or in a car); tap it again to swap to another gun of the same kind. The other gun
+    rides on Vikram's back or in the hip holster. PC: keys 1 / 2 or the mouse wheel.
+  - **Every building has a real door:** 262 shops and 20 office towers. Glass doors slide open when someone walks up.
+    Inside is the shop on the sign: phones, sweets, chai, hardware, a restaurant ("hotel"), medicines, saris (with a
+    white gaddi), electricals, a general store, auto parts, a tailor, a fruit mart, or an office lobby with lifts.
+    Each has a shopkeeper, customers, shelves full of goods and a cash drawer. BUY what the shop sells (first aid,
+    food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
+    then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
+    (built in 2-8 ms from simple boxes: nothing extra to download).
 - **Voices (Indian English):** every story line is spoken in the character's voice, Vikram says each new objective
   ("Okay. First, I have to go to Ravi's garage"), reminds you if you stand around, and greets people he talks to.
   Uses the phone's / PC's own voices (free, works offline). Settings -> Voices.
@@ -95,7 +111,7 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
 - **Rewards:** cash pop-ups, kill combos, headshots, near-miss / drift / stunt-jump bonuses, slow motion,
   street rank (XP) with unlocks, a shop (armour, shotgun, rifle, golden pistol, nitro, big magazines), daily reward streak,
   animated results (stars, cash count-up, XP bar). Indian-style action music that rises with the chase.
-- **Combat:** pistol + SMG, aim help on phones (slows on target, snaps when you press AIM), strafe and walk
+- **Combat:** pistol, SMG, shotgun, rifle, golden pistol; aim help on phones (slows on target, snaps when you press AIM), strafe and walk
   backwards while aiming, sprint lock (drag the joystick far up).
 - **Police (5 stars):** arrest at 1 star, shooting at 2, SWAT + roadblocks at 3, helicopter with searchlight +
   spike strips at 4-5. Officers find their way round buildings; cars predict where you go and ram you.
@@ -118,7 +134,8 @@ The **Unity project stays the real game** - the demo is for feedback and promoti
   build: `node tools/build-windows.js <electron-win32-x64.zip> <out>`. Or on any PC: open the site in Chrome / Edge and
   click INSTALL APP (works offline after the first visit thanks to `sw.js`, made by `tools/make-sw.py`).
 - **PC controls:** W A S D move / drive, mouse look, left click fire, right click aim, Shift sprint / nitro, Space jump /
-  handbrake, E car, R reload, Q switch gun, C crouch, Y talk, U rob, O push, H hire / horn, K photo, T takedown, M map, Esc pause.
+  handbrake, E car, R reload, 1 / 2 or mouse wheel or Q gun slots, C crouch, Y talk, U rob (rob the till in a shop),
+  I buy, O push, H hire / horn, K photo, T takedown, M map, Esc pause.
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).

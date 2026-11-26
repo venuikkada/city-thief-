@@ -31,14 +31,14 @@ export class Controls {
     // name, held-type?, drag-to-look?
     const buttons = [
       ['btn-fire', 'fire', true, true], ['btn-fire-l', 'fire', true, true], ['btn-aim', 'aim', false, true],
-      ['btn-reload', 'reload'], ['btn-jump', 'jump'], ['btn-crouch', 'crouch'], ['btn-weapon', 'switch'],
+      ['btn-reload', 'reload'], ['btn-jump', 'jump'], ['btn-crouch', 'crouch'], ['btn-slot1', 'slot1'], ['btn-slot2', 'slot2'],
       ['btn-enter', 'enter'], ['btn-pickup', 'pickup'], ['btn-callcops', 'callCops'],
       ['btn-gas', 'gas', true], ['btn-brake', 'brake', true], ['btn-handbrake', 'handbrake', true],
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
       ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
       ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
       ['btn-color', 'color'], ['btn-dance', 'dance'],
-      ['btn-talk', 'talk'], ['btn-rob', 'rob'], ['btn-buy', 'rob'], ['btn-push', 'push'], ['btn-hire', 'hire'], ['btn-photo', 'photo'],
+      ['btn-talk', 'talk'], ['btn-rob', 'rob'], ['btn-buy', 'buy'], ['btn-push', 'push'], ['btn-hire', 'hire'], ['btn-photo', 'photo'],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -46,8 +46,10 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', y: 'talk', u: 'rob', o: 'push', h: 'hire', k: 'photo' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo' };
         if (map[k]) this.pending[map[k]] = true;
+        // 1 / 2 = gun slots (unless a "choose quiet or loud" question is on screen).
+        if ((k === '1' || k === '2') && document.getElementById('choice').classList.contains('hidden')) this.pending[k === '1' ? 'slot1' : 'slot2'] = true;
       }
       this.keys.add(k);
       if ([' ', 'arrowup', 'arrowdown', 'tab'].includes(k)) e.preventDefault();
@@ -63,9 +65,14 @@ export class Controls {
     document.addEventListener('mousedown', (e) => {
       if (document.pointerLockElement !== layer || !this.enabled) return;
       if (e.button === 0) { this.mouseFire = true; this.pending.fire = true; }
-      if (e.button === 2) this.pending.aim = true;
+      if (e.button === 2) { this.mouseAim = true; this.mouseAimChanged = true; }   // hold right button = aim
     });
-    document.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseFire = false; });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouseFire = false;
+      if (e.button === 2 && this.mouseAim) { this.mouseAim = false; this.mouseAimChanged = true; }
+    });
+    // Mouse wheel = swap guns.
+    document.addEventListener('wheel', (e) => { if (document.pointerLockElement === layer && this.enabled && Math.abs(e.deltaY) > 4) this.pending.switch = true; }, { passive: true });
   }
 
   lockMouse() {
@@ -174,6 +181,7 @@ export class Controls {
 
   releaseAll() {
     this.held = {}; this.pending = {}; this.mouseFire = false;
+    if (this.mouseAim) { this.mouseAim = false; this.mouseAimChanged = true; }
     this.cancelSprintLock();
     this.stickVec = { x: 0, y: 0 }; this.stickEdge = false; this.stickId = NONE; this.lookId = NONE;
     this.base.classList.add('hidden');
@@ -202,8 +210,10 @@ export class Controls {
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
       takedownPressed: !!p.takedown || !!p.pickup, drivemodePressed: !!p.drivemode,
       colorPressed: !!p.color, dancePressed: !!p.dance,
-      talkPressed: !!p.talk, robPressed: !!p.rob, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
+      talkPressed: !!p.talk, robPressed: !!p.rob, buyPressed: !!p.buy, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
+      slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
     };
+    this.mouseAimChanged = false;
     this.lookX = 0; this.lookY = 0;
     this.pending = {};
     return out;

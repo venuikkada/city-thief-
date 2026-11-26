@@ -49,7 +49,8 @@ export function profileOf(p) {
     job: JOBS[Math.floor(hash(seed + 3) * JOBS.length)], fact: FACTS[Math.floor(hash(seed + 4) * FACTS.length)],
     cash: hash(seed + 5) < 0.06 ? 1500 + Math.floor(hash(seed + 6) * 3000) : 40 + Math.floor(hash(seed + 6) * 380),
   };
-  if (p.vendor) p.profile.job = p.vendor === 'chai' ? 'Chai wala (best chai in Navapur)' : 'Fruit seller';
+  if (p.shop) p.profile.job = p.shop.job;
+  else if (p.vendor) p.profile.job = p.vendor === 'chai' ? 'Chai wala (best chai in Navapur)' : 'Fruit seller';
   return p.profile;
 }
 
@@ -100,14 +101,19 @@ export class Interact {
       this.target = best;
       this.bar.classList.toggle('hidden', !best);
       if (best) {
-        $('btn-rob').classList.toggle('hidden', !!best.vendor);
-        $('btn-buy').classList.toggle('hidden', !best.vendor);
-        $('btn-buy-label').textContent = best.vendor === 'chai' ? 'CHAI ₹20' : 'FRUIT ₹30';
+        // Shopkeepers: BUY what the shop sells, or ROB THE TILL.
+        $('btn-rob').classList.toggle('hidden', !!best.vendor && !best.shop);
+        $('btn-rob-label').textContent = best.shop ? 'ROB TILL' : 'ROB';
+        $('btn-buy').classList.toggle('hidden', !best.vendor || (!!best.shop && !best.shop.buy));
+        $('btn-buy-label').textContent = best.shop ? (best.shop.buy ? best.shop.buy.label : '') : best.vendor === 'chai' ? 'CHAI ₹20' : 'FRUIT ₹30';
+        $('btn-buy-icon').textContent = best.shop ? best.shop.icon || '🛒' : best.vendor === 'chai' ? '☕' : '🍎';
         $('btn-hire').classList.toggle('hidden', !!best.vendor || this.followers.length >= 2 || !!best.isOfficer);
       }
     }
     if (best && this.cooldown <= 0) {
       if (input.talkPressed) this.talk(best);
+      else if (input.buyPressed && best.vendor) this.buy(best);
+      else if (input.robPressed && best.shop) { this.cooldown = 1; g.interiors.robTill(best); }
       else if (input.robPressed && !best.vendor) this.rob(best);
       else if (input.robPressed && best.vendor) this.buy(best);
       else if (input.pushPressed) this.push(best);
@@ -118,7 +124,7 @@ export class Interact {
       g.camera.getWorldDirection(_v);
       const fl = Math.hypot(_v.x, _v.z) || 1, fx = _v.x / fl, fz = _v.z / fl;
       for (const p of this.candidates()) {
-        if (p.handsUp || p.vendor) continue;
+        if (p.handsUp || (p.vendor && !p.shop) || (p.shop && p.robbedBy)) continue;
         const dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz);
         if (d > 12 || d < 0.5) continue;
         if ((dx * fx + dz * fz) / d > 0.97) { this.handsUp(p); break; }
@@ -142,6 +148,7 @@ export class Interact {
     this.hold(p, 3.5, 'talk');
     let line = pick(HELLO);
     if (p.missionTalk) line = p.missionTalk(g, p) || line;
+    else if (p.shop) line = p.robbedBy ? 'Tum?! Nikal jao meri dukaan se!' : p.shop.hi;
     else if (p.vendor) line = p.vendor === 'chai' ? 'Garam garam chai, sirf 20 rupaye!' : 'Taaze phal, bhaiya! 30 rupaye.';
     else if (hash(p.seed + 9) < 0.3) line = pick(TIPS);
     this.cardWho = p;
@@ -211,6 +218,7 @@ export class Interact {
   buy(p) {
     const g = this.game, P = g.player;
     this.cooldown = 1;
+    if (p.shop) { g.interiors.buy(p); return; }
     const price = p.vendor === 'chai' ? 20 : 30, heal = p.vendor === 'chai' ? 25 : 40;
     if (g.save.coins < price) { this.speak(p, 'Pehle paise lao!'); return; }
     g.save.coins -= price;
@@ -245,6 +253,7 @@ export class Interact {
 
   handsUp(p) {
     const g = this.game, P = g.player;
+    if (p.shop) { g.interiors.robTill(p); return; }   // a gun at the shopkeeper: open the till
     p.handsUp = true;
     this.hold(p, 3, 'cheer');   // arms up
     this.speak(p, pick(HANDS), 'alarm');

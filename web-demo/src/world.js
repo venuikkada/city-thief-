@@ -3,7 +3,7 @@
 // Also the collision helpers (fast grid) used by people, cars, police and the camera.
 import * as THREE from 'three';
 import { seededRandom } from './util.js';
-import { BOX, part, mergeParts, wallsGeometry, floorGeometry, signGeometry, vertexColorMaterial, vertexColorGlow } from './mesh.js';
+import { BOX, part, mergeParts, wallsGeometry, floorGeometry, signGeometry, vertexColorMaterial, vertexColorGlow, WALL_SIDES } from './mesh.js';
 import {
   asphaltTexture, pavingTexture, kerbTexture, groundTexture, facadeTexture, FACADE_COUNT, shopTexture, signAtlas,
   decoTexture, DECO_COUNT, glassTexture, GLASS_TINTS, grassTexture, sandTexture, palmTexture, neonAtlas,
@@ -64,6 +64,9 @@ export class World {
     this.spots = { benches: [], beach: [], plazas: [], parks: [], market: [], hotels: [] };
     this.animated = [];   // boats, water
     this.ramps = [];      // stunt jumps
+    this.doors = [];      // every building's front door (you can walk in: see interiors.js)
+    this.ceilings = [];   // ceilings of opened buildings (only bullets and the camera hit them)
+    this.freeSolids = []; // reusable slots for the walls of opened buildings
 
     this.buildGround();
     this.buildRoads();
@@ -155,6 +158,25 @@ export class World {
     this.register('b', this.buildings.length - 1, x0 - 1, z0 - 1, x1 + 1, z1 + 1);
     if (!opts.nomap) this.mapRects.push({ x0, z0, x1, z1, kind: opts.kind || 'building' });
     return b;
+  }
+  // Walls of an opened building come and go: free slots are reused so the list does not grow.
+  addTempSolid(x0, z0, x1, z1, h, opts = {}) {
+    let b = this.freeSolids.pop();
+    if (!b) { b = { i: this.buildings.length }; this.buildings.push(b); }
+    Object.assign(b, { x0, z0, x1, z1, h, nosight: !!opts.nosight, carOnly: !!opts.carOnly, off: false, stamp: 0 });
+    this.register('b', b.i, x0 - 1, z0 - 1, x1 + 1, z1 + 1);
+    return b;
+  }
+  removeTempSolid(b) {
+    for (let cx = Math.floor((b.x0 - 1) / CELL); cx <= Math.floor((b.x1 + 1) / CELL); cx++) {
+      for (let cz = Math.floor((b.z0 - 1) / CELL); cz <= Math.floor((b.z1 + 1) / CELL); cz++) {
+        const c = this.grid.get(this.cellKey(cx, cz));
+        const k = c ? c.b.indexOf(b.i) : -1;
+        if (k >= 0) c.b.splice(k, 1);
+      }
+    }
+    b.off = true;
+    this.freeSolids.push(b);
   }
   addCircle(x, z, r) {
     this.circles.push({ x, z, r });
@@ -275,7 +297,9 @@ export class World {
     const floors = style.market ? 1 + Math.floor(r() * 2) : style.deco ? 4 + Math.floor(r() * 4) : 2 + Math.floor(r() * 6);
     const top = FOOT_TOP + SHOP_H + floors * FLOOR_H;
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, w = x1 - x0, d = z1 - z0;
-    this.add('shop', wallsGeometry(x0, z0, x1, z1, FOOT_TOP, FOOT_TOP + SHOP_H, 8, SHOP_H), cx, cz);
+    // A real doorway in the middle of one shop front (the shop texture has 2 shops every 8 m).
+    const door = this.doorFor(x0, z0, x1, z1, facing, 4, 1.6, 2.6);
+    this.add('shop', wallsGeometry(x0, z0, x1, z1, FOOT_TOP, FOOT_TOP + SHOP_H, 8, SHOP_H, 0, door), cx, cz);
     if (style.deco) {
       const s = Math.floor(r() * DECO_COUNT);
       this.add('deco' + s, wallsGeometry(x0, z0, x1, z1, FOOT_TOP + SHOP_H, top, 3, FLOOR_H), cx, cz);
@@ -308,7 +332,7 @@ export class World {
       this.add('static', part(BOX, ac, fx + nx * depth / 2, ay, fz, depth, 0.07, along - 0.4, 0, 0, -nx * tilt), fx, fz);
       this.addBox(fx + nx * (depth - 0.08), ay - 0.42, fz, 0.05, 0.3, along - 0.4, ac);
     }
-    const shopRect = this.atlas.rects.shops[Math.floor(r() * this.atlas.rects.shops.length)];
+    const signIdx = Math.floor(r() * this.atlas.rects.shops.length), shopRect = this.atlas.rects.shops[signIdx];
     const signW = Math.min(along - 1.2, 8);
     this.add('signs', signGeometry(fx + nx * 0.06, FOOT_TOP + 3.65, fz + nz * 0.06, signW, signW / 8, nx, nz, shopRect), fx, fz);
     if (!style.deco && r() < 0.2) {
@@ -318,7 +342,20 @@ export class World {
       this.add('signs', signGeometry(bx, top + 1.2 + bh / 2, bz, bw, bh, nx, nz, board), bx, bz);
       this.addBox(bx - nx * 0.2, top + 0.6 + bh / 2, bz - nz * 0.2, nx ? 0.2 : bw, bh + 1.2, nz ? 0.2 : bw, 0x3a3a3a);
     }
-    this.addSolid(x0, z0, x1, z1, top - FOOT_TOP);
+    const solid = this.addSolid(x0, z0, x1, z1, top - FOOT_TOP);
+    this.doors.push({ ...door, id: this.doors.length, kind: 'shop', sign: signIdx, x0, z0, x1, z1, top, solid, ceil: 3.5 });
+  }
+
+  // Where the front door of a building goes: the middle of the shop front (unit metres wide)
+  // nearest the middle of the facade. s is measured from the wall's start corner (see wallsGeometry).
+  doorFor(x0, z0, x1, z1, facing, unit, w, h) {
+    const side = WALL_SIDES.findIndex(([a, b]) => a === facing[0] && b === facing[1]);
+    const len = side % 2 === 0 ? x1 - x0 : z1 - z0, depth = side % 2 === 0 ? z1 - z0 : x1 - x0;
+    let s = unit / 2 + Math.round((len / 2 - unit / 2) / unit) * unit;
+    s = Math.max(w / 2 + 0.9, Math.min(len - w / 2 - 0.9, s));
+    const x = side === 0 ? x1 - s : side === 1 ? x1 : side === 2 ? x0 + s : x0;
+    const z = side === 0 ? z0 : side === 1 ? z1 - s : side === 2 ? z1 : z0 + s;
+    return { side, s, w, h, x, z, nx: facing[0], nz: facing[1], len, depth };
   }
 
   roof(x0, z0, x1, z1, top) {
@@ -346,14 +383,17 @@ export class World {
       const h = 34 + Math.floor(r() * 16) * 3.6;
       const tint = Math.floor(r() * GLASS_TINTS.length);
       const cx = (tx0 + tx1) / 2, cz = (tz0 + tz1) / 2;
-      this.add('lobby', wallsGeometry(tx0, tz0, tx1, tz1, FOOT_TOP, FOOT_TOP + 5, 6, 5), cx, cz);
+      const facing = az === z0 ? [0, -1] : [0, 1];   // the side on the street, not the plaza
+      const door = this.doorFor(tx0, tz0, tx1, tz1, facing, 3, 2.0, 2.9);
+      this.add('lobby', wallsGeometry(tx0, tz0, tx1, tz1, FOOT_TOP, FOOT_TOP + 5, 6, 5, 0, door), cx, cz);
       this.add('glass' + tint, wallsGeometry(tx0, tz0, tx1, tz1, FOOT_TOP + 5, FOOT_TOP + h, 3, 3.6), cx, cz);
       this.addBox(cx, FOOT_TOP + 5, cz, tx1 - tx0 + 0.6, 0.4, tz1 - tz0 + 0.6, 0xdfe3e8);
       this.addBox(cx, FOOT_TOP + h + 0.4, cz, tx1 - tx0, 0.8, tz1 - tz0, 0x7c838c);
       this.addBox(cx, FOOT_TOP + h + 2.2, cz, 6, 3, 6, 0x9aa1aa);
       if (r() < 0.6) this.addBox(cx + 3, FOOT_TOP + h + 6, cz + 3, 0.25, 9, 0.25, 0xcccccc);
       this.add('glow', part(BOX, new THREE.Color(4, 0.4, 0.3), cx + 3, FOOT_TOP + h + 10.6, cz + 3, 0.5, 0.5, 0.5), cx, cz);
-      this.addSolid(tx0, tz0, tx1, tz1, h);
+      const solid = this.addSolid(tx0, tz0, tx1, tz1, h);
+      this.doors.push({ ...door, id: this.doors.length, kind: 'tower', sign: -1, x0: tx0, z0: tz0, x1: tx1, z1: tz1, top: FOOT_TOP + h, solid, ceil: 4.6 });
     }
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
     this.fountain(cx, cz, 4);
@@ -717,8 +757,11 @@ export class World {
     return h;
   }
 
-  resolveCircle(obj, r, y = 0) {
+  // vehicle: a car (only cars bump into the step at a shop door).
+  resolveCircle(obj, r, y = 0, vehicle = false) {
     this.near('b', obj.x - r, obj.z - r, obj.x + r, obj.z + r, (b) => {
+      if (b.off) return false;   // an opened building: its inside walls collide instead
+      if (b.carOnly && !vehicle) return false;
       if (y > 0.3 && FOOT_TOP + b.h < y) return false;   // flying over it
       const cx = Math.max(b.x0, Math.min(obj.x, b.x1));
       const cz = Math.max(b.z0, Math.min(obj.z, b.z1));
@@ -785,26 +828,31 @@ export class World {
   segmentBlocked(ax, az, bx, bz) {
     const dx = bx - ax, dz = bz - az;
     return this.near('b', Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz),
-      (b) => !b.nosight && segmentHitsRect(ax, az, dx, dz, b));
+      (b) => !b.off && !b.nosight && !b.carOnly && segmentHitsRect(ax, az, dx, dz, b));
   }
 
   // Can something walk/drive from A to B in a straight line? (includes low walls)
   pathBlocked(ax, az, bx, bz, pad = 0) {
     const dx = bx - ax, dz = bz - az;
     return this.near('b', Math.min(ax, bx) - pad, Math.min(az, bz) - pad, Math.max(ax, bx) + pad, Math.max(az, bz) + pad,
-      (b) => b.h > 0.5 && segmentHitsRect(ax, az, dx, dz, pad ? { x0: b.x0 - pad, z0: b.z0 - pad, x1: b.x1 + pad, z1: b.z1 + pad } : b));
+      (b) => !b.off && !b.carOnly && b.h > 0.5 && segmentHitsRect(ax, az, dx, dz, pad ? { x0: b.x0 - pad, z0: b.z0 - pad, x1: b.x1 + pad, z1: b.z1 + pad } : b));
   }
 
   rayCast(ox, oy, oz, dx, dy, dz, maxDist) {
-    let best = maxDist;
-    if (dy < -1e-6) { const t = (0.05 - oy) / dy; if (t > 0 && t < best) best = t; }
+    let best = maxDist, nrm = null;
+    if (dy < -1e-6) { const t = (0.05 - oy) / dy; if (t > 0 && t < best) { best = t; nrm = UP_N; } }
     const ex = ox + dx * maxDist, ez = oz + dz * maxDist;
     this.near('b', Math.min(ox, ex), Math.min(oz, ez), Math.max(ox, ex), Math.max(oz, ez), (b) => {
-      if (b.nosight && b.h > 2) return false;
+      if (b.off || b.carOnly || (b.nosight && b.h > 2)) return false;
       const t = rayBox(ox, oy, oz, dx, dy, dz, b.x0, FOOT_TOP, b.z0, b.x1, FOOT_TOP + b.h + 1, b.z1);
-      if (t >= 0 && t < best) best = t;
+      if (t >= 0 && t < best) { best = t; nrm = rayBoxAxis === 0 ? (dx > 0 ? NX_N : PX_N) : rayBoxAxis === 1 ? (dy > 0 ? NY_N : UP_N) : (dz > 0 ? NZ_N : PZ_N); }
       return false;
     });
+    for (const c of this.ceilings) {   // inside an opened building
+      const t = rayBox(ox, oy, oz, dx, dy, dz, c.x0, c.y0, c.z0, c.x1, c.y1, c.z1);
+      if (t >= 0 && t < best) { best = t; nrm = rayBoxAxis === 0 ? (dx > 0 ? NX_N : PX_N) : rayBoxAxis === 1 ? (dy > 0 ? NY_N : UP_N) : (dz > 0 ? NZ_N : PZ_N); }
+    }
+    this.lastNormal = nrm;   // which way the surface faces (for bullet holes)
     return best;
   }
 }
@@ -848,16 +896,19 @@ function segmentHitsRect(ax, az, dx, dz, b) {
   return clip(-dx, ax - b.x0) && clip(dx, b.x1 - ax) && clip(-dz, az - b.z0) && clip(dz, b.z1 - az) && t0 <= t1;
 }
 
+const UP_N = [0, 1, 0], NY_N = [0, -1, 0], PX_N = [1, 0, 0], NX_N = [-1, 0, 0], PZ_N = [0, 0, 1], NZ_N = [0, 0, -1];
+let rayBoxAxis = 0;   // which axis the last rayBox() entered through (0 x, 1 y, 2 z)
 function rayBox(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
-  let tmin = -Infinity, tmax = Infinity;
-  const axis = (o, d, lo, hi) => {
+  let tmin = -Infinity, tmax = Infinity, ax = 0;
+  const axis = (o, d, lo, hi, k) => {
     if (Math.abs(d) < 1e-9) return o >= lo && o <= hi;
     let a = (lo - o) / d, b = (hi - o) / d;
     if (a > b) [a, b] = [b, a];
-    if (a > tmin) tmin = a; if (b < tmax) tmax = b;
+    if (a > tmin) { tmin = a; ax = k; } if (b < tmax) tmax = b;
     return tmin <= tmax;
   };
-  if (!axis(ox, dx, x0, x1) || !axis(oy, dy, y0, y1) || !axis(oz, dz, z0, z1)) return -1;
+  if (!axis(ox, dx, x0, x1, 0) || !axis(oy, dy, y0, y1, 1) || !axis(oz, dz, z0, z1, 2)) return -1;
+  rayBoxAxis = ax;
   if (tmax < 0) return -1;
   return tmin >= 0 ? tmin : 0;
 }

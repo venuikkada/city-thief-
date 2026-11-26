@@ -299,7 +299,7 @@ export class Driving {
     for (const k of [-0.62, 0, 0.62]) {
       const c = { x: car.x + fx * car.halfL * k, z: car.z + fz * car.halfL * k };
       const bx = c.x, bz = c.z;
-      g.world.resolveCircle(c, r, car.y);
+      g.world.resolveCircle(c, r, car.y, true);
       for (const o of g.cars) {
         if (o === car || o.inactive) continue;
         if (Math.abs(c.x - o.x) > 6 || Math.abs(c.z - o.z) > 6) continue;

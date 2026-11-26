@@ -182,7 +182,7 @@ export class Atmosphere {
     }
 
     // Rain around the camera.
-    this.rain.visible = r > 0.02;
+    this.rain.visible = r > 0.02 && !g.indoors;   // no rain inside a shop
     if (this.rain.visible) {
       this.rain.material.opacity = 0.42 * r;
       const p = this.rainPos, cam = g.camera.position, fall = 26 * dt;
@@ -193,7 +193,7 @@ export class Atmosphere {
       }
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
-    g.audio.rain(r * (g.mode === 'play' || g.mode === 'menu' ? 1 : 0.3));
+    g.audio.rain(r * (g.mode === 'play' || g.mode === 'menu' ? 1 : 0.3) * (g.indoors ? 0.35 : 1));
 
     // Lightning and thunder in a storm.
     this.flash = Math.max(0, this.flash - dt * 3.5);

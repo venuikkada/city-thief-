@@ -522,3 +522,58 @@ body.drive-buttons #hud.car #speedo span { font-size: 9px; }
 /* Download links (website only: hidden inside the Android / Windows apps) */
 .big-btn.dl { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; color: #fff; }
 body.in-app .web-only { display: none !important; }
+
+/* ===== v9 PUBG-style shooting HUD ===== */
+/* Two gun slots at the bottom centre */
+#btn-weapon.weapon-slots { position: absolute; left: 50%; bottom: 30px; top: auto; right: auto; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; background: none; border: none; box-shadow: none; padding: 0; z-index: 2; }
+#hud.car #btn-weapon.weapon-slots { left: 50%; right: auto; top: auto; bottom: 34px; transform: translateX(-50%) scale(0.9); transform-origin: center bottom; }
+.weapon-slots .slot { position: relative; width: calc(122px * var(--bs)); height: calc(42px * var(--bs)); border-radius: 7px; border: 1.5px solid rgba(255,255,255,0.32); background: linear-gradient(180deg, rgba(20,22,26,0.62), rgba(8,9,11,0.62)); color: #fff; display: grid; grid-template-columns: 34px 1fr; grid-template-rows: 1fr 1fr; align-items: center; padding: 2px 8px 2px 6px; font-family: inherit; touch-action: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+.weapon-slots .slot svg { grid-row: 1 / 3; width: 32px; height: 16px; fill: #e8e8e8; }
+.weapon-slots .slot .nm { font-size: 10px; font-weight: 900; letter-spacing: 0.6px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weapon-slots .slot .am { font-size: 12px; font-weight: 900; text-align: left; font-variant-numeric: tabular-nums; color: #ffe9a8; }
+.weapon-slots .slot .key { position: absolute; top: -7px; left: -5px; width: 15px; height: 15px; border-radius: 50%; background: #111; border: 1px solid rgba(255,255,255,0.5); font-size: 9px; font-style: normal; font-weight: 900; display: grid; place-items: center; }
+.weapon-slots .slot.on { border-color: var(--accent); background: linear-gradient(180deg, rgba(255,197,49,0.32), rgba(80,55,8,0.55)); box-shadow: 0 0 12px rgba(255,197,49,0.35); }
+.weapon-slots .slot.on svg { fill: var(--accent); }
+.weapon-slots .slot.empty { opacity: 0.38; }
+.weapon-slots .slot.low .am { color: #ff6b5c; }
+.weapon-slots .slot.pressed { transform: scale(0.94); }
+#hud #subtitle { bottom: 84px; }
+#interact { bottom: 134px; }
+@media (max-height: 430px) { #hud #subtitle { bottom: 80px; } #interact { bottom: 122px; } .weapon-slots .slot { width: calc(110px * var(--bs)); height: calc(38px * var(--bs)); } #btn-weapon.weapon-slots { bottom: 26px; } }
+/* Crosshair that opens up with movement / spray and turns red over an enemy */
+#crosshair { --gap: 7px; --cc: rgba(255,255,255,0.95); }
+#crosshair i { background: var(--cc); transition: background 0.08s; }
+#crosshair b { position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: var(--cc); box-shadow: 0 0 2px #000; }
+#crosshair.enemy { --cc: #ff3b30; }
+#crosshair.dot i { display: none; }
+#crosshair.dot b { width: 5px; height: 5px; left: -2.5px; top: -2.5px; background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
+#crosshair.gone { display: none; }
+/* Reload circle around the crosshair */
+#reload-ring { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; --p: 0;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1turn), rgba(255,255,255,0.15) 0); -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px); mask: radial-gradient(circle, transparent 17px, #000 18px); }
+/* 3x scope (rifle): black around a round lens with fine lines */
+#scope { position: absolute; inset: 0; pointer-events: none; }
+#scope .lens { position: absolute; left: 50%; top: 50%; width: 92vh; height: 92vh; transform: translate(-50%, -50%); border-radius: 50%;
+  box-shadow: 0 0 0 200vmax #050505, inset 0 0 40px 12px rgba(0,0,0,0.85);
+  background: linear-gradient(#111, #111) center / 1px 100% no-repeat, linear-gradient(#111, #111) center / 100% 1px no-repeat,
+    radial-gradient(circle, rgba(255,40,40,0.95) 0 2px, transparent 3px); }
+#scope .lens::before { content: ''; position: absolute; left: 50%; top: 50%; width: 40%; height: 40%; transform: translate(-50%, -50%);
+  background: repeating-linear-gradient(90deg, transparent 0 9.5%, rgba(0,0,0,0.85) 9.5% 10%) center / 100% 6px no-repeat, repeating-linear-gradient(0deg, transparent 0 9.5%, rgba(0,0,0,0.85) 9.5% 10%) center / 6px 100% no-repeat; }
+/* Hit marker: white = hit, yellow = headshot, red = kill */
+#hitmarker.head::before, #hitmarker.head::after { background: #ffd23f; }
+#hitmarker { animation: hitpop 0.18s ease-out; }
+@keyframes hitpop { from { transform: scale(1.5); } to { transform: scale(1); } }
+/* Damage numbers float up from where the bullet hit */
+#dmg-nums { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.dmg { position: absolute; font-weight: 900; font-size: 15px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; transform: translate(-50%, -50%); animation: dmgup 0.75s ease-out forwards; }
+.dmg.head { color: #ffd23f; font-size: 18px; }
+.dmg.kill { color: #ff4a3d; font-size: 18px; }
+@keyframes dmgup { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -42px; } }
+/* Kill feed (right side, under the mission panel) */
+#killfeed { position: absolute; right: max(12px, env(safe-area-inset-right)); top: calc(34px + var(--mp-h, 78px)); display: flex; flex-direction: column; align-items: flex-end; gap: 3px; pointer-events: none; }
+.kf { background: rgba(0,0,0,0.5); border-left: 3px solid var(--accent); padding: 3px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; animation: kfin 0.2s ease-out, kfout 0.6s ease-in 3.4s forwards; white-space: nowrap; }
+.kf svg { width: 22px; height: 11px; fill: #ddd; vertical-align: -1px; margin: 0 5px; }
+.kf .hs { color: #ffd23f; margin-left: 5px; }
+@keyframes kfin { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes kfout { to { opacity: 0; } }
+.int-btn i { font-style: normal; }

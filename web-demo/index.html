@@ -27,6 +27,8 @@
 
   <!-- ===================== HUD ===================== -->
   <div id="hud" class="hidden foot">
+    <!-- Sniper scope view: first in the HUD so the map, money and buttons stay on top. -->
+    <div id="scope" class="hidden"><div class="lens"></div></div>
     <div id="map-wrap">
       <canvas id="minimap"></canvas>
       <div id="stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
@@ -58,8 +60,8 @@
     <div id="bubbles"></div>
     <div id="interact" class="hidden foot-only">
       <button id="btn-talk" class="int-btn" aria-label="Talk">💬<span>TALK</span></button>
-      <button id="btn-rob" class="int-btn rob" aria-label="Rob">🫳<span>ROB</span></button>
-      <button id="btn-buy" class="int-btn buy hidden" aria-label="Buy">☕<span id="btn-buy-label">CHAI ₹20</span></button>
+      <button id="btn-rob" class="int-btn rob" aria-label="Rob">🫳<span id="btn-rob-label">ROB</span></button>
+      <button id="btn-buy" class="int-btn buy hidden" aria-label="Buy"><i id="btn-buy-icon">☕</i><span id="btn-buy-label">CHAI ₹20</span></button>
       <button id="btn-push" class="int-btn" aria-label="Push">✋<span>PUSH</span></button>
       <button id="btn-hire" class="int-btn hire" aria-label="Hire">🤝<span>HIRE ₹500</span></button>
     </div>
@@ -78,13 +80,18 @@
     </div>
     <div id="money">&#8377; 0</div>
 
-    <button id="btn-weapon" class="hud-btn panel" aria-label="Switch weapon">
-      <span id="weapon-name">PISTOL</span><span id="ammo">12 / 48</span><span class="tiny">TAP TO SWITCH</span>
-    </button>
+    <!-- Two gun slots (like PUBG): tap one to use it, tap it again for the next gun of that kind -->
+    <div id="btn-weapon" class="weapon-slots">
+      <button id="btn-slot1" class="slot" aria-label="Main gun"><i class="key">1</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">MAIN GUN</b><span class="am">EMPTY</span></button>
+      <button id="btn-slot2" class="slot" aria-label="Pistol"><i class="key">2</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">PISTOL</b><span class="am">12 | 48</span></button>
+    </div>
     <div id="reloading" class="hidden">RELOADING</div>
 
-    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+    <div id="reload-ring" class="hidden"></div>
     <div id="hitmarker" class="hidden"></div>
+    <div id="dmg-nums"></div>
+    <div id="killfeed"></div>
     <div id="speedo" class="car-only">0<span>km/h</span></div>
     <div id="car-health" class="car-only"><div id="car-health-fill"></div></div>
     <div id="boost" class="car-only"><div id="boost-fill"></div><span>NITRO</span></div>

@@ -93,11 +93,30 @@ export class GameAudio {
     o.connect(gn).connect(this.master); o.start(now); o.stop(now + length + 0.05);
   }
 
+  // Each gun has its own voice: a sharp crack, a body thump and a short echo off the buildings.
   gunshot(type, volume = 1) {
-    if (type === 'smg') { this.burst(0.5 * volume, 4200, 500, 0.11); this.thump(0.35 * volume, 140, 0.08); }
-    else { this.burst(0.65 * volume, 3500, 300, 0.22); this.thump(0.5 * volume, 110, 0.14); }
+    const v = volume;
+    if (type === 'smg') { this.burst(0.5 * v, 4600, 520, 0.1); this.thump(0.32 * v, 150, 0.07); }
+    else if (type === 'rifle') { this.burst(0.62 * v, 5200, 380, 0.16); this.thump(0.55 * v, 95, 0.16); this.echo(0.16 * v, 0.09); }
+    else if (type === 'shotgun') { this.burst(0.8 * v, 2600, 160, 0.34); this.thump(0.75 * v, 70, 0.24); this.echo(0.22 * v, 0.12); }
+    else if (type === 'gold') { this.burst(0.62 * v, 3800, 320, 0.2); this.thump(0.5 * v, 120, 0.13); this.burst(0.08 * v, 6000, 5200, 0.25, 'bandpass'); }
+    else { this.burst(0.62 * v, 3600, 300, 0.2); this.thump(0.48 * v, 115, 0.13); this.echo(0.1 * v, 0.07); }
   }
-  reload() { this.burst(0.25, 2500, 1800, 0.05, 'bandpass'); setTimeout(() => this.burst(0.3, 1800, 1200, 0.06, 'bandpass'), 450); }
+  // A quieter copy a moment later (the sound bouncing off the walls of the street).
+  echo(volume, delay) { if (this.enabled) setTimeout(() => this.burst(volume, 1800, 250, 0.28), delay * 1000); }
+  // Magazine out, magazine in, slide / bolt pulled - spread over the reload time.
+  reload(len = 1.5) {
+    this.burst(0.22, 2600, 1700, 0.05, 'bandpass');
+    setTimeout(() => this.burst(0.3, 1600, 900, 0.07, 'bandpass'), len * 450);
+    setTimeout(() => { this.burst(0.34, 3200, 1400, 0.06, 'bandpass'); this.thump(0.12, 300, 0.05); }, len * 850);
+  }
+  equip() { this.burst(0.18, 2200, 1500, 0.05, 'bandpass'); setTimeout(() => this.burst(0.2, 3000, 1800, 0.04, 'bandpass'), 120); }
+  // Hit feedback: a dull thud on the body, a bright "tink" for a headshot.
+  hit(head, kill) {
+    if (head) { this.burst(0.22, 7000, 5600, 0.09, 'bandpass'); this.thump(0.15, 900, 0.05); }
+    else this.thump(0.2, 220, 0.06);
+    if (kill) setTimeout(() => this.thump(0.22, 160, 0.12), 60);
+  }
   click() { this.burst(0.2, 3000, 2500, 0.03, 'bandpass'); }
   ping() { this.burst(0.18, 5000, 3000, 0.08, 'bandpass'); }
   hurt() { this.thump(0.4, 90, 0.18); }

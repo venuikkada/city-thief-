@@ -25,6 +25,7 @@ import { makeSky } from './sky.js';
 import { Atmosphere } from './atmosphere.js';
 import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
 import { Interact } from './interact.js';
+import { Interiors } from './interiors.js';
 import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
 
@@ -155,6 +156,7 @@ class Game {
     this.music = new Music(this.audio);
     this.rewards = new Rewards(this);
     this.interact = new Interact(this);
+    this.interiors = new Interiors(this);   // walk into any shop or office tower
 
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
@@ -479,6 +481,8 @@ class Game {
     this.voice.stop(); this.voice.lastObjKey = '';
     const P = this.player;
     if (this.interact) this.interact.reset();
+    if (this.interiors) this.interiors.closeAll();
+    if (P.outfit) P.setOutfit(null);   // a shirt bought in a shop: back to Vikram's own clothes
     this.noParkZones = [];
     // No half-finished cutscene or flashback may survive a reset.
     if (this.intro) this.intro.abort();
@@ -512,7 +516,8 @@ class Game {
     if (this.dispatch.heli) this.dispatch.heli.remove();
     this.waypoint = null;
     this.ravi = null;
-    P.owned = ['pistol']; P.weapon = 'pistol';
+    P.slots = { 1: null, 2: 'pistol' }; P.owned = ['pistol']; P.weapon = 'pistol'; P.bloom = 0;
+    this.fx.clearHoles();
     for (const id of Object.keys(P.ammo)) P.ammo[id] = { mag: 0, reserve: 0 };
     P.ammo.pistol = { mag: P.magSize('pistol'), reserve: 48 };
     P.reloadT = 0; P.aiming = false; P.carrying = false;
@@ -555,8 +560,11 @@ class Game {
     this.hud.setClock('');
     this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission('FREE ROAM', 'Explore Navapur: steal cars, find the SMG in the courtyard, drive to the beach. Tap the map to set a waypoint. Want a chase? Pause > CALL THE COPS.');
-    this.pickups.spawn('smg', 41, 41);
+    this.hud.setMission('FREE ROAM', 'Explore Navapur: walk into any shop (BUY or ROB THE TILL), steal cars, grab the shotgun in the courtyard, drive to the beach. Tap a gun slot to switch guns. Want a chase? Pause > CALL THE COPS.');
+    // Two guns ready from the start: SMG (slot 1) and pistol (slot 2).
+    if (!this.player.owned.includes('smg')) this.player.giveWeapon('smg', WEAPONS.smg.mag * 3);
+    this.player.weapon = 'smg';
+    this.pickups.spawn('shotgun', 41, 41);
     this.pickups.spawn('health', 6.4, 35);
     this.pickups.spawn('ammo', 6.4, 45);
     this.enterPlay();
@@ -811,6 +819,7 @@ class Game {
     for (const o of [...this.officers]) o.update(dt);
     this.pickups.update(dt);
     this.rewards.update(dt);
+    this.interiors.update(dt);
     this.spotLife.update(dt);
     this.recycleT = (this.recycleT || 0) - dt;
     if (this.recycleT <= 0) { this.recycleT = 0.5; this.recycle(); }
