@@ -248,6 +248,7 @@ export class Rhythm {
     else { txt = 'MISS'; add = -12; this.combo = 0; }
     if (add > 0) this.lastHit = k;
     this.blend = Math.max(0, Math.min(100, this.blend + add + Math.min(this.combo, 8)));
+    if (this.onJudge) this.onJudge(add > 0);
     this.judge.textContent = txt + (this.combo > 2 ? ` x${this.combo}` : '');
     this.judge.className = add > 0 ? 'ok' : 'bad';
     this.judge.style.animation = 'none'; void this.judge.offsetWidth; this.judge.style.animation = '';

@@ -17,6 +17,11 @@ const SPEC = {
   police: { accel: 10, top: 38, grip: 9.5, wheelBase: 2.8, mass: 1.35, lat: 16 },
   sports: { accel: 12, top: 43, grip: 10, wheelBase: 2.6, mass: 1.05, lat: 17 },
   auto: { accel: 5, top: 18, grip: 7, wheelBase: 1.9, mass: 0.6, lat: 11 },
+  taxi: { accel: 8, top: 31, grip: 8.5, wheelBase: 2.6, mass: 1.05, lat: 14.5 },
+  van: { accel: 7, top: 29, grip: 8, wheelBase: 3.1, mass: 1.5, lat: 13 },
+  ambulance: { accel: 8, top: 33, grip: 8.5, wheelBase: 3.2, mass: 1.6, lat: 13.5 },
+  truck: { accel: 5, top: 25, grip: 7.5, wheelBase: 4.8, mass: 3.2, lat: 11 },
+  bus: { accel: 4.5, top: 24, grip: 7.5, wheelBase: 6.5, mass: 4, lat: 10.5 },
   boat: { accel: 7.5, top: 23, grip: 2.4, wheelBase: 3.2, mass: 1.3, lat: 10 },
 };
 const GRAVITY = 18;

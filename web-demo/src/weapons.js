@@ -361,6 +361,17 @@ export function castShot(game, origin, dir, maxDist, ignore, startAt = 0) {
     const t = rayCar(ox, oy, oz, dx, dy, dz, c);
     if (t > startAt && t < best.t) best = { t, kind: 'car', target: c };
   }
+  // Drones, shooting-gallery boards...: spheres.
+  for (const h of game.hittables || []) {
+    if (h.dead) continue;
+    const px = h.x - ox, py = h.y - oy, pz = h.z - oz;
+    const tc = px * dx + py * dy + pz * dz;
+    if (tc <= startAt) continue;
+    const d2 = px * px + py * py + pz * pz - tc * tc, r = h.radius || 0.6;
+    if (d2 > r * r) continue;
+    const t = tc - Math.sqrt(r * r - d2);
+    if (t > startAt && t < best.t) best = { t, kind: 'object', target: h };
+  }
   best.point = new THREE.Vector3(ox + dx * best.t, oy + dy * best.t, oz + dz * best.t);
   if (best.kind === 'human') best.head = best.point.y - (best.target.groundY || 0) > 1.52;
   return best;

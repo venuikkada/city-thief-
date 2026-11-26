@@ -3,7 +3,12 @@ import * as THREE from 'three';
 import { LINES, HALF_ROAD, LANE_OFF, STOP_BACK, FOOT_W, FOOT_TOP, ROAD_TOP, ROAD_W } from './world.js';
 import { clamp, lerp, moveTowards, rotateTowards, yawOf, dist, DEG, pick, angleDiff } from './util.js';
 import { makeVehicle, makeBeams, VEHICLE_SIZE, TRAFFIC_TYPES, CAR_COLORS } from './vehicles.js';
+
+// Head-light height (beam start) and cruising speed per vehicle type.
+const LIGHT_Y = { auto: 0.95, truck: 1.0, bus: 0.95, van: 0.75, ambulance: 0.75, suv: 0.78, police: 0.78, sports: 0.55 };
+const CRUISE = { auto: 8.5, truck: 8, bus: 8, van: 10, ambulance: 12, sports: 12.5, taxi: 10.5 };
 import { randomPersonRig } from './characters.js';
+import { holdAndPush } from './ambient.js';
 
 const LIGHT_COLORS = [0x22ff44, 0xffcc11, 0xff2222];
 const BURNT = new THREE.MeshStandardMaterial({ color: 0x1c1816, roughness: 1, metalness: 0 });
@@ -238,15 +243,16 @@ export class Car {
     this.vehicle = makeVehicle(type, colorHex, game.shadows);
     this.mesh = this.vehicle.group;
     if (type !== 'boat') {
-      this.beam = makeBeams(this.halfL, this.halfW, type === 'auto' ? 0.95 : 0.62);
+      this.beam = makeBeams(this.halfL, this.halfW, LIGHT_Y[type] || 0.66);
       this.beam.visible = !!(game.atmo && game.atmo.isNight);
       this.mesh.add(this.beam);
     }
     game.scene.add(this.mesh);
+    if (game.wheels) game.wheels.add(this);
 
-    // Autos are slower; everyone varies a little.
-    this.cruise = (type === 'auto' ? 8.5 : 11) * (0.9 + Math.random() * 0.2);
-    this.accel = type === 'auto' ? 2.6 : 3.5; this.brake = 8; this.corner = 6;
+    // Autos, trucks and buses are slower; everyone varies a little.
+    this.cruise = (CRUISE[type] || 11) * (0.9 + Math.random() * 0.2);
+    this.accel = type === 'auto' ? 2.6 : type === 'bus' || type === 'truck' ? 2.2 : 3.5; this.brake = 8; this.corner = 6;
     this.obeySignals = true; this.pursuing = false; this.hold = false;
     this.x = 0; this.z = 0; this.yaw = 0; this.speed = 0;
     this.prev = -1; this.target = -1; this.upcoming = [];
@@ -412,11 +418,19 @@ export class Car {
     // Look ahead for anything in the way.
     this.sensorT -= dt;
     if (this.sensorT <= 0) { this.sensorT = 0.1; this.sense(); }
-    if (this.obstacle) desired = Math.min(desired, this.stopSpeed(this.obstacleGap - 2));
+    if (this.obstacle && !(this.bypassT > 0 && this.obstacle === this.bypassing)) desired = Math.min(desired, this.stopSpeed(this.obstacleGap - 2));
+    if (this.bypassT > 0) desired = Math.min(desired, 4);   // creep round the stuck car
 
     const blockedByCar = this.obstacle && this.obstacle.isCar;
     this.blocked = this.obstacle && this.speed < 0.5 ? this.blocked + dt : 0;
-    if (blockedByCar && this.blocked > 6) { this.ignoreCars = 1.5; this.blocked = 0; }   // break rare deadlocks
+    if (blockedByCar && this.blocked > 4) {
+      const ob = this.obstacle;
+      // Waiting in a queue is normal. Only a car that will never move (crashed, parked, held) is driven
+      // round on the other side; two cars blocking each other (a real deadlock) squeeze past.
+      if (ob.hold || ob.parked || ob.wrecked || ob.exploded) { this.bypassT = 4; this.bypassing = ob; this.blocked = 0; }
+      else if (ob.obstacle === this || this.blocked > 25) { this.ignoreCars = 1.5; this.blocked = 0; }
+    }
+    if (this.bypassT > 0) this.bypassT -= dt;
     // Someone standing in front of the car: honk (Indian traffic!).
     if (this.obstacle === this.game.player && this.blocked > 1) {
       const cam = this.game.camera.position;
@@ -433,7 +447,7 @@ export class Car {
       // Traffic: pull over to the left for a police chase coming from behind.
       this.yieldT -= dt;
       if (this.yieldT <= 0) { this.yieldT = 0.3; this.yielding = this.pursuerBehind(); }
-      this.targetLateral = this.yielding ? 1.6 : 0;
+      this.targetLateral = this.bypassT > 0 ? -3.6 : this.yielding ? 1.6 : 0;
       if (this.yielding) desired = Math.min(desired, 1.5);
     }
     this.lateral = moveTowards(this.lateral, this.targetLateral, 2.5 * dt);
@@ -515,7 +529,9 @@ export function buildLoops() {
   for (let i = 0; i < LINES.length - 1; i++) for (let j = 0; j < LINES.length - 1; j++) {
     const x0 = LINES[i] + HALF_ROAD + mid, x1 = LINES[i + 1] - HALF_ROAD - mid;
     const z0 = LINES[j] + HALF_ROAD + mid, z1 = LINES[j + 1] - HALF_ROAD - mid;
-    loops.push([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]);
+    const loop = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+    loop.block = [i, j];
+    loops.push(loop);
   }
   const r = LINES[LINES.length - 1] + HALF_ROAD + mid;
   loops.push([[-r, -r], [r, -r], [r, r], [-r, r]]);
@@ -576,6 +592,7 @@ export class Pedestrian {
       if (dist(this.x, this.z, P.x, P.z) > 120 && this.respawnElsewhere()) return;
     }
 
+    if (holdAndPush(this, dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z))) return;
     if (g.dispatch.active && dist(this.x, this.z, P.x, P.z) < 14) this.panicFrom(P.x, P.z);
     this.panic -= dt;
     const panicking = this.panic > 0;
@@ -583,8 +600,13 @@ export class Pedestrian {
     const from = this.point(this.target - this.dir), to = this.point(this.target);
     let sx = to[0] - from[0], sz = to[1] - from[1];
     const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl;
+    if (this.crossing) { this.crossRoad(dt, panicking); return; }
     const tx = to[0] + sz * this.side, tz = to[1] - sx * this.side;   // left of walking direction
-    if (dist(this.x, this.z, tx, tz) < 0.6) { this.target += this.dir; return; }
+    if (dist(this.x, this.z, tx, tz) < 0.6) {
+      // At a street corner: sometimes cross the road at the zebra crossing to the next block.
+      if (!panicking && Math.random() < 0.4 && this.startCrossing()) return;
+      this.target += this.dir; return;
+    }
 
     // Someone in the way? Wait, then try the other side.
     this.senseT -= dt;
@@ -598,6 +620,21 @@ export class Pedestrian {
         const along = dx * fx + dz * fz;
         if (along > 0 && along < 1.1 && Math.abs(-dx * fz + dz * fx) < 0.6) { this.blocked = true; break; }
       }
+      // A car parked on the footpath ahead: step round it.
+      for (const c of g.cars) {
+        if (!c.parked || c.inactive) continue;
+        const dx = c.x - this.x, dz = c.z - this.z;
+        if (dx * dx + dz * dz > 49) continue;
+        const along = dx * sx + dz * sz;
+        if (along < -c.halfL - 0.5 || along > c.halfL + 4) continue;
+        const carOff = (c.x - to[0]) * sz - (c.z - to[1]) * sx;   // where the car is, measured like "side"
+        const lo = carOff - c.halfW - 0.55, hi = carOff + c.halfW + 0.55;
+        if (this.side > lo && this.side < hi) {
+          this.side = Math.max(-1.7, Math.min(1.7, Math.abs(this.side - lo) < Math.abs(hi - this.side) ? lo : hi));
+          this.avoidT = 2.2;
+        }
+      }
+      if (this.avoidT > 0) { this.avoidT -= 0.2; if (this.avoidT <= 0) this.side = 0.5 + Math.random() * 0.4; }
     }
     let speed = panicking ? 4.2 : this.walk;
     if (this.blocked && !panicking) {
@@ -609,7 +646,61 @@ export class Pedestrian {
     this.speed = moveTowards(this.speed, speed, 6 * dt);
     this.x += Math.sin(this.yaw) * this.speed * dt;
     this.z += Math.cos(this.yaw) * this.speed * dt;
-    this.mesh.position.set(this.x, FOOT_TOP, this.z);
+    this.groundY += (FOOT_TOP - this.groundY) * Math.min(1, dt * 10);
+    this.mesh.position.set(this.x, this.groundY, this.z);
+    this.mesh.rotation.y = this.yaw;
+    this.rig.setMotion(this.speed);
+    this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
+  }
+
+  // Corner reached: pick the zebra crossing to a neighbouring block (if there is one).
+  startCrossing() {
+    const loop = this.loop, b = loop.block;
+    if (!b) return false;
+    const n = this.game.pedLoops, L = LINES.length - 1;
+    const c = ((this.target % 4) + 4) % 4;
+    const NB = [[[-1, 0, 1], [0, -1, 3]], [[1, 0, 0], [0, -1, 2]], [[0, 1, 1], [1, 0, 3]], [[0, 1, 0], [-1, 0, 2]]][c];
+    const opts = NB.filter(([di, dj]) => b[0] + di >= 0 && b[0] + di < L && b[1] + dj >= 0 && b[1] + dj < L);
+    if (!opts.length) return false;
+    const [di, dj, corner] = opts[Math.floor(Math.random() * opts.length)];
+    const next = n[(b[0] + di) * L + (b[1] + dj)];
+    if (!next || !next.block) return false;
+    const A = loop[c], B = next[corner];
+    // Walk on the zebra stripes (a little off the corner, towards the road).
+    const off = 0.4 * (Math.random() < 0.5 ? 1 : -1);
+    const along = Math.abs(A[0] - B[0]) > Math.abs(A[1] - B[1]);
+    this.crossing = { ax: along ? A[0] : A[0] + off, az: along ? A[1] + off : A[1], bx: along ? B[0] : B[0] + off, bz: along ? B[1] + off : B[1],
+      next, corner, wait: 0, go: false };
+    return true;
+  }
+
+  crossRoad(dt, panicking) {
+    const g = this.game, C = this.crossing;
+    // Step 1: walk to the kerb. Step 2: wait for a gap in the traffic. Step 3: cross.
+    let tx = C.go ? C.bx : C.ax, tz = C.go ? C.bz : C.az;
+    let speed = panicking ? 4.2 : this.walk * (C.go ? 1.15 : 1);
+    if (!C.go && dist(this.x, this.z, tx, tz) < 0.5) {
+      speed = 0; C.wait += dt;
+      const mx = (C.ax + C.bx) / 2, mz = (C.az + C.bz) / 2;
+      const busy = g.cars.some((c) => !c.parked && !c.inactive && (c.speed > 1.5 || c.playerControlled) && Math.abs(c.x - mx) < 16 && Math.abs(c.z - mz) < 16);
+      if (!busy || C.wait > 7 || panicking) C.go = true;
+      this.yaw = rotateTowards(this.yaw, yawOf(C.bx - this.x, C.bz - this.z), 4 * dt);
+    }
+    if (C.go) { tx = C.bx; tz = C.bz; }
+    if (C.go && dist(this.x, this.z, C.bx, C.bz) < 0.6) {
+      // Arrived on the other side: carry on round the new block.
+      this.loop = C.next; this.dir = Math.random() < 0.5 ? 1 : -1;
+      this.target = C.corner + this.dir; this.crossing = null;
+      return;
+    }
+    if (speed > 0) this.yaw = rotateTowards(this.yaw, yawOf(tx - this.x, tz - this.z), 6.3 * dt);
+    this.speed = moveTowards(this.speed, speed, 6 * dt);
+    this.x += Math.sin(this.yaw) * this.speed * dt;
+    this.z += Math.cos(this.yaw) * this.speed * dt;
+    // Road is lower than the footpath.
+    const onRoad = this.game.world.groundAt(this.x, this.z) < FOOT_TOP * 0.5;
+    this.groundY += ((onRoad ? ROAD_TOP : FOOT_TOP) - this.groundY) * Math.min(1, dt * 10);
+    this.mesh.position.set(this.x, this.groundY, this.z);
     this.mesh.rotation.y = this.yaw;
     this.rig.setMotion(this.speed);
     this.rig.update(dt, dist(this.x, this.z, g.camera.position.x, g.camera.position.z));
@@ -634,7 +725,7 @@ export class Pedestrian {
       this.loop = loop; this.x = x; this.z = z;
       this.dir = Math.random() < 0.5 ? 1 : -1;
       this.target = this.dir === 1 ? i + 1 : i;
-      this.dead = false; this.health = 40; this.panic = 0; this.speed = 0;
+      this.dead = false; this.health = 40; this.panic = 0; this.speed = 0; this.crossing = null; this.groundY = FOOT_TOP;
       return true;
     }
     this.deadT = Math.min(this.deadT || 0, 15);

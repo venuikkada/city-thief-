@@ -9,6 +9,32 @@ import { FOOT_TOP } from './world.js';
 import { makeGun } from './weapons.js';
 import { dist, rotateTowards, yawOf, moveTowards, pick, pushOutOfBox } from './util.js';
 
+// Shared by everyone you can talk to: stand still facing Vikram (talking, hands up, phoning the police),
+// or stumble back after a push. Returns true when it handled this frame.
+export function holdAndPush(p, dt, camD) {
+  if (p.pushT > 0) {
+    p.pushT -= dt;
+    p.x += p.pushVX * dt; p.z += p.pushVZ * dt;
+    p.pushVX *= 0.86; p.pushVZ *= 0.86;
+    p.game.world.resolveCircle(p, 0.3);
+    p.mesh.position.set(p.x, p.groundY ?? FOOT_TOP, p.z);
+    p.rig.setMotion(0.6);
+    p.rig.update(dt, camD);
+    return true;
+  }
+  if (!(p.holdT > 0)) return false;
+  p.holdT -= dt;
+  if (p.faceX !== undefined) p.yaw = rotateTowards(p.yaw, yawOf(p.faceX - p.x, p.faceZ - p.z), 6 * dt);
+  p.speed = moveTowards(p.speed || 0, 0, 8 * dt);
+  if (p.holdGesture !== p.heldGesture) { p.rig.setGesture(p.holdGesture || null); p.heldGesture = p.holdGesture; }
+  p.mesh.position.set(p.x, p.groundY ?? FOOT_TOP, p.z);
+  p.mesh.rotation.y = p.yaw;
+  p.rig.setMotion(p.speed);
+  p.rig.update(dt, camD);
+  if (p.holdT <= 0) { p.heldGesture = null; p.rig.setGesture(p.gesture || null); }
+  return true;
+}
+
 // A person who stands somewhere (talking, watching, selling), and runs away when scared.
 export class AmbientPerson {
   constructor(game, x, z, yaw, opts = {}) {
@@ -51,6 +77,7 @@ export class AmbientPerson {
     const g = this.game;
     const camD = dist(this.x, this.z, g.camera.position.x, g.camera.position.z);
     if (this.dead) { this.rig.update(dt, camD); return; }
+    if (holdAndPush(this, dt, camD)) return;
     let speed = 0, crouch = 0;
     if (this.state === 'flee') {
       const away = yawOf(this.x - this.dangerX, this.z - this.dangerZ) + Math.sin(g.time * 1.3 + this.x) * 0.5;
@@ -65,7 +92,7 @@ export class AmbientPerson {
     } else if (this.walkTo) {
       // Scripted walk (cutscenes).
       const d = dist(this.x, this.z, this.walkTo.x, this.walkTo.z);
-      if (d > 0.4) { this.yaw = rotateTowards(this.yaw, yawOf(this.walkTo.x - this.x, this.walkTo.z - this.z), 6 * dt); speed = 1.4; }
+      if (d > 0.4) { this.yaw = rotateTowards(this.yaw, yawOf(this.walkTo.x - this.x, this.walkTo.z - this.z), 6 * dt); speed = this.walkSpeed || 1.4; }
       else this.walkTo = null;
     } else if (this.faceTarget) {
       this.yaw = rotateTowards(this.yaw, yawOf(this.faceTarget.x - this.x, this.faceTarget.z - this.z), 4 * dt);
@@ -129,7 +156,7 @@ export function buildStreetLife(game) {
       new THREE.MeshStandardMaterial({ map: W.atlas.texture, emissive: 0xffffff, emissiveMap: W.atlas.texture, emissiveIntensity: 0.4 }));
     game.scene.add(sign);
     solid(sx - 0.75, sz - 1.3, sx - 0.05, sz + 1.3, 1.1);
-    person(sx + 0.3, sz - 0.3, -Math.PI / 2, { rig: new CharacterRig('m_kurta', { castShadow: sh }), gesture: 'talk' });
+    person(sx + 0.3, sz - 0.3, -Math.PI / 2, { rig: new CharacterRig('m_kurta', { castShadow: sh }), gesture: 'talk' }).vendor = 'chai';
     person(sx - 1.3, sz - 0.6, Math.PI / 2, { gesture: 'drink' });
     person(sx - 1.45, sz + 0.5, Math.PI / 2 - 0.3, { gesture: 'talk' });
     person(sx - 1.2, sz + 1.6, Math.PI / 2 + 0.4, { gesture: 'listen' });
@@ -172,7 +199,7 @@ export function buildStreetLife(game) {
     for (let i = 0; i < 10; i++) p.push(part(BOX, fruit[i % fruit.length], fx - 0.3 + (i % 2) * 0.55, y + 0.95, fz - 0.8 + Math.floor(i / 2) * 0.4, 0.45, 0.16, 0.34));
     addProps(game, p);
     solid(fx - 0.55, fz - 1.0, fx + 0.55, fz + 1.0, 1.0);
-    person(fx + 0.9, fz, -Math.PI / 2, { gesture: 'talk' });
+    person(fx + 0.9, fz, -Math.PI / 2, { gesture: 'talk' }).vendor = 'fruit';
     person(fx - 1.2, fz + 0.4, Math.PI / 2, { gesture: 'listen' });
   }
 

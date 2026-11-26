@@ -4,7 +4,7 @@ const KEY = 'cityThief.layout.v1';
 const $ = (id) => document.getElementById(id);
 
 // Buttons you can move (on foot / in car / both).
-const FOOT = ['btn-fire', 'btn-fire-l', 'btn-aim', 'btn-reload', 'btn-jump', 'btn-crouch', 'btn-enter', 'btn-pickup', 'btn-takedown', 'btn-weapon', 'btn-color', 'btn-dance'];
+const FOOT = ['btn-fire', 'btn-fire-l', 'btn-aim', 'btn-reload', 'btn-jump', 'btn-crouch', 'btn-enter', 'btn-pickup', 'btn-takedown', 'btn-weapon', 'btn-color', 'btn-dance', 'interact'];
 const CAR = ['btn-gas', 'btn-brake', 'btn-left', 'btn-right', 'btn-handbrake', 'btn-boost', 'btn-carfire', 'btn-horn', 'btn-exit', 'btn-cam', 'btn-drivemode', 'btn-weapon'];
 const BOTH = ['btn-pause', 'btn-callcops'];
 

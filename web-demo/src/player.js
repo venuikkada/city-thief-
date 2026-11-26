@@ -99,12 +99,25 @@ export class Player {
     this.health = this.maxHealth; this.controlsEnabled = true;
     if (this.rig.dead) {   // fresh body after dying
       this.game.scene.remove(this.mesh);
-      this.rig = new CharacterRig('vikram', { castShadow: this.game.shadows });
+      this.rig = new CharacterRig(this.outfit || 'vikram', { castShadow: this.game.shadows });
       this.mesh = this.rig.root;
       this.game.scene.add(this.mesh);
     }
     this.mesh.visible = true;
     this.game.camera3p.snapBehind();
+  }
+
+  // Change clothes (disguise missions): another body model, same Vikram. null = his own clothes.
+  setOutfit(id) {
+    const g = this.game;
+    this.outfit = id || null;
+    const vis = this.mesh.visible;
+    g.scene.remove(this.mesh);
+    this.rig = new CharacterRig(id || 'vikram', { castShadow: g.shadows });
+    this.mesh = this.rig.root;
+    this.mesh.visible = vis;
+    g.scene.add(this.mesh);
+    this.sync();
   }
 
   takeDamage(amount, fromX, fromZ) {
@@ -347,6 +360,10 @@ export class Player {
         hit.target.takeDamage(w.damage * 0.35, true);
         g.fx.impact(hit.point, _dir.clone().negate(), true);
         if (p === 0) g.audio.ping();
+      } else if (hit.kind === 'object') {
+        hit.target.takeDamage(w.damage, true);
+        g.fx.impact(hit.point, _dir.clone().negate(), true);
+        g.hud.hitMarker(hit.target.dead);
       } else if (hit.t < w.range) {
         g.fx.impact(hit.point, _dir.clone().negate(), false);
       }
@@ -457,8 +474,10 @@ export class ThirdPersonCamera {
         this.yaw += angleDiff(this.yaw, behind) * Math.min(1, dt * 3.2);
         this.pitch = lerp(this.pitch, 11 * DEG, dt * 2);
       }
-      px = car.x; py = 1.7; pz = car.z;
-      wantDist = (g.carCamFar ? 9.5 : 6.4) + Math.min(3, sp * 0.08);
+      // Big vehicles (bus, truck) get the camera further back and higher.
+      const big = Math.max(0, car.halfL - 2.3);
+      px = car.x; py = 1.7 + big * 0.45; pz = car.z;
+      wantDist = (g.carCamFar ? 9.5 : 6.4) + big * 1.6 + Math.min(3, sp * 0.08);
       wantShoulder = 0;
       this.fovKick = moveTowards(this.fovKick, D.boosting ? 12 : 0, 30 * dt);
       fovBase = 62 + Math.min(14, sp * 0.45) + this.fovKick;

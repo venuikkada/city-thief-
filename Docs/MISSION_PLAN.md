@@ -1,7 +1,8 @@
 # City Thief: mission plan
 
-Missions 1–26 (Chapters 1, 2 and 3) are built and playable in the browser demo.
-This plan covers what comes next: Chapter 4 (Sagarpet), Chapter 5 (the finale), side activities, and daily and weekly events.
+Missions 1–76 (Chapters 1–8) are built and playable in the browser demo. Every mission starts with an "EARLIER..." flashback.
+The research behind these missions is in `Docs/MISSION_RESEARCH.md`.
+This plan lists the built chapters, then what comes next: the Sagarpet chapters, side activities, and daily and weekly events.
 
 ## How every mission should feel (the "dopamine" rules)
 
@@ -25,41 +26,52 @@ This plan covers what comes next: Chapter 4 (Sagarpet), Chapter 5 (the finale), 
 | 25 | Monsoon | The flood rises in real time; a speedboat in the city streets | Rescue Ravi from his car roof, reach the relief camp |
 | 26 | Baraat | Rhythm stealth: dance on the dhol beat to blend into a wedding procession | Pass 2 police checkpoints without being spotted |
 
-## Chapter 4: SAGARPET (missions 27–36)
+
+## Chapters 4–8 (missions 27–76) — built
+
+| Chapter | Missions | New verbs (what you learn) | Boss |
+|---|---|---|---|
+| 4 STREET SMART | 27 Word on the Street · 28 Light Fingers · 29 Purse Snatcher · 30 Crew Up · 31 Chai Pe Charcha · 32 Kaali Peeli · 33 Rickshaw Rumble · 34 Tail the Tiffin · 35 Bazaar on Fire · 36 Chhota Babu | talk / ask around, pickpocket, foot chase + tackle, hire a crew, taxi passengers | Chhota Babu |
+| 5 UNDERCOVER | 37 Delivery Boy · 38 Uniform · 39 Smile Please · 40 Phone Tapper · 41 The Witness · 42 Election Rally · 43 The Driver · 44 Laptop Chase · 45 Inside Man · 46 Neta Ji | disguises + suspicion, photos, phone copy, escort, chant on the beat, quiet-or-loud choice | Neta Bhanwar Lal |
+| 6 FAST AND DESI | 47 Shopping List · 48 Line 7 · 49 Golden Hour · 50 Drag King · 51 Truck Jack · 52 Gridlock · 53 Smash Derby · 54 Lights Out Racing · 55 Relief Convoy · 56 The Collector | car lists, bus route, ambulance, drag race, hijack, jammed-city escape, derby, convoy | Collector Kapoor |
+| 7 FESTIVAL CITY | 57 Diwali Dhamaka · 58 Patang Baazi · 59 Garba Night · 60 Gully Cricket · 61 Bappa Morya · 62 Mela Masti · 63 Holi Rematch · 64 Shaadi Crasher · 65 Lantern Run · 66 Fireworks Finale | defuse, shoot drones, garba / cricket timing, procession escort, shooting gallery, wedding infiltration | Inspector Rana |
+| 8 KING OF NAVAPUR | 67 The Plan · 68 Wheels for the Job · 69 Key Card · 70 Tools of the Trade · 71 Crew Trials · 72 Distraction · 73 Heist Day · 74 Five Star Getaway · 75 Betrayal · 76 King of Navapur | heist setups, choices, distraction bombs, 5-star getaway, boat chase | The Commissioner |
+
+## Chapter 9: SAGARPET (missions 77–86)
 
 A new harbour city: docks, fishing boats, narrow lanes, a smuggling war.
 
 | # | Mission | What you do | The twist | Big ending |
 |---|---|---|---|---|
-| 27 | Welcome to Sagarpet | Arrive by boat; escape the harbour police on foot | The boat sinks at the jetty | Jump from pier to pier |
-| 28 | Boat Thief | Steal a speedboat; race the coast guard to an island | Fuel leak: reach the island in time | Boat jump over a sandbar |
-| 29 | Fish Market Fight | Defend a fish stall owner from the Machli gang | The gang boss drives a truck at you | Truck explodes into the ice boxes |
-| 30 | Two Wheels | Learn the motorbike: deliver medicine through traffic | Rain starts and the roads turn slippery | Wheelie under a closing gate |
-| 31 | Dock Spy (stealth) | Take photos of the smugglers' containers | A crane drops a container on the path | Escape across the moving containers |
-| 32 | Night Market Heist | Rob the counterfeit-money printer at night | A fire breaks out in the market | Neon-lit bike chase |
-| 33 | Lighthouse | Defend Ravi in the lighthouse against waves of attackers | A boat raid comes from the sea | Shoot the fuel barrels to blow up the boats |
-| 34 | Train of Gold | Jump onto a moving goods train with a bike | The tunnel is coming | Jump off just before the bridge |
-| 35 | Double Cross | Sunny betrays you: chase him across the rooftops | Sunny takes a helicopter | Shoot the tail rotor; crash landing |
-| 36 | Harbour Kingpin (boss) | Fight Machli Bhai on his ship | The ship catches fire | Escape by boat as the ship explodes |
+| 77 | Welcome to Sagarpet | Arrive by boat; escape the harbour police on foot | The boat sinks at the jetty | Jump from pier to pier |
+| 78 | Boat Thief | Steal a speedboat; race the coast guard to an island | Fuel leak: reach the island in time | Boat jump over a sandbar |
+| 79 | Fish Market Fight | Defend a fish stall owner from the Machli gang | The gang boss drives a truck at you | Truck explodes into the ice boxes |
+| 80 | Two Wheels | Learn the motorbike: deliver medicine through traffic | Rain starts and the roads turn slippery | Wheelie under a closing gate |
+| 81 | Dock Spy (stealth) | Take photos of the smugglers' containers | A crane drops a container on the path | Escape across the moving containers |
+| 82 | Night Market Heist | Rob the counterfeit-money printer at night | A fire breaks out in the market | Neon-lit bike chase |
+| 83 | Lighthouse | Defend Ravi in the lighthouse against waves of attackers | A boat raid comes from the sea | Shoot the fuel barrels to blow up the boats |
+| 84 | Train of Gold | Jump onto a moving goods train with a bike | The tunnel is coming | Jump off just before the bridge |
+| 85 | Double Cross | Sunny betrays you: chase him across the rooftops | Sunny takes a helicopter | Shoot the tail rotor; crash landing |
+| 86 | Harbour Kingpin (boss) | Fight Machli Bhai on his ship | The ship catches fire | Escape by boat as the ship explodes |
 
 New systems needed: motorbikes, trains, the Sagarpet map.
 
-## Chapter 5: THE LAST RUN (missions 37–46)
+## Chapter 10: THE LAST RUN (missions 87–96)
 
 The highway between the two cities. Vikram goes from thief to legend.
 
 | # | Mission | What you do | The twist | Big ending |
 |---|---|---|---|---|
-| 37 | Highway Patrol | Escape 5 stars on the highway | Spike strips across all lanes | Jump over the toll plaza |
-| 38 | Convoy | Rob a moving armoured truck | Its escort cars box you in | Detach the truck's trailer |
-| 39 | Fly Boy | Fly the helicopter (unlocked) through 15 rings | Strong wind | Land on a moving truck |
-| 40 | Air Support | Cover Ravi from the helicopter (sniper) | Ravi's car flips over | Lift Ravi out with the rope |
-| 41 | Desert Drift | Night drift battle in the old quarry | The quarry floods | Drift through the waterfall |
-| 42 | The Mole | Find the mole in your crew (choose 1 of 3) | Your choice changes mission 45 | Interrogation cutscene |
-| 43 | Bank Vault | Big stealth heist with 3 ways in | A laser grid in the vault | Slow-motion jump through the glass |
-| 44 | Cyclone | A cyclone hits Sagarpet; take the relief truck back from looters | Flying debris and a falling hoarding | Drive through the eye of the storm |
-| 45 | Betrayal | The mole's gang ambushes you | Ravi gets kidnapped | Rescue in a burning warehouse |
-| 46 | The Last Run (finale) | Final chase across both cities, boss fight on the bridge | The bridge is opening | Car jump across the gap, credits |
+| 87 | Highway Patrol | Escape 5 stars on the highway | Spike strips across all lanes | Jump over the toll plaza |
+| 88 | Convoy | Rob a moving armoured truck | Its escort cars box you in | Detach the truck's trailer |
+| 89 | Fly Boy | Fly the helicopter (unlocked) through 15 rings | Strong wind | Land on a moving truck |
+| 90 | Air Support | Cover Ravi from the helicopter (sniper) | Ravi's car flips over | Lift Ravi out with the rope |
+| 91 | Desert Drift | Night drift battle in the old quarry | The quarry floods | Drift through the waterfall |
+| 92 | The Mole | Find the mole in your crew (choose 1 of 3) | Your choice changes mission 95 | Interrogation cutscene |
+| 93 | Bank Vault | Big stealth heist with 3 ways in | A laser grid in the vault | Slow-motion jump through the glass |
+| 94 | Cyclone | A cyclone hits Sagarpet; take the relief truck back from looters | Flying debris and a falling hoarding | Drive through the eye of the storm |
+| 95 | Betrayal | The mole's gang ambushes you | Ravi gets kidnapped | Rescue in a burning warehouse |
+| 96 | The Last Run (finale) | Final chase across both cities, boss fight on the bridge | The bridge is opening | Car jump across the gap, credits |
 
 New systems needed: highway map, flying the helicopter, a sniper rifle, choices, armoured trucks.
 
@@ -99,7 +111,7 @@ New systems needed: highway map, flying the helicopter, a sniper rifle, choices,
 1. ~~Night lighting and rain~~ (done in v6: day, night, storm, blackout).
 2. ~~Boat~~ (done). Motorbike next (needed for Chapter 4).
 3. Sagarpet map: the harbour district first.
-4. Missions 27–31, then 32–36.
+4. Missions 77–81, then 82–86.
 5. Side activities: races, stunt jumps and taxi first (cheap to build, high replay).
 6. Daily challenges.
-7. Chapter 5.
+7. Chapter 10.

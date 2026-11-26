@@ -450,6 +450,7 @@ export class World {
     for (const [ax, az, bx, bz, inx, inz] of edges) {
       const len = Math.hypot(bx - ax, bz - az);
       const ux = (bx - ax) / len, uz = (bz - az) / len;
+      (this.curbs = this.curbs || []).push({ ax, az, ux, uz, inx, inz, len });
       let prevTop = null;
       for (let s = 10; s < len - 8; s += 20) {
         const px = ax + ux * s, pz = az + uz * s;
@@ -742,6 +743,26 @@ export class World {
       if (d2 < min * min && d2 > 1e-8) { const d = Math.sqrt(d2); obj.x += (dx / d) * (min - d); obj.z += (dz / d) * (min - d); }
       return false;
     });
+  }
+
+  // Parking places along the kerbs, between the lamp posts and the trees (cars park half on the
+  // footpath, Indian style). Places that touch a kiosk, bench, stall or wall are skipped.
+  parkingSpots() {
+    const out = [];
+    for (const c of this.curbs || []) {
+      for (let s = 15; s < c.len - 12; s += 10) {
+        const x = c.ax + c.ux * s + c.inx * 0.15, z = c.az + c.uz * s + c.inz * 0.15;
+        let bad = false;
+        for (const k of [-1.9, 0, 1.9]) {
+          const px = x + c.ux * k, pz = z + c.uz * k;
+          if (this.near('b', px - 1.1, pz - 1.1, px + 1.1, pz + 1.1, (b) => px > b.x0 - 1.0 && px < b.x1 + 1.0 && pz > b.z0 - 1.0 && pz < b.z1 + 1.0)) bad = true;
+          if (this.near('c', px - 1.4, pz - 1.4, px + 1.4, pz + 1.4, (o) => Math.hypot(o.x - px, o.z - pz) < o.r + 1.05)) bad = true;
+        }
+        if (bad) continue;
+        out.push({ x, z, yaw: Math.atan2(c.ux, c.uz), ux: c.ux, uz: c.uz });
+      }
+    }
+    return out;
   }
 
   // Is the line from A to B blocked by a building? (police eyes; low walls / stalls do not block)

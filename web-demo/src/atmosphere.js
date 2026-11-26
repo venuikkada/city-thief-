@@ -2,6 +2,7 @@
 // neon), STORM (night + heavy rain, lightning, thunder, wet roads) and BLACKOUT (power cut:
 // only the moon, car lights and flashlights). Also the monsoon FLOOD water for a mission.
 import * as THREE from 'three';
+import { CAR_GLOW } from './vehicles.js';
 import { CITY } from './world.js';
 
 const MODES = {
@@ -130,7 +131,7 @@ export class Atmosphere {
     const k = Math.min(1, dt * 0.8);
     for (const key of Object.keys(c)) c[key] += (t[key] - c[key]) * k;
     const n = c.night, st = c.storm, L = c.lights, r = c.rain;
-    CITY.night.value = n; CITY.lights.value = L;
+    CITY.night.value = n; CITY.lights.value = L; CAR_GLOW.value = n;
 
     // Sky, fog, sun / moon, ambient light, exposure.
     const u = this.sky.material.uniforms;

@@ -13,16 +13,18 @@ import { Player, ThirdPersonCamera } from './player.js';
 import { Controls } from './controls.js';
 import { Hud } from './hud.js';
 import { GameAudio } from './audio.js';
-import { loadCharacters, loadMoreCrowd, setCharacterQuality } from './characters.js';
+import { loadCharacters, loadMoreCrowd, setCharacterQuality, CharacterRig } from './characters.js';
 import { Effects } from './weapons.js';
 import { Driving } from './driving.js';
-import { buildStreetLife, buildWarehouse, Pickups, SpotLife } from './ambient.js';
+import { buildStreetLife, buildWarehouse, Pickups, SpotLife, AmbientPerson } from './ambient.js';
 import { MISSIONS, CHAPTERS, MissionRunner, loadSave, writeSave } from './missions.js';
 import { Music } from './music.js';
 import { Rewards, RANKS, SHOP, DAILY, rankOf, rankProgress } from './rewards.js';
 import { WEAPONS } from './weapons.js';
 import { makeSky } from './sky.js';
 import { Atmosphere } from './atmosphere.js';
+import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
+import { Interact } from './interact.js';
 import { LayoutEditor, applyLayout } from './layout.js';
 
 // Cinematic colour grade, done inside the normal tone mapping (no extra screen pass, cheap on phones):
@@ -56,9 +58,9 @@ for (const q of ['low', 'medium', 'high']) if (params.has(q)) quality = q;
 
 // How many cars / people live around the player (the city is big; they follow you around).
 const COUNTS = {
-  low: { cars: 10, police: 2, people: 8, life: 10, spots: 10 },
-  medium: { cars: 14, police: 3, people: 12, life: 17, spots: 16 },
-  high: { cars: 22, police: 3, people: 22, life: 99, spots: 30 },
+  low: { cars: 30, police: 2, people: 20, life: 10, spots: 10, park: 62, parkP: 0.5 },
+  medium: { cars: 48, police: 3, people: 32, life: 17, spots: 16, park: 80, parkP: 0.58 },
+  high: { cars: 64, police: 3, people: 48, life: 99, spots: 30, park: 100, parkP: 0.62 },
 };
 // Evening sun over the sea (south-west).
 const SUN_DIR = new THREE.Vector3(-0.55, 0.42, -0.72).normalize();
@@ -139,6 +141,7 @@ class Game {
 
     this.fx = new Effects(this.scene, quality);
     this.cars = []; this.policeCars = []; this.peds = []; this.officers = []; this.ambient = [];
+    this.wheels = new WheelSystem(this);
     this.pickups = new Pickups(this);
     this.driving = new Driving(this);
     this.player = new Player(this, START.x, START.z, START.yaw);
@@ -149,6 +152,7 @@ class Game {
     this.hud = new Hud(this);
     this.music = new Music(this.audio);
     this.rewards = new Rewards(this);
+    this.interact = new Interact(this);
 
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
@@ -223,7 +227,7 @@ class Game {
       if (i < 0) return false;
       const d = dist(N[i].x, N[i].z, P.x, P.z);
       if (d < minFromPlayer || d > maxFromPlayer) return false;
-      if (this.cars.some((c) => Math.abs(c.x - N[i].x) < 12 && Math.abs(c.z - N[i].z) < 12)) return false;
+      if (this.cars.some((c) => Math.abs(c.x - N[i].x) < 8 && Math.abs(c.z - N[i].z) < 8)) return false;
       if (hidden) {
         const dx = N[i].x - cam.x, dz = N[i].z - cam.z, dc = Math.hypot(dx, dz);
         if (dc < 130 && (dx * _fwd.x + dz * _fwd.z) / dc > 0.25 && !this.world.segmentBlocked(cam.x, cam.z, N[i].x, N[i].z)) return false;
@@ -240,19 +244,57 @@ class Game {
       const d = dist(c.x, c.z, P.x, P.z);
       if (c.parked || c.wrecked) { if (d > 230) this.removeCar(c); continue; }
       if (c.isPolice && c.pursuing) continue;
-      if (d < 175) continue;
-      const spot = this.freeSpots(80, 160, true)[0];
+      if (d < 125) continue;
+      const spot = this.freeSpots(25, 110, true)[0];
       if (spot === undefined) continue;
       c.upcoming = []; c.direct = null; c.lateral = 0; c.obstacle = null;
       c.init(spot);
     }
     const traffic = this.cars.filter((c) => !c.isPolice && !c.parked && !c.wrecked && !c.playerControlled && !c.missionCar).length;
-    if (traffic < n.cars) {
-      const spot = this.freeSpots(70, 160, true)[0];
+    for (let k = 0; k < 3 && traffic + k < n.cars; k++) {
+      const spot = this.freeSpots(25, 110, true)[0];
       if (spot !== undefined) { const c = new Car(this, randomTrafficType(), randomCarColor()); c.init(spot); this.cars.push(c); }
     }
+    this.updateParking();
     const police = this.policeCars.filter((c) => !c.wrecked && !c.roadblock && !c.parked && !c.playerControlled).length;
     if (police < n.police) this.spawnPoliceCar(false);
+  }
+
+  // Keep a place free of kerb-parked cars (mission stops, stages...). Cleared when the city resets.
+  noPark(x, z, r) {
+    (this.noParkZones = this.noParkZones || []).push({ x, z, r });
+    for (const c of [...this.cars]) if (c.kerbParked && !c.playerControlled && Math.hypot(c.x - x, c.z - z) < r + c.halfL) this.removeCar(c);
+  }
+
+  // Parked cars along the kerbs near the player (the same car always stands in the same place).
+  updateParking() {
+    const n = COUNTS[quality], P = this.player, R = n.park;
+    if (!this.parkSpots) {
+      this.parkSpots = this.world.parkingSpots().map((sp, i) => {
+        const h = (Math.sin(i * 12.9898 + 4.1) * 43758.5453) % 1, r = Math.abs(h);
+        const types = ['hatchback', 'hatchback', 'sedan', 'sedan', 'suv', 'auto', 'taxi', 'van', 'hatchback', 'sedan'];
+        return { ...sp, on: r < n.parkP, type: types[Math.floor(Math.abs(Math.sin(i * 7.31)) * 1e4) % types.length],
+          color: CAR_COLORS[Math.floor(Math.abs(Math.sin(i * 3.7)) * 1e4) % CAR_COLORS.length], flip: Math.sin(i * 1.3) > 0, car: null };
+      });
+    }
+    for (const sp of this.parkSpots) {
+      if (!sp.on) continue;
+      const d = Math.abs(sp.x - P.x) + Math.abs(sp.z - P.z);
+      const c = sp.car;
+      if (c) {
+        // Stolen, wrecked or pushed away: the place is free for this visit.
+        if (c.inactive) { sp.car = null; continue; }                      // removed (city reset): park again later
+        if (!c.parked || c.wrecked || Math.abs(c.x - sp.x) + Math.abs(c.z - sp.z) > 2.5) { sp.car = null; sp.on = false; continue; }   // stolen / wrecked / pushed
+        if (d > R * 1.35 + 20) { this.removeCar(c); sp.car = null; }
+        continue;
+      }
+      if (d > R * 1.35) continue;
+      if (this.cars.some((o) => Math.abs(o.x - sp.x) < 5 && Math.abs(o.z - sp.z) < 5)) continue;
+      if (this.noParkZones && this.noParkZones.some((zn) => Math.hypot(zn.x - sp.x, zn.z - sp.z) < zn.r + 2.5)) continue;
+      const car = this.spawnParkedCar(sp.type, sp.color, sp.x, sp.z, sp.yaw + (sp.flip ? Math.PI : 0));
+      car.kerbParked = true;
+      sp.car = car;
+    }
   }
 
   spawnTraffic(carCount, policeCount) {
@@ -346,6 +388,7 @@ class Game {
 
   // Game events (kills, stunts, explosions...) for the live stream and missions.
   emit(type, data) {
+    if (type === 'target' && this.onTarget) this.onTarget();
     if (this.mission && this.mission.onEvent) this.mission.onEvent(type, data);
     if (this.live) this.live.event(type, data);
   }
@@ -382,6 +425,7 @@ class Game {
   removeCar(c) {
     c.inactive = true; c.pursuing = false;
     this.scene.remove(c.mesh);
+    this.wheels.remove(c);
     this.cars = this.cars.filter((x) => x !== c);
     this.policeCars = this.policeCars.filter((x) => x !== c);
   }
@@ -424,6 +468,14 @@ class Game {
   // ---------- Resetting the city between missions ----------
   resetCity() {
     const P = this.player;
+    if (this.interact) this.interact.reset();
+    this.noParkZones = [];
+    // No half-finished cutscene or flashback may survive a reset.
+    if (this.intro) this.intro.abort();
+    if (this.cut) { this.cut = null; this.hud.clearSubs(); }
+    document.body.classList.remove('cutscene', 'flashback');
+    document.getElementById('letterbox').classList.add('hidden');
+    document.getElementById('flashback').classList.add('hidden');
     if (this.mission) { this.mission.cleanup(); this.mission = null; }
     this.endScreen(null);
     if (P.inCar) this.driving.exit(true);
@@ -432,6 +484,7 @@ class Game {
     for (const o of [...this.officers]) o.remove();
     // Remove stolen / parked / wrecked cars and extra police; keep the traffic count.
     for (const c of [...this.cars]) if (c.parked || c.wrecked || c.missionCar) this.removeCar(c);
+    for (const c of this.cars) { c.hold = false; c.bypassT = 0; }   // a mission may have stopped the traffic
     while (this.policeCars.length > 2) this.removeCar(this.policeCars[this.policeCars.length - 1]);
     for (const c of this.policeCars) { c.crew = []; c.hold = false; c.state = 'patrol'; c.endPursuit(); }
     const n = COUNTS[quality];
@@ -505,8 +558,8 @@ class Game {
     this.atmo.set(def.atmo || 'day', true);
     this.mission = new MissionRunner(this, def);
     this.hud.setMission(`MISSION ${def.id} · ${def.title.toUpperCase()}`, '');
-    this.mission.start();
     this.enterPlay();
+    this.mission.start();   // after enterPlay: a flashback can switch to cutscene mode
   }
 
   respawnFree() {
@@ -623,13 +676,61 @@ class Game {
     this.controls.enabled = false; this.controls.releaseAll();
     document.body.classList.add('cutscene');
     document.getElementById('letterbox').classList.remove('hidden');
-    this.cut = { from: new THREE.Vector3(...opts.from), at: new THREE.Vector3(...opts.at), t: 0, onDone: opts.onDone };
+    this.cut = { from: new THREE.Vector3(...opts.from), at: new THREE.Vector3(...opts.at), t: 0, onDone: opts.onDone,
+      to: opts.to ? new THREE.Vector3(...opts.to) : null, dur: opts.dur || 4 };
     for (const [a, b] of opts.faces || []) {
       if (a === this.player) a.yaw = yawOf(b.x - a.x, b.z - a.z);
       else a.faceTarget = b;
     }
     this.hud.clearSubs();
     this.hud.say(opts.lines);
+  }
+
+  // "EARLIER..." flashback before a mission: what Vikram did before the theft.
+  // shots: [{ at: [x, z], yaw, act: gesture | 'crouch', cam: 'front'|'side'|'back'|'high'|'wide', where, who, text, with: [{ rig, dx, dz, act }] }]
+  playIntro(shots, onDone) {
+    const P = this.player, comps = [];
+    const fb = document.getElementById('flashback');
+    document.body.classList.add('flashback'); fb.classList.remove('hidden');
+    let i = 0;
+    const clear = () => { for (const c of comps.splice(0)) c.remove(); };
+    const finish = () => {
+      clear();
+      document.body.classList.remove('flashback'); fb.classList.add('hidden');
+      P.rig.setGesture(null); P.crouching = false;
+      this.intro = null;
+      onDone();
+    };
+    const next = () => {
+      clear();
+      if (!this.intro || i >= shots.length) { finish(); return; }
+      const s = shots[i++];
+      this.placePlayer(s.at[0], s.at[1], s.yaw ?? 0);
+      P.crouching = s.act === 'crouch';
+      P.rig.setGesture(s.act && s.act !== 'crouch' ? s.act : null);
+      for (const w of s.with || []) {
+        const fx0 = Math.sin(P.yaw), fz0 = Math.cos(P.yaw);
+        const x = P.x + fx0 * (w.f || 0) + Math.cos(P.yaw) * (w.r || 0), z = P.z + fz0 * (w.f || 0) - Math.sin(P.yaw) * (w.r || 0);
+        const a = new AmbientPerson(this, x, z, yawOf(P.x - x, P.z - z), { rig: new CharacterRig(w.rig, { castShadow: this.shadows }), gesture: w.act || 'talk' });
+        a.calm = true; a.noInteract = true;
+        if (w.face !== false) a.faceTarget = P;
+        this.ambient.push(a); comps.push(a);
+      }
+      this.refreshLists();
+      document.getElementById('flashback-where').textContent = s.where || '';
+      const fx = Math.sin(P.yaw), fz = Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
+      const CAMS = { front: [[3.3, 1.0, 1.75], [2.3, 0.45, 1.6]], side: [[0.8, 3.6, 1.6], [1.6, 2.5, 1.7]], back: [[-3.4, 0.9, 2.0], [-2.4, 0.4, 1.8]],
+        high: [[-5.5, 2.5, 7], [-4, 1.6, 4.6]], wide: [[6, 4, 2.8], [4.6, 2.2, 2.3]] };
+      const [ca, cb] = CAMS[s.cam || 'front'];
+      const pt = ([f, r, u]) => [P.x + fx * f + rx * r, P.y + u, P.z + fz * f + rz * r];
+      this.cutscene({ from: pt(ca), to: pt(cb), at: [P.x + fx * 0.3, P.y + (P.crouching ? 0.9 : 1.35), P.z + fz * 0.3], lines: [[s.who ?? '', s.text]], dur: Math.max(3, s.text.length * 0.065), onDone: next });
+    };
+    this.intro = {
+      skip: () => { i = shots.length; },
+      // Quit / restart in the middle of a flashback: clean everything away.
+      abort: () => { clear(); document.body.classList.remove('flashback'); fb.classList.add('hidden'); P.rig.setGesture(null); P.crouching = false; this.intro = null; },
+    };
+    next();
   }
 
   endCutscene() {
@@ -667,6 +768,12 @@ class Game {
 
   render() {
     const P = this.player;
+    // Car wheels (spin + steer) and near/far car detail, right before drawing.
+    const now = performance.now(), wdt = Math.min(0.1, (now - (this.lastWheelT || now)) / 1000 * (this.timeScale || 1));
+    this.lastWheelT = now;
+    this.wheels.update(wdt);
+    const cp = this.camera.position;
+    for (const c of this.cars) carLod(c, cp.x, cp.z);
     const fx = P.inCar && this.driving.car ? this.driving.car.x : P.x, fz = P.inCar && this.driving.car ? this.driving.car.z : P.z;
     this.sun.position.set(fx + SUN_DIR.x * 100, SUN_DIR.y * 100, fz + SUN_DIR.z * 100);
     this.sun.target.position.set(fx, 0, fz);
@@ -725,7 +832,10 @@ class Game {
 
     if (this.mode === 'cutscene') {
       this.cut.t += dt;
-      this.camera.position.copy(this.cut.from).lerp(this.cut.at, Math.min(0.12, this.cut.t * 0.01));
+      if (this.cut.to) {   // slow camera move (flashback shots)
+        const k = Math.min(1, this.cut.t / this.cut.dur), e = k * k * (3 - 2 * k);
+        this.camera.position.copy(this.cut.from).lerp(this.cut.to, e);
+      } else this.camera.position.copy(this.cut.from).lerp(this.cut.at, Math.min(0.12, this.cut.t * 0.01));
       this.camera.lookAt(this.cut.at);
       this.simulate(dt);
       P.update(dt, EMPTY_INPUT, P.yaw);
@@ -750,6 +860,8 @@ class Game {
       }
     }
     if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
+    if (!this.rhythm) this.interact.update(dt, input); else this.interact.bar.classList.add('hidden');
+    if (input.photoPressed) this.photoPressed = true;
     if (input.colorPressed) this.throwColor();
     // Mission-only buttons (only touch the page when something changed).
     const extra = `${this.holi && this.colorBombs > 0 ? this.colorBombs : 0}|${this.rhythm ? 1 : 0}`;
@@ -817,7 +929,7 @@ function renderMissionList() {
     list.appendChild(h);
     if (ch.soon) continue;
     for (const m of MISSIONS.filter((x) => x.id >= ch.from && x.id <= ch.to)) {
-      const locked = m.id >= 21 ? !(m.id === 21 || (game.save.stars[m.id - 1] || 0) > 0) : m.id > game.save.unlocked;
+      const locked = m.id >= 21 ? !(m.id === ch.from || (game.save.stars[m.id - 1] || 0) > 0) : m.id > game.save.unlocked;
       const st = game.save.stars[m.id] || 0;
       const card = document.createElement('div');
       card.className = 'mcard' + (locked ? ' locked' : '');
@@ -969,4 +1081,4 @@ $('btn-quit').addEventListener('click', () => game.goMenu());
 $('btn-next').addEventListener('click', () => game.startMission(game.lastDef.id + 1));
 $('btn-retry').addEventListener('click', () => game.startMission(game.lastDef.id));
 $('btn-result-menu').addEventListener('click', () => game.goMenu());
-$('btn-skip').addEventListener('click', () => { game.hud.clearSubs(); game.endCutscene(); });
+$('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(); game.hud.clearSubs(); game.endCutscene(); });

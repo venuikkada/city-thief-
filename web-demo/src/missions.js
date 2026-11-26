@@ -6,6 +6,7 @@ import { WAREHOUSE, spawnRavi, AmbientPerson } from './ambient.js';
 import { MissionCar } from './mcars.js';
 import { CharacterRig } from './characters.js';
 import { LiveStream, ColorClouds, Rhythm } from './specials.js';
+import { moreMissions, INTROS } from './missions2.js';
 import { part, mergeParts, BOX, vertexColorGlow } from './mesh.js';
 import { FOOT_TOP } from './world.js';
 import { dist, yawOf, pick } from './util.js';
@@ -25,8 +26,13 @@ export function writeSave(s) {
 export const CHAPTERS = [
   { id: 1, title: 'STREET ESCAPE', from: 1, to: 10 },
   { id: 2, title: 'CITY OF GOLD', from: 11, to: 20 },
-  { id: 3, title: 'NAVAPUR NIGHTS', from: 21, to: 26, isNew: true },
-  { id: 4, title: 'SAGARPET', soon: true, teaser: 'A new harbour city. Boats, bikes, a smuggling war.' },
+  { id: 3, title: 'NAVAPUR NIGHTS', from: 21, to: 26 },
+  { id: 4, title: 'STREET SMART', from: 27, to: 36, isNew: true, teaser: 'Talk, pickpocket, hire a crew. Boss: Chhota Babu.' },
+  { id: 5, title: 'UNDERCOVER', from: 37, to: 46, isNew: true, teaser: 'Disguises, photos, phone taps. Boss: Neta Bhanwar Lal.' },
+  { id: 6, title: 'FAST AND DESI', from: 47, to: 56, isNew: true, teaser: 'Car lists, buses, ambulances, derby. Boss: Collector Kapoor.' },
+  { id: 7, title: 'FESTIVAL CITY', from: 57, to: 66, isNew: true, teaser: 'Diwali, kites, garba, cricket, visarjan. Boss: Rana.' },
+  { id: 8, title: 'KING OF NAVAPUR', from: 67, to: 76, isNew: true, teaser: 'The big bank heist. Boss: the Commissioner.' },
+  { id: 9, title: 'SAGARPET', soon: true, teaser: 'A new harbour city. Boats, bikes, a smuggling war.' },
 ];
 
 // ---------- Places ----------
@@ -228,7 +234,8 @@ function hold(x, z, r, sec, text, o = {}) {
       else if (strict) { away += dt; if (away > 4) { m.fail(o.failOnLeave); return false; } }
       if (o.tick) o.tick(g, m, t, dt);
       const outText = (o.outText || 'Get back in the zone!') + (strict ? ` ${Math.ceil(4 - away)}s` : '');
-      g.hud.setProgress(inZone ? `${o.label || 'HOLD ON'} ${Math.ceil(sec - t)}s` : outText, t / sec, inZone ? '#ffc531' : '#ff5a4d');
+      if (inZone || t > 0) g.hud.setProgress(inZone ? `${o.label || 'HOLD ON'} ${Math.ceil(sec - t)}s` : outText, t / sec, inZone ? '#ffc531' : '#ff5a4d');
+      else g.hud.hideProgress();   // not there yet: the marker shows the way
       return t >= sec;
     },
     end: (g, m) => { g.hud.hideProgress(); m.marker(null); },
@@ -1141,12 +1148,21 @@ export class MissionRunner {
     this.stats = { kills: 0, heads: 0, hurt: 0, stunts: 0, drift: 0 };
     this.cashEarned = 0; this.music = 1; this.holdStars = false;
     this.steps = def.steps(this); this.si = -1;
+    // "EARLIER..." flashback: what Vikram did before the theft (skippable).
+    if (def.intro && !game.noIntros) {
+      let done = false;
+      this.steps.unshift({
+        start: (g) => { done = false; g.playIntro(def.intro, () => { done = true; g.hud.card(`MISSION ${def.id}`, def.title.toUpperCase(), def.brief); }); },
+        update: () => done,
+      });
+      this.hasIntro = true;
+    }
   }
 
   objective(text) { if (text !== this.objectiveText) { this.objectiveText = text; this.game.hud.setObjective(text); } }
   marker(x, z, r, moving = false) { this.game.setMarker(x === null ? null : { x, z, r, moving }); }
   timer(sec) { this.timeLeft = sec; }
-  track(e) { if (e) this.ents.push(e); return e; }
+  track(e) { if (e) { this.ents.push(e); if (e.rig && !e.isOfficer && e.noInteract === undefined && !e.missionTalk) e.noInteract = true; } return e; }
   onKill(o) { if (this.def.onKill) this.def.onKill(this.game, this, o); }
   onBossHit(o) { if (this.def.onBossHit) this.def.onBossHit(this.game, this, o); }
   onAlert(o) { if (this.def.onAlert) this.def.onAlert(this.game, this, o); }
@@ -1155,7 +1171,7 @@ export class MissionRunner {
 
   start() {
     const g = this.game, d = this.def;
-    g.hud.card(`MISSION ${d.id}`, d.title.toUpperCase(), d.brief);
+    if (!this.hasIntro) g.hud.card(`MISSION ${d.id}`, d.title.toUpperCase(), d.brief);
     if (d.timer) this.timer(d.timer);
     if (d.setup) d.setup(g, this);
     this.next();
@@ -1193,7 +1209,7 @@ export class MissionRunner {
   // Stars + bonuses + XP.
   pass() {
     if (this.done) return;
-    this.done = true;
+    this.done = true; this.passed = true;
     const g = this.game, d = this.def;
     let stars = d.rate ? d.rate(g, this) : (d.par && d.par[0] ? (this.elapsed <= d.par[0] ? 3 : this.elapsed <= d.par[1] ? 2 : 1) : 3);
     stars = Math.max(1, Math.min(3, stars));
@@ -1235,6 +1251,17 @@ export class MissionRunner {
     if (g.flooded) { g.flooded = false; for (const c of g.cars) if (!c.isPolice && !c.wrecked) c.hold = false; }
     document.getElementById('memory').classList.add('hidden');
     document.body.classList.remove('rewind');
+    // Chapter 4-8 systems.
+    if (g.player.outfit) g.player.setOutfit(null);
+    g.disguise = null; g.photoMode = false; g.photoPressed = false; g.hittables = []; g.onTarget = null; g.choiceHook = null;
+    for (const id of ['disguise-badge', 'btn-photo', 'choice']) document.getElementById(id).classList.add('hidden');
     g.hud.hideProgress(); g.hud.setBoss(null); g.hud.setRace(null);
   }
 }
+
+// Chapters 4-8 (missions 27-76) and the flashbacks for every mission.
+MISSIONS.push(...moreMissions({
+  place, act, say, wait, waitFor, goTo, getIn, loseCops, killGroup, collect, destroy, tail, hold, defuse, countdown, race, bossFight,
+  parkedCar, missionCar, gang, spawnRavi, allyFight, AmbientPerson, CharacterRig, THREE, RACE_CPS, GARAGE, ColorClouds,
+}));
+for (const m of MISSIONS) if (!m.intro && INTROS[m.id]) m.intro = INTROS[m.id];

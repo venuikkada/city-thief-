@@ -38,6 +38,7 @@ export class Controls {
       ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
       ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
       ['btn-color', 'color'], ['btn-dance', 'dance'],
+      ['btn-talk', 'talk'], ['btn-rob', 'rob'], ['btn-buy', 'rob'], ['btn-push', 'push'], ['btn-hire', 'hire'], ['btn-photo', 'photo'],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -45,7 +46,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', y: 'talk', u: 'rob', o: 'push', h: 'hire' };
         if (map[k]) this.pending[map[k]] = true;
       }
       this.keys.add(k);
@@ -201,6 +202,7 @@ export class Controls {
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
       takedownPressed: !!p.takedown || !!p.pickup, drivemodePressed: !!p.drivemode,
       colorPressed: !!p.color, dancePressed: !!p.dance,
+      talkPressed: !!p.talk, robPressed: !!p.rob, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
     };
     this.lookX = 0; this.lookY = 0;
     this.pending = {};

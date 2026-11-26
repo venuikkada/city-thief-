@@ -14,6 +14,8 @@
 <body>
   <div id="game"></div>
   <div id="vignette"></div>
+  <div id="flash" class="hidden"></div>
+  <div id="flashback" class="hidden"><b>EARLIER...</b><span id="flashback-where"></span></div>
   <div id="touch-layer"></div>
   <div id="stick-base" class="hidden"><div id="stick-knob"></div><div id="stick-sprint">SPRINT</div><div id="stick-lock">&#128274;</div></div>
   <div id="sprint-lock">SPRINT LOCKED &middot; touch the left side to stop</div>
@@ -48,6 +50,19 @@
     <div id="live-poll" class="hidden"></div>
     <div id="live-task" class="hidden"></div>
     <div id="memory" class="hidden"></div>
+    <!-- People: talk, rob, push, hire, buy -->
+    <div id="bubbles"></div>
+    <div id="interact" class="hidden">
+      <button id="btn-talk" class="int-btn" aria-label="Talk">💬<span>TALK</span></button>
+      <button id="btn-rob" class="int-btn rob" aria-label="Rob">🫳<span>ROB</span></button>
+      <button id="btn-buy" class="int-btn buy hidden" aria-label="Buy">☕<span id="btn-buy-label">CHAI ₹20</span></button>
+      <button id="btn-push" class="int-btn" aria-label="Push">✋<span>PUSH</span></button>
+      <button id="btn-hire" class="int-btn hire" aria-label="Hire">🤝<span>HIRE ₹500</span></button>
+    </div>
+    <div id="disguise-badge" class="hidden"></div>
+    <button id="btn-photo" class="hud-btn round hidden" aria-label="Photo">📷<span>PHOTO</span></button>
+    <div id="choice" class="hidden"><div id="choice-q"></div><div class="row"><button id="choice-a"></button><button id="choice-b"></button></div></div>
+    <div id="profile" class="hidden"><div id="profile-name"></div><div id="profile-job"></div><div id="profile-fact"></div><div id="profile-say"></div><button id="profile-give">GIVE ₹100 🙏</button></div>
     <div id="rhythm" class="hidden"><div class="label">BLEND IN: tap DANCE when a note hits the line</div><div id="rhythm-lane"></div><div class="meter"><div id="rhythm-fill"></div></div><div id="rhythm-judge"></div></div>
     <div id="big-msg" class="hidden"></div>
 
@@ -162,7 +177,7 @@
   <div id="menu" class="screen hidden">
     <div class="panel left">
       <div class="logo"><span>CITY</span><span class="thief">THIEF</span></div>
-      <p class="tag">NAVAPUR &middot; 26 STORY MISSIONS &middot; 3 CHAPTERS</p>
+      <p class="tag">NAVAPUR &middot; 76 STORY MISSIONS &middot; 8 CHAPTERS</p>
       <p class="tag2">A big coastal city &middot; day, night &amp; monsoon storms &middot; cops, SWAT &amp; a helicopter</p>
       <div id="menu-rankbox"><span class="lbl">RANK</span> <b id="menu-rank">STREET KID</b><div class="xp"><div id="menu-xp-fill"></div></div><small id="menu-xp-text"></small></div>
       <div class="menu-buttons">

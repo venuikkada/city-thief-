@@ -585,6 +585,13 @@ export class Officer {
       const inView = (cos > (this.flashlight ? 0.88 : 0.57) && d < range) || d < 2.2;
       if (inView && !g.world.segmentBlocked(this.x, this.z, T.x, T.z)) rate = (d < 5 ? 2.4 : d < 10 ? 1.2 : 0.7) * (P.crouching ? 0.6 : 1) * (P.inCar ? 1.8 : 1);
     }
+    // Disguised as someone these guards expect (delivery boy, waiter, cleaner...): they let you pass
+    // if you walk calmly. Running, aiming or crouching - or standing in their face - looks suspicious.
+    const D = g.disguise;
+    if (D && this.allowDisguise && (this.allowDisguise === D.kind || this.allowDisguise === '*') && !P.inCar && rate > 0) {
+      const sus = P.aiming || Math.hypot(P.vx || 0, P.vz || 0) > 3.8 || P.crouching;
+      rate = sus ? rate * 1.2 : d < 1.6 ? 0.3 : -0.3;
+    }
     G.seen = clamp(G.seen + rate * dt, 0, 1);
     if (G.seen >= 1) { this.alert(); return; }
     this.setMarker(G.seen > 0.12 ? 'sus' : 'none');

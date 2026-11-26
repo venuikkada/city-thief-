@@ -39,7 +39,7 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   beach and sea). Traffic and people follow you around the city, so it always feels busy.
 - **Real people:** motion-captured humans (Vikram, Ravi, police, SWAT and 17 city people) who walk, run, sit on
   benches, drink chai, talk on phones, dance, cheer, shop at the bazaar, and run away from gunfire.
-- **Story: 26 missions in 3 chapters** - escapes, a street race, chases where the target car explodes,
+- **Story: 76 missions in 8 chapters** - escapes, a street race, chases where the target car explodes,
   a cash hunt, a speed-bomb van (jump it into the sea), boss fights (Kaali, Inspector Rana), tailing a car,
   stealing a police SUV, gang waves, a drift challenge, a getaway-driver job, a stunt courier, a stealth
   mission with silent takedowns, a bomb squad, the big gold heist with a boat escape.
@@ -50,7 +50,27 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   - **Blackout** - the city power is cut; hunters with torches; switch 3 fuse boxes back on and watch the city light up.
   - **Monsoon** - a flood rises in the streets; drive a speedboat through the city to rescue Ravi.
   - **Baraat** - hide in a wedding procession and dance on the dhol beat (rhythm game) to pass police checkpoints.
+- **Chapters 4-8 (50 more missions, built on research - see `Docs/MISSION_RESEARCH.md`):**
+  - **4 Street Smart** - ask around the bazaar, pickpocket tourists, chase a purse snatcher on foot, hire a crew,
+    serve chai undercover, drive a taxi, auto-rickshaw race, tail a tiffin man, defend the bazaar, boss Chhota Babu.
+  - **5 Undercover** - delivery-boy / police / cleaner / waiter disguises (walk calmly or the guards notice),
+    photos with a camera, copy a phone, escort a witness, chant at an election rally, boss Neta Bhanwar Lal.
+  - **6 Fast and Desi** - steal cars for a buyer, city bus route, ambulance rescue, drag race, truck hijack,
+    citywide gridlock escape, smash derby, blackout race, relief convoy, boss Collector Kapoor.
+  - **7 Festival City** - Diwali bombs, kite-festival spy drones, garba, gully cricket, Ganpati visarjan,
+    mela shooting gallery, Holi colour war, wedding infiltration, lantern run, boss Inspector Rana.
+  - **8 King of Navapur** - the bank heist: photo recon, getaway cars, key card, quiet-or-loud choices, distraction bombs,
+    heist day, five-star getaway, betrayal on the sea, final boss the Commissioner.
+  - **"EARLIER..." flashback before every mission (all 76):** what Vikram did before the theft (scouting, meeting
+    the crew, buying tools), with its own camera shots. Tap SKIP to jump straight in.
   - Plan for more missions: `Docs/MISSION_PLAN.md`.
+- **Living city:** many more cars (hatchbacks, sedans, SUVs, taxis, autos, vans, trucks, buses) and cars parked half on the
+  footpath, Indian style. People walk the streets and cross at zebra crossings; cars stop for them.
+- **Talk to anyone:** walk up to a person - TALK (a card shows their name, job and a funny fact), ROB (pickpocket from behind),
+  PUSH, GIVE ₹100, HIRE ₹500 (they follow and fight for you), BUY chai or fruit to heal. Aim a gun at someone: hands up,
+  they drop their wallet. Witnesses phone the police unless you stop them.
+- **Realistic cars:** smooth curved bodies (no real brands), dark glass, door lines, mirrors, number plates,
+  alloy wheels that spin and steer, head and tail lights that glow at night.
 - **Day, night, storm and blackout:** golden-hour day; night with lit windows, street-light pools and headlights;
   monsoon storm with rain, wet roads, lightning and thunder; reflective glass towers; film-style colour grade.
 - **Rewards:** cash pop-ups, kill combos, headshots, near-miss / drift / stunt-jump bonuses, slow motion,
