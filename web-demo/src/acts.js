@@ -888,8 +888,8 @@ function buildSteps(def, A, core, m, H) {
     const [at, , rig, lines, vik] = A.meet;
     out.push(actStep(1, def));
     out.push({ kind: 'act', start: (g) => g.placePlayer(6.6, 19.5, -PI / 2), update: () => true });   // Vikram's place, next to the chai stall
-    // v9.5: even missions (and every mission after 40) start with goons at the meeting.
-    const trouble = def.id % 2 === 0 || def.id > 40 ? 2 + (def.id > 30 ? 1 : 0) + (def.id > 60 ? 1 : 0) : 0;
+    // v9.5: EVERY mission starts with goons at the meeting (more of them in later chapters).
+    const trouble = 2 + (def.id > 30 ? 1 : 0) + (def.id > 60 ? 1 : 0);
     out.push(meetStep({ at, who, rig, trouble, lines: [['VIKRAM', `${who.includes('DADI') ? 'Namaste Dadi.' : who === 'RAVI' ? 'Ravi bhai!' : 'Namaste.'}`], ...lines.map((l) => [who, l]), ['VIKRAM', vik]] }));
     for (const p of withSecondPrep(A, def.id)) {
       if (p.t === 'gear') out.push(gearStep(p, A));
@@ -905,8 +905,8 @@ function buildSteps(def, A, core, m, H) {
       else if (p.t === 'bribe') out.push(meetStep({ at: p.at || null, who: p.who, rig: p.rig, price: p.price, name: 'bribe', text: p.price ? `Pay ${title(p.who)} ₹${p.price} for information` : `Talk to ${title(p.who)}`,
         lines: [['VIKRAM', p.price ? `Here, ${p.price} rupees. Talk.` : 'Quick, tell me.'], [p.who, p.line]] }));
     }
-    // v9.5: odd missions (and every mission after 40) get an ambush on the road to the job.
-    const amb = def.id % 2 === 1 || def.id > 40 ? { cars: def.id > 30 ? 2 : 1, thugs: 2 + (def.id > 50 ? 1 : 0) } : null;
+    // v9.5: EVERY mission has an ambush on the road to the job.
+    const amb = { cars: def.id > 30 ? 2 : 1, thugs: 2 + (def.id > 50 ? 1 : 0) };
     out.push(siteStep(site, A.site, amb, H));
   }
   if (from === 2) out.push(restoreStep(def, 2));
