@@ -26,6 +26,7 @@ import { Atmosphere } from './atmosphere.js';
 import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
 import { Interact } from './interact.js';
 import { Interiors } from './interiors.js';
+import { Cylinders, Bombs } from './stunts.js';
 import { Ambience } from './ambience.js';
 import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
@@ -160,6 +161,8 @@ class Game {
     this.rewards = new Rewards(this);
     this.interact = new Interact(this);
     this.interiors = new Interiors(this);   // walk into any shop or office tower
+    this.cylinders = new Cylinders(this); this.cylinders.placeCity();   // red gas cylinders that blow up (v9.5)
+    this.bombs = new Bombs(this);                                       // sutli bombs
     this.ambience = new Ambience(this);     // horns, crowds, birds, crickets, sea, police radio, shop fans
 
     const n = COUNTS[quality];
@@ -408,6 +411,7 @@ class Game {
     }
     this.alarm(x, z, 60);
     if (byPlayer) this.dispatch.crime('gunfire', x, z);
+    if (this.cylinders) this.cylinders.blast(x, z, r);   // gas cylinders nearby go too (a chain)
   }
 
   // A loud noise (gunshot): guards nearby come running.
@@ -502,6 +506,10 @@ class Game {
     const P = this.player;
     if (this.interact) this.interact.reset();
     if (this.interiors) this.interiors.closeAll();
+    if (this.cylinders) this.cylinders.reset();
+    if (this.bombs) this.bombs.clear();
+    if (this.driving) this.driving.coasting = [];
+    P.bombs = 3; P.dive = null; P.rollT = 0; this.hud.setBombs(3);
     if (P.outfit) P.setOutfit(null);   // a shirt bought in a shop: back to Vikram's own clothes
     this.noParkZones = [];
     // No half-finished cutscene or flashback may survive a reset.
@@ -844,6 +852,9 @@ class Game {
     for (const a of [...this.ambient]) a.update(dt);
     for (const o of [...this.officers]) o.update(dt);
     this.pickups.update(dt);
+    if (this.cylinders) this.cylinders.update(dt);
+    if (this.bombs) this.bombs.update(dt);
+    if (this.driving.coast) this.driving.coast(dt);   // a car he bailed out of rolls on by itself
     this.rewards.update(dt);
     this.interiors.update(dt);
     this.spotLife.update(dt);
@@ -929,6 +940,7 @@ class Game {
     }
     if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
     else if (input.fightPressed && this.punchTarget) P.punch(this.punchTarget);
+    if (input.bombPressed) this.bombs.throw();   // sutli bomb (v9.5)
     if (!this.rhythm) this.interact.update(dt, input); else this.interact.bar.classList.add('hidden');
     this.voice.update(dt);
     if (input.photoPressed) this.photoPressed = true;
@@ -951,7 +963,7 @@ class Game {
       const pk = this.pickups.near(P.x, P.z);
       if (pk) {
         if (pk.type === 'health') P.health = P.maxHealth;
-        else if (pk.type === 'ammo') { for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2); }
+        else if (pk.type === 'ammo') { for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2); P.bombs = Math.min(9, (P.bombs || 0) + 1); this.hud.setBombs(P.bombs); }
         else if (WEAPONS[pk.type]) { P.giveWeapon(pk.type, WEAPONS[pk.type].mag * 3); P.weapon = pk.type; this.hud.showBig(WEAPONS[pk.type].name, '#ffc531', 1.5); }
         this.pickups.take(pk);
         this.audio.reload();
@@ -989,7 +1001,7 @@ const $ = (id) => document.getElementById(id);
 function refreshLangUI() {
   const L = LANGS.find((l) => l.id === getLang()) || LANGS[0];
   $('lang-cur').textContent = L.name;
-  $('set-lang').textContent = '🌐 ' + L.name + (L.id === 'en' ? '' : ` · ${L.en}`);
+  $('set-lang').textContent = '🔊 ' + L.name + (L.id === 'en' ? '' : ` · ${L.en}`);
 }
 // Does the phone / computer have a voice for this language? (Android app: a button downloads it.)
 function voiceNote() {
@@ -1227,7 +1239,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.4)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.5)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

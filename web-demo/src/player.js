@@ -29,6 +29,7 @@ export class Player {
     this.inCar = false; this.dead = false;
     this.health = 100; this.armor = 0; this.lastHurt = -99;
     this.punchCd = 0; this.punchT = 0; this.punchAt = null;   // hand fight (FIGHT button)
+    this.dive = null; this.rollT = 0; this.rollDir = 1; this.bombs = 3; this.throwT = 0; this.throwCd = 0;   // crazy moves (v9.5)
     this.lastGrounded = 0; this.lastJumpPress = -99;
     // Real-life speeds (m/s), like GTA: walk, jog (full push), sprint (push past the ring / sprint lock / Shift).
     this.walkSpeed = 1.55; this.jogSpeed = 3.4; this.sprintSpeed = 5.9; this.crouchSpeed = 1.3; this.aimSpeed = 1.9; this.hipSpeed = 2.6;
@@ -146,6 +147,7 @@ export class Player {
   takeDamage(amount, fromX, fromZ) {
     if (this.dead || this.game.godMode) return;
     amount *= TOUGH;                   // Vikram is tough: he does not go down after a few hits
+    if (this.dive && !this.dive.land) amount *= 0.25;   // hard to hit in the middle of a dive
     if (this.inCar) amount *= 0.45;   // the car body protects you a bit
     if (this.armor > 0) { const a = Math.min(this.armor, amount * 0.7); this.armor -= a; amount -= a; }
     this.health -= amount;
@@ -182,6 +184,8 @@ export class Player {
     if (this.dead) { this.rig.update(dt, 0); return; }
     if (this.punchCd > 0) this.punchCd -= dt;
     if (this.punchT > 0) this.punchT -= dt;
+    if (this.throwT > 0) this.throwT -= dt;
+    if (this.throwCd > 0) this.throwCd -= dt;
 
     const on = this.controlsEnabled;
     const move = on ? input.move : { x: 0, y: 0 };
@@ -190,6 +194,7 @@ export class Player {
     if (on && input.aimPressed) {
       this.aiming = !this.aiming;
       if (this.aiming) g.camera3p.snapToTarget();
+      if (this.aiming && !g.diveTipDone && g.mode === 'play') { g.diveTipDone = true; g.hud.toast('TIP: while aiming, press JUMP = slow-motion dive!'); }
     }
     // PC: hold the right mouse button to aim (let go = stop aiming).
     if (on && input.mouseAimChanged) { this.aiming = input.mouseAim; if (this.aiming) g.camera3p.snapToTarget(); }
@@ -214,7 +219,11 @@ export class Player {
     const firingStance = this.aiming || t - this.lastShot < 0.8;
     const strafe = firingStance || input.fire;
     const air = this.grounded ? 1 : 0.3;
-    if (strafe) {
+    if (this.dive || this.rollT > 0) {
+      // In the air (dive) he flies on; on the ground (landing, bail-out roll) he slides to a stop.
+      const k = this.dive && !this.dive.land ? 1 - 0.15 * dt : Math.max(0, 1 - 5 * dt);
+      this.vx *= k; this.vz *= k; this.speed = Math.hypot(this.vx, this.vz);
+    } else if (strafe) {
       // Combat walk: step any way (camera-relative); the chest stays on the crosshair.
       const max = this.crouching ? this.crouchSpeed : this.aiming ? this.aimSpeed : this.hipSpeed;
       const k = Math.min(1, strength * 1.25);
@@ -250,7 +259,10 @@ export class Player {
     }
 
     if (this.grounded) this.lastGrounded = t;
-    if (on && input.jumpPressed) this.lastJumpPress = t;
+    if (on && input.jumpPressed && !this.dive && !(this.rollT > 0)) {
+      if (this.aiming && this.grounded && !this.carrying) this.startDive(wx, wz, camYaw, wl > 0.001);
+      else this.lastJumpPress = t;
+    }
     if (t - this.lastJumpPress <= 0.12 && t - this.lastGrounded <= 0.12) {
       this.lastJumpPress = -99;
       if (this.crouching) this.crouching = false;
@@ -280,6 +292,12 @@ export class Player {
     const ground = g.world.groundAt(this.x, this.z);
     if (this.y <= ground) { this.y = ground; if (this.vy < 0) this.vy = 0; this.grounded = true; }
     else this.grounded = this.y - ground < 0.02 && this.vy <= 0;
+    if (this.dive) {
+      this.dive.t += dt;
+      if (!this.dive.land && this.grounded && this.dive.t > 0.15) { this.dive.land = 0.5; g.camera3p.shake(0.25); g.audio.thump(0.6, 80, 0.15); }
+      else if (this.dive.land && (this.dive.land -= dt) <= 0) this.dive = null;
+    }
+    if (this.rollT > 0 && (this.rollT -= dt) <= 0) { this.rollT = 0; this.bank = 0; }   // two full turns = upright again
 
     // Aiming / shooting: chest faces the crosshair, legs walk where you move (strafe, walk backwards).
     if (strafe) {
@@ -294,6 +312,9 @@ export class Player {
     const wantBank = strafe || strength < 0.12 ? 0 : clamp(-(this.turnRate || 0) * this.speed * 0.028, -0.2, 0.2);
     this.bank = (this.bank || 0) + (wantBank - (this.bank || 0)) * Math.min(1, dt * 7);
     this.turnRate = 0;
+    // Crazy moves: lying flat in the air (dive), or rolling over and over on the road (bail out).
+    if (this.dive) this.bank = this.dive.roll * (this.dive.land && this.dive.land < 0.2 ? 1.3 * this.dive.land / 0.2 : Math.min(1.3, this.dive.t * 7));
+    else if (this.rollT > 0) this.bank = this.rollDir * (1 - this.rollT / 0.9) * Math.PI * 4;
     // Footsteps (sand is softer, the sea splashes).
     if (this.grounded) {
       const sp = Math.hypot(this.vx, this.vz);
@@ -319,6 +340,21 @@ export class Player {
 
     this.regen(dt);
     this.sync(dt, firingStance || input.fire);
+  }
+
+  // BULLET-TIME DIVE: AIM + JUMP. He throws himself through the air (the way you push, or sideways),
+  // time slows right down, and he keeps shooting. Bullets rarely hit him while he flies.
+  startDive(wx, wz, camYaw, pushing) {
+    const g = this.game;
+    let dx = wx, dz = wz;
+    const rx = -Math.cos(camYaw), rz = Math.sin(camYaw);   // the camera's right
+    if (!pushing) { const s = Math.random() < 0.5 ? 1 : -1; dx = rx * s; dz = rz * s; }
+    const side = dx * rx + dz * rz;
+    this.dive = { t: 0, land: 0, roll: side >= 0 ? 1 : -1 };
+    this.vx = dx * 7.4; this.vz = dz * 7.4; this.vy = 5.4; this.grounded = false; this.lastGrounded = -99; this.lastJumpPress = -99;
+    this.crouching = false;
+    g.slowmo(1.25, 0.3);
+    if (g.rewards && g.mode === 'play') g.hud.popup('BULLET TIME', 'bonus');
   }
 
   // Health slowly comes back when you are not hit for a while.
@@ -446,6 +482,13 @@ export class Player {
     this.mesh.rotation.order = 'YXZ';
     this.mesh.rotation.y = this.yaw;
     this.mesh.rotation.z = this.bank || 0;
+    if (!this.inCar && (this.dive || this.rollT > 0)) {
+      // Turn around the hips, not the feet (lying flat in the air / rolling on the road).
+      // (bail out: two cartwheels; dive landing: down flat on the ground)
+      const a = this.bank || 0, h = 0.9, sx = h * Math.sin(a), flat = this.dive && this.dive.land ? 0.7 * Math.abs(Math.sin(a)) : 0;
+      this.mesh.position.x += sx * Math.cos(this.yaw); this.mesh.position.z -= sx * Math.sin(this.yaw);
+      this.mesh.position.y += h * (1 - Math.cos(a)) - flat;
+    }
     const other = WEAPONS[this.weapon].slot === 1 ? this.slots[2] : this.slots[1];
     const show = !this.inCar && !this.dead && !this.scopeHide;
     for (const [id, m] of Object.entries(this.guns)) m.visible = show && (id === this.weapon || id === other);
@@ -458,10 +501,12 @@ export class Player {
       // Arms point where the camera aims while aiming/shooting.
       const cam = this.game.camera;
       cam.getWorldDirection(_dir);
-      // Punching: the arms shoot out at the man in front (fast), then come back.
+      // Punching: the arms shoot out at the man in front (fast), then come back. Throwing a bomb: the same, forwards.
       const o = this.punchT > 0 ? this.punchAt : null;
       if (o) _dir.set(o.x - this.x, 0.1, o.z - this.z).normalize();
-      this.aimW = o ? moveTowards(this.aimW || 0, 1, 30 * dt) : moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
+      else if (this.throwT > 0 && this.throwDir) _dir.set(this.throwDir.x, 0.5, this.throwDir.z).normalize();
+      const swing = !!o || this.throwT > 0;
+      this.aimW = swing ? moveTowards(this.aimW || 0, 1, 30 * dt) : moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
       this.rig.setAim(this.aimW, _dir);
       this.rig.update(dt, 0);
       // rig.update() turns the body back on, so hide it again while looking through the scope.

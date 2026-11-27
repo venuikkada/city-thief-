@@ -599,7 +599,8 @@ export class Interiors {
       if (P.rig) { P.rig.setGesture('drink'); setTimeout(() => P.rig && P.rig.setGesture(null), 1600); }
     } else if (b.fx === 'ammo') {
       for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2);
-      msg = 'AMMO +2 MAGAZINES'; g.audio.reload();
+      P.bombs = Math.min(9, (P.bombs || 0) + 2); g.hud.setBombs(P.bombs);
+      msg = 'AMMO +2 MAGAZINES +2 SUTLI BOMBS'; g.audio.reload();
     } else if (b.fx === 'sim') {
       if (!D.stars) { ia.sayL(p, 'noSim', ['Police aapke peeche nahi hai, SIM ka kya karoge?']); return; }
       D.setStars(D.stars - 1); msg = 'NEW SIM: POLICE LOST YOUR PHONE  -1 STAR';

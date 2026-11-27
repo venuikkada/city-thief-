@@ -577,6 +577,11 @@ export function thugs(g, m, list, opts = {}) {
     m.track(o); out.push(o);
     if (opts.group) m.vars[opts.group + 'N'] = (m.vars[opts.group + 'N'] || 0) + 1;
   }
+  // v9.5: every gang fight has red gas cylinders nearby - shoot one and watch them fly.
+  if (g.cylinders && list.length >= 2 && !opts.noCylinders) {
+    const cx = list.reduce((a, p) => a + p[0], 0) / list.length, cz = list.reduce((a, p) => a + p[1], 0) / list.length;
+    g.cylinders.addNear(cx, cz, Math.min(3, Math.ceil(list.length / 2)));
+  }
   return out;
 }
 

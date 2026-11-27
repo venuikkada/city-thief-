@@ -1151,6 +1151,7 @@ export class MissionRunner {
     this.vars = {}; this.ents = []; this.objectiveText = '';
     this.stats = { kills: 0, heads: 0, hurt: 0, stunts: 0, drift: 0 };
     this.cashEarned = 0; this.music = 1; this.holdStars = false;
+    this.taskNo = 0; this.taskOpen = false;   // v9.5: one task after another, numbered on the HUD
     this.steps = def.steps(this); this.si = -1;
     // "EARLIER..." flashback: what Vikram did before the theft (skippable).
     if (def.intro && !game.noIntros && this.fromAct <= 1) {
@@ -1166,7 +1167,15 @@ export class MissionRunner {
   objective(text) {
     if (text === this.objectiveText) return;
     this.objectiveText = text; this.game.hud.setObjective(text);
+    // The first objective of a step is a new TASK (TASK 1, TASK 2, ... on the HUD).
+    if (!this.taskOpen && text && !this.done) { this.taskOpen = true; this.taskNo++; this.game.hud.setTask(this.taskNo); }
     if (this.game.voice) this.game.voice.objective(text);   // Vikram says what to do next
+  }
+  // Close the current task (tick + bonus); the next objective starts a new one.
+  newTask() {
+    if (!this.taskOpen || this.done) return;
+    this.taskOpen = false; this.game.hud.taskDone(this.taskNo);
+    if (this.game.rewards) this.game.rewards.event(`TASK ${this.taskNo} DONE`, 100, 5);
   }
   marker(x, z, r, moving = false) { this.game.setMarker(x === null ? null : { x, z, r, moving }); }
   timer(sec) { this.timeLeft = sec; }
@@ -1211,6 +1220,7 @@ export class MissionRunner {
       const cur = this.steps[this.si];
       if (cur && cur.end) cur.end(g, this);
       if (this.done) return;
+      if (cur) this.newTask();   // a task finished: tick + a small bonus
       this.si++;
       if (this.si >= this.steps.length) { this.pass(); return; }
       const st = this.steps[this.si];

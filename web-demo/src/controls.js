@@ -37,7 +37,7 @@ export class Controls {
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
       ['btn-boost', 'boost', true], ['btn-left', 'left', true], ['btn-right', 'right', true],
       ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
-      ['btn-color', 'color'], ['btn-dance', 'dance'],
+      ['btn-color', 'color'], ['btn-dance', 'dance'], ['btn-bomb', 'bomb'],
       ['btn-talk', 'talk'], ['btn-rob', 'rob'], ['btn-buy', 'buy'], ['btn-push', 'push'], ['btn-hire', 'hire'], ['btn-photo', 'photo'],
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
@@ -46,7 +46,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', n: 'bomb', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo' };
         if (map[k]) this.pending[map[k]] = true;
         // 1 / 2 = gun slots (unless a "choose quiet or loud" question is on screen).
         if ((k === '1' || k === '2') && document.getElementById('choice').classList.contains('hidden')) this.pending[k === '1' ? 'slot1' : 'slot2'] = true;
@@ -209,7 +209,7 @@ export class Controls {
       handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
       takedownPressed: !!p.takedown || !!p.pickup, fightPressed: !!p.takedown, drivemodePressed: !!p.drivemode,
-      colorPressed: !!p.color, dancePressed: !!p.dance,
+      colorPressed: !!p.color, dancePressed: !!p.dance, bombPressed: !!p.bomb,
       talkPressed: !!p.talk, robPressed: !!p.rob, buyPressed: !!p.buy, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
       slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
     };

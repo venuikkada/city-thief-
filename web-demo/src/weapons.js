@@ -433,8 +433,8 @@ export function castShot(game, origin, dir, maxDist, ignore, startAt = 0) {
     const t = rayCar(ox, oy, oz, dx, dy, dz, c);
     if (t > startAt && t < best.t) best = { t, kind: 'car', target: c };
   }
-  // Drones, shooting-gallery boards...: spheres.
-  for (const h of game.hittables || []) {
+  // Drones, shooting-gallery boards, gas cylinders...: spheres.
+  for (const h of game.cylinders ? [...(game.hittables || []), ...game.cylinders.list] : game.hittables || []) {
     if (h.dead) continue;
     const px = h.x - ox, py = h.y - oy, pz = h.z - oz;
     const tc = px * dx + py * dy + pz * dz;

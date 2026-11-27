@@ -828,8 +828,20 @@ body.lang-in .hud-btn span { font-size: 8px; line-height: 1.05; }
   #lang-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
   #lang-grid button { min-height: 46px; }
   #lang-grid button b { font-size: 15px; }
-  .lang-sub { display: none; }
+  .lang-sub { font-size: 11px; margin-bottom: 6px; }
 }
 @media (max-width: 480px) { #lang-grid { grid-template-columns: repeat(2, 1fr); } }
 /* v9.3: FIGHT (punch a cop or gangster next to you) */
 .hud-btn.context.fight { background: rgba(255, 59, 48, 0.5); border-color: #ff3b30; box-shadow: 0 0 16px rgba(255, 59, 48, 0.55); }
+/* v9.5: TASK n on the mission panel (one task after another) */
+#task-no { display: inline-block; margin-bottom: 3px; padding: 1px 7px; border-radius: 6px; background: var(--accent); color: #111; font-size: 10px; font-weight: 900; letter-spacing: 1px; }
+#task-no.hidden { display: none; }
+#task-no.done { background: #4dff66; }
+#task-no.pop { animation: taskPop 0.55s ease-out; }
+@keyframes taskPop { 0% { transform: scale(1.7); filter: brightness(1.6); } 100% { transform: scale(1); filter: none; } }
+/* v9.5: sutli bomb button (with how many are left) */
+#btn-bomb { right: max(296px, calc(env(safe-area-inset-right) + 296px)); bottom: 118px; background: rgba(255, 120, 30, 0.38); border-color: #ffb36b; }
+#btn-bomb svg { fill: #3a2a18; stroke: #ffd27a; }
+#btn-bomb b { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; border-radius: 9px; background: #ff7a1a; color: #111; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
+#btn-bomb.hidden { display: none; }
+body.editing #btn-bomb { display: flex !important; }

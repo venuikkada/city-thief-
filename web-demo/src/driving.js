@@ -88,6 +88,7 @@ export class Driving {
   exit(force = false) {
     const g = this.game, P = g.player, car = this.car;
     if (!car || (this.air && !force)) return;
+    const v = this.speed || 0;   // BAIL OUT at speed (v9.5): he tumbles out, the car rolls on and crashes
     this.bankDrift();
     // Right-hand drive: try the right side first, then the left.
     for (const side of [1, -1]) {
@@ -106,7 +107,45 @@ export class Driving {
     g.audio.carDoor(); g.audio.screech(0); g.audio.nitro(false);
     g.audio.engine(false);
     g.camera3p.snapBehind();
+    if (!force && v > 11 && !car.isPolice) {
+      const side = dist(P.x, P.z, car.x - Math.cos(car.yaw) * 2, car.z + Math.sin(car.yaw) * 2) < dist(P.x, P.z, car.x + Math.cos(car.yaw) * 2, car.z - Math.sin(car.yaw) * 2) ? 1 : -1;
+      const rx = -Math.cos(car.yaw) * side, rz = Math.sin(car.yaw) * side;
+      P.vx = Math.sin(car.yaw) * v * 0.45 + rx * 3; P.vz = Math.cos(car.yaw) * v * 0.45 + rz * 3; P.speed = Math.hypot(P.vx, P.vz);
+      P.rollT = 0.9; P.rollDir = side; P.aiming = false;
+      P.takeDamage(Math.min(14, v * 0.6), car.x, car.z);
+      g.slowmo(1.1, 0.3);
+      g.hud.showBig('BAIL OUT!', '#ffc531', 1.4);
+      if (g.rewards) g.rewards.event('BAIL OUT', 200, 10);
+      car.coastV = v; this.coasting = (this.coasting || []).filter((c) => c !== car); this.coasting.push(car);
+    }
     if (g.mission && g.mission.onExitCar) g.mission.onExitCar(car);
+  }
+
+  // A car he bailed out of rolls on by itself: it slows down, runs people over, and crashes into
+  // walls and cars (a hard crash wrecks it: it burns, then blows up).
+  coast(dt) {
+    const g = this.game;
+    if (!this.coasting || !this.coasting.length) return;
+    for (const c of [...this.coasting]) {
+      if (c.exploded || c.playerControlled || !(c.coastV > 0.6)) { c.coastV = 0; this.coasting = this.coasting.filter((x) => x !== c); continue; }
+      const nx = c.x + Math.sin(c.yaw) * c.coastV * dt, nz = c.z + Math.cos(c.yaw) * c.coastV * dt;
+      const t = { x: nx, z: nz };
+      g.world.resolveCircle(t, c.halfW + 0.15, 0, true);
+      let hit = dist(t.x, t.z, nx, nz) > 0.05;
+      c.x = t.x; c.z = t.z;
+      for (const o of g.cars) {
+        if (o === c || o.exploded || Math.abs(o.x - c.x) > 5 || Math.abs(o.z - c.z) > 5) continue;
+        if (dist(o.x, o.z, c.x, c.z) < (c.halfL + o.halfL) * 0.75) { hit = true; o.takeDamage(c.coastV * 9, true); }
+      }
+      for (const h of g.humans()) if (!h.dead && Math.abs(h.x - c.x) < 3 && Math.abs(h.z - c.z) < 3 && dist(h.x, h.z, c.x, c.z) < c.halfL) h.takeDamage(c.coastV * 14, true, c.x, c.z);
+      if (hit) {
+        c.takeDamage(c.coastV > 9 ? 999 : c.coastV * 12, true);
+        g.camera3p.shake(Math.max(0, 0.6 - dist(c.x, c.z, g.camera.position.x, g.camera.position.z) / 60));
+        g.audio.thump(1, 55, 0.35);
+        c.coastV = 0;
+      } else c.coastV *= Math.max(0, 1 - 0.3 * dt);
+      c.syncMesh();
+    }
   }
 
   // Spike strip: tyres burst - slow and slidey from now on.

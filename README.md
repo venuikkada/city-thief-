@@ -90,6 +90,22 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9.5: crazy moves + no boring missions:**
+  - **Bullet-time dive:** while aiming, press JUMP - Vikram flies sideways through the air in slow motion and keeps
+    shooting (bullets rarely hit him in the air), lands flat and gets up.
+  - **Sutli bombs:** the BOMB button (PC: N) throws a Diwali sutli bomb. It bounces, the fuse fizzes, and 2 seconds later
+    DHAMAKA - goons and cops fly, cars blow up. 3 at the start, +1 from every ammo box, +2 with AMMO from a shop.
+    2+ people in one blast = DHAMAKA! (slow motion + bonus).
+  - **Gas cylinders:** 44 red LPG cylinders stand outside shops, and every gang fight has 1-3 next to the goons. Shoot
+    one, bomb it or ram it: a fireball, and the cylinders near it go off one after another.
+  - **Bail out:** get out of a car above 40 km/h - he tumbles out in slow motion (two cartwheels) and the car rolls on
+    by itself, runs people over and crashes into whatever is ahead (a hard crash = it burns and explodes).
+  - **Task after task:** no more "go there and stand". Goons hassle the contact at the meeting (save them first), an
+    ambush hits on the road to the job (gang cars that chase and ram, or men from an alley), the police must be lost
+    before the job, every safehouse run has a fight, and talking never makes you wait. TASK 1, 2, 3... count up on the
+    mission box with a tick and +₹100 for each one.
+  - **Languages:** menus, buttons and settings are English again; the chosen language is for Vikram's reminder text
+    and all the voices (the speaker button on the main menu).
 - **v9.3: 10 languages + fight the police:**
   - **Languages:** English, हिन्दी, తెలుగు, தமிழ், ಕನ್ನಡ, മലയാളം, ગુજરાતી, मराठी, বাংলা, ଓଡ଼ିଆ. The globe button on the main
     menu (and Settings -> Language) opens the picker; the first launch asks once. Menus, settings, pause, result, HUD

@@ -88,7 +88,30 @@ export class Hud {
     this.toastT = 2.6;
   }
 
+  // Sutli bombs left (the BOMB button hides at 0).
+  setBombs(n) {
+    const b = $('btn-bomb'), c = $('bomb-count');
+    if (c) c.textContent = n;
+    if (b) b.classList.toggle('hidden', !(n > 0));
+  }
+  // "TASK 3": every mission is one task after another (v9.5). A tick when it is done.
+  setTask(n) {
+    const e = this.el.task || (this.el.task = $('task-no'));
+    if (!e) return;
+    e.textContent = `TASK ${n}`; e.className = '';
+    void e.offsetWidth; e.className = 'pop';
+    if (this.game.audio && this.game.audio.chime) this.game.audio.chime(0.35);
+  }
+  taskDone(n) {
+    const e = this.el.task || (this.el.task = $('task-no'));
+    if (!e) return;
+    e.textContent = `TASK ${n} ✓`; e.className = '';
+    void e.offsetWidth; e.className = 'done pop';
+  }
+
   setMission(title, objective) {
+    const tn = this.el.task || (this.el.task = $('task-no'));
+    if (tn) tn.className = 'hidden';
     this.el.mTitle.textContent = title;
     this.setObjective(objective);
   }

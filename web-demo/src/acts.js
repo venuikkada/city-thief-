@@ -8,6 +8,10 @@
 //   ACT 3  THE GETAWAY  - the police come (and they raid the buildings), lose them, take the loot to
 //                          a safehouse (sometimes enemies wait there), and report back.
 // A CHECKPOINT is saved when each act starts: fail in act 2 or 3 and you can retry from there.
+// v9.5 - no "go there and stand": every stop is a task. Goons hassle the contact at the meeting
+// (save them first), an ambush hits on the road to the job (gang cars or men from an alley), the
+// police must be lost before the job, every safehouse has a twist, and the talking never makes you
+// wait - the next task starts while they finish their lines. TASK 1, 2, 3... count up on the HUD.
 import * as K from './mkit.js';
 import { dist, yawOf, pick } from './util.js';
 import { LINES, HALF_ROAD } from './world.js';
@@ -329,8 +333,9 @@ function ring(g, cx, cz, r0, r1, n, test) {
 }
 
 // Somebody stands at a place; walk up and they talk (Vikram answers). Optional: pay them first.
+const TROUBLE_LINES = ['Vikram! Help! These goons want money!', 'Bachao! Kaali\'s boys are here!', 'Vikram, thank God! Get them off me!'];
 function meetStep(o) {
-  let talked = false, asked = false, label = '';
+  let talked = false, asked = false, label = '', trouble = 0;   // trouble: 0 none yet, 1 fighting, 2 saved
   return {
     kind: 'meet',
     start: (g, m) => {
@@ -344,16 +349,36 @@ function meetStep(o) {
       const p = K.person(g, m, s.x, s.z, o.yaw ?? PI * Math.random(), o.rig, { gesture: o.gesture || 'wait' });
       p.calm = true; p.walkTo = null;
       m.vars[o.name || 'contact'] = p;
-      talked = false; asked = false;
+      talked = false; asked = false; trouble = 0;
       m.objective(o.text || `Meet ${title(o.who)} at ${s.label}`);
       m.marker(p.x, p.z, 2.2);
     },
     update: (g, m) => {
       const p = m.vars[o.name || 'contact'], P = g.player;
       if (!p || p.dead) { m.fail(`${title(o.who)} was hurt`); return false; }
-      if (talked) return subsDone(g);
+      if (talked) return true;   // no standing around: the next task starts while they finish talking
       m.marker(p.x, p.z, 2.2);
       const d = dist(P.x, P.z, p.x, p.z);
+      // Trouble at the meeting: goons are hassling the contact. Save them first.
+      if (o.trouble && trouble === 0 && d < 40) {
+        trouble = 1; m.newTask();
+        const pts = ring(g, p.x, p.z, 6, 14, o.trouble);
+        K.thugs(g, m, pts.map((q) => [q.x, q.z]), { group: 'meetAmb' });
+        p.takeDamage = () => {};   // stray bullets never hurt the contact
+        if (p.rig) p.rig.setGesture('cheer');
+        g.say([[o.who, pick(TROUBLE_LINES)], ['VIKRAM', pick(['Oye! Leave them alone!', 'Wrong person, wrong day!', 'Hands off, you goons!'])]]);
+        g.hud.showBig('TROUBLE AT THE MEETING!', '#ff4438', 1.6); m.music = 3;
+      }
+      if (trouble === 1) {
+        const left = g.officers.filter((e) => e.group === 'meetAmb' && !e.dead);
+        if (left.length) {
+          g.pins = left.map((e) => ({ x: e.x, z: e.z, color: '#ff5a4d' }));
+          m.objective(`Save ${title(o.who)}: take out the goons (${left.length} left)`);
+          return false;
+        }
+        trouble = 2; g.pins = []; m.music = 1; g.slowmo(0.6, 0.4); m.newTask();
+        if (p.rig) p.rig.setGesture('wait');
+      }
       if (P.inCar) { if (d < 16) m.objective(`Get out of the car and talk to ${title(o.who)}`); return false; }
       if (d > 3.2) { m.objective(o.text || `Meet ${title(o.who)} at ${label}`); return false; }
       // Pay first?
@@ -372,7 +397,7 @@ function meetStep(o) {
       if (o.onTalk) o.onTalk(g, m, p);
       return false;
     },
-    end: (g, m) => { m.marker(null); const p = m.vars[o.name || 'contact']; if (p && p.rig && !p.follower) p.rig.setGesture('wait'); },
+    end: (g, m) => { g.pins = []; m.marker(null); const p = m.vars[o.name || 'contact']; if (p && p.rig && !p.follower) p.rig.setGesture('wait'); },
   };
 }
 
@@ -624,18 +649,58 @@ function tuneStep(o) {
 }
 
 // Go to the job (arrive on foot: the job starts from there).
-function siteStep(site, label) {
+// The road to the job is never quiet (amb): gang cars come after him (in a car), or men jump out of
+// an alley (on foot) - half way there, or at the site when it is close. The police must be lost too.
+function siteStep(site, label, amb, H) {
+  let d0 = 0, sprung = false, cleared = true, steerT = 0;
+  const spring = (g, m) => {
+    const P = g.player, T = g.dispatch.target;
+    sprung = true; cleared = false; m.newTask();
+    if (P.inCar && H && H.missionCar) {
+      const hx = Math.sin(T.yaw || 0), hz = Math.cos(T.yaw || 0);
+      for (let k = 0; k < amb.cars; k++) {
+        const back = 85 + k * 25, side = (k % 2 ? -1 : 1) * 8;
+        const c = H.missionCar(g, m, 'suv', [0x2b2b2b, 0x5a1010, 0x1d2b4a][k % 3], { mode: 'deploy', speed: 20, health: 150, hostile: true, fastBurn: true, dest: { x: T.x, z: T.z },
+          onArrive: (car) => K.thugs(g, m, [[car.x + 2, car.z + 2], [car.x - 2, car.z - 2]].map(([x, z]) => { const q = free(g, x, z); return [q.x, q.z]; }), { group: 'roadAmb' }) },
+        { node: true, x: T.x - hx * back + hz * side, z: T.z - hz * back - hx * side, hx, hz });
+        c.roadAmb = true;
+      }
+      g.hud.showBig('AMBUSH! GANG CARS!', '#ff4438', 1.6);
+    } else {
+      const pts = ring(g, T.x, T.z, 14, 28, amb.thugs);
+      K.thugs(g, m, pts.map((q) => [q.x, q.z]), { group: 'roadAmb' });
+      g.hud.showBig('AMBUSH!', '#ff4438', 1.6);
+    }
+    g.say([['VIKRAM', pick(['Kaali\'s men! Somebody talked!', 'An ambush? Not today!', 'They knew I was coming. Fine.'])]]);
+    m.music = 3;
+  };
   return {
     kind: 'go',
-    start: (g, m) => { m.objective(`Go to the job: ${label}`); m.marker(site.x, site.z, 6); },
-    update: (g, m) => {
-      const P = g.player;
+    start: (g, m) => { const T = g.dispatch.target; d0 = dist(T.x, T.z, site.x, site.z); sprung = false; cleared = true; steerT = 0; m.objective(`Go to the job: ${label}`); m.marker(site.x, site.z, 6); },
+    update: (g, m, dt) => {
+      const P = g.player, T = g.dispatch.target, d = dist(T.x, T.z, site.x, site.z);
+      if (amb && !sprung && ((d0 > 90 && d < d0 * 0.65 && d > 45) || d < 30)) spring(g, m);
+      if (sprung && !cleared) {
+        const men = g.officers.filter((e) => e.group === 'roadAmb' && !e.dead);
+        const cars = m.ents.filter((e) => e.roadAmb && !e.exploded && !e.wrecked && !e.arrived && dist(e.x, e.z, T.x, T.z) < 150);
+        steerT -= dt;
+        if (steerT <= 0) { steerT = 1.5; for (const c of cars) { c.dest = { x: T.x, z: T.z }; if (c.routeTo) c.routeTo(c.destNode()); } }   // they keep coming after him
+        if (men.length || cars.length) {
+          g.pins = [...men, ...cars].map((e) => ({ x: e.x, z: e.z, color: '#ff5a4d' }));
+          m.objective(men.length ? `Ambush! Take out Kaali's men (${men.length} left)` : `Gang cars on your tail! Wreck them or lose them (${cars.length})`);
+          m.marker(null);
+          return false;
+        }
+        cleared = true; g.pins = []; m.music = 1; g.slowmo(0.6, 0.4); g.hud.showBig('AMBUSH CLEARED', '#4dff66', 1.4);
+        m.newTask(); m.marker(site.x, site.z, 6);
+      }
+      if (g.dispatch.stars > 0) { m.objective('Lose the police before the job'); return false; }
       const close = near(g, site.x, site.z, 9);
       if (close && P.inCar) { m.objective('Get out of the car - the job starts here'); return false; }
       m.objective(`Go to the job: ${label}`);
       return close;
     },
-    end: (g, m) => m.marker(null),
+    end: (g, m) => { g.pins = []; m.marker(null); },
   };
 }
 
@@ -664,7 +729,7 @@ function stashStep(A, H, id) {
     start: (g, m) => {
       phase = 0; backupDone = false; A = A0;
       const X = m.vars.extra || {};
-      if (!A.twist && X.ambush) A = { ...A, twist: id % 2 ? 'gangcars' : 'ambush' };
+      if (!A.twist) A = { ...A, twist: id % 2 ? 'gangcars' : 'ambush' };   // v9.5: every safehouse run has a fight
       m.vars.needBackup = !!X.backup;
       const P = g.player;
       const keys = A.stash.concat(['garage', 'hideout', 'chai', 'press', 'promenade']);
@@ -731,7 +796,7 @@ function stashStep(A, H, id) {
         phase = 3; m.marker(null);
         r.faceTarget = P; P.yaw = yawOf(r.x - P.x, r.z - P.z);
         if (r.rig) r.rig.setGesture('talk');
-        g.say([['VIKRAM', pick(['Done. Clean job.', 'Here. Just like I promised.', 'All done. Nobody followed me.'])], [who, line]]);
+        g.say([[who, line]]);
         return false;
       }
       return subsDone(g);
@@ -823,7 +888,9 @@ function buildSteps(def, A, core, m, H) {
     const [at, , rig, lines, vik] = A.meet;
     out.push(actStep(1, def));
     out.push({ kind: 'act', start: (g) => g.placePlayer(6.6, 19.5, -PI / 2), update: () => true });   // Vikram's place, next to the chai stall
-    out.push(meetStep({ at, who, rig, lines: [['VIKRAM', `${who.includes('DADI') ? 'Namaste Dadi.' : who === 'RAVI' ? 'Ravi bhai!' : 'Namaste.'}`], ...lines.map((l) => [who, l]), ['VIKRAM', vik]] }));
+    // v9.5: even missions (and every mission after 40) start with goons at the meeting.
+    const trouble = def.id % 2 === 0 || def.id > 40 ? 2 + (def.id > 30 ? 1 : 0) + (def.id > 60 ? 1 : 0) : 0;
+    out.push(meetStep({ at, who, rig, trouble, lines: [['VIKRAM', `${who.includes('DADI') ? 'Namaste Dadi.' : who === 'RAVI' ? 'Ravi bhai!' : 'Namaste.'}`], ...lines.map((l) => [who, l]), ['VIKRAM', vik]] }));
     for (const p of withSecondPrep(A, def.id)) {
       if (p.t === 'gear') out.push(gearStep(p, A));
       else if (p.t === 'scout') out.push(scoutStep(p, site, H));
@@ -838,7 +905,9 @@ function buildSteps(def, A, core, m, H) {
       else if (p.t === 'bribe') out.push(meetStep({ at: p.at || null, who: p.who, rig: p.rig, price: p.price, name: 'bribe', text: p.price ? `Pay ${title(p.who)} ₹${p.price} for information` : `Talk to ${title(p.who)}`,
         lines: [['VIKRAM', p.price ? `Here, ${p.price} rupees. Talk.` : 'Quick, tell me.'], [p.who, p.line]] }));
     }
-    out.push(siteStep(site, A.site));
+    // v9.5: odd missions (and every mission after 40) get an ambush on the road to the job.
+    const amb = def.id % 2 === 1 || def.id > 40 ? { cars: def.id > 30 ? 2 : 1, thugs: 2 + (def.id > 50 ? 1 : 0) } : null;
+    out.push(siteStep(site, A.site, amb, H));
   }
   if (from === 2) out.push(restoreStep(def, 2));
   if (from <= 2) { out.push(actStep(2, def)); out.push(...core(m)); }
