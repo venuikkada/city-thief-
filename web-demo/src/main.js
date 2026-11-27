@@ -176,6 +176,17 @@ class Game {
     this.dispatch.onStars = (n, was) => { if (n > 0 && was === 0) this.hud.showBig('COPS ARE COMING!', '#ff4438', 2); };
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
     this.dispatch.onMessage = (t) => this.hud.toast(t);
+    // He beat the cops who came for him: 2-3 minutes without police, then a bigger backup (v9.4).
+    this.dispatch.onLull = (on, quiet) => {
+      if (on) {
+        this.hud.showBig('POLICE DOWN! BACKUP COMING', '#ffb020', 2.4);
+        this.hud.toast('Finish the mission before the police backup arrives!');
+        this.voice.sayLine('VIKRAM', 'lull', ['They will be back with more. Chalo, finish it fast!'], { prio: 2 });
+      } else if (!quiet && !this.player.dead) {
+        this.hud.showBig('POLICE BACKUP IS HERE!', '#ff4438', 2.4);
+        this.voice.sayLine('POLICE', 'backup', ['All units, move in! Get him now!'], { prio: 2 });
+      }
+    };
     // A cop grabbed Vikram: one minute to fight his way out (punch / shoot), or get away.
     this.dispatch.onArrest = (on, quiet) => {
       if (on) { this.hud.showBig('FIGHT BACK!', '#ff3b30', 1.8); this.hud.toast('A COP GRABBED YOU! 1 minute: punch (FIGHT) or shoot to break free'); this.audio.thump(0.8, 70, 0.2); }
@@ -535,7 +546,7 @@ class Game {
     P.armor = this.rewards.has('armour') ? 60 : 0;
     P.health = P.maxHealth;
     this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.punchTarget = null; this.driving.nitro = 1;
-    if (this.dispatch) { this.dispatch.arrestT = 0; this.dispatch.freeT = 0; }
+    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; }
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -962,7 +973,8 @@ class Game {
     for (const p of this.policeCars) if (p.pursuing) siren = Math.min(siren, dist(p.x, p.z, P.x, P.z));
     this.audio.update(siren);
     this.ambience.update(dt);
-    const mLevel = this.mission ? Math.max(this.mission.music ?? 1, this.dispatch.stars ? 2 : 0) : (this.dispatch.stars ? 2 : 0);
+    const heat = this.dispatch.stars && !this.dispatch.lullOn ? 2 : 0;   // the breather: the music calms down
+    const mLevel = this.mission ? Math.max(this.mission.music ?? 1, heat) : heat;
     this.music.setLevel(Math.min(3, mLevel + (this.dispatch.stars >= 4 ? 1 : 0)));
     this.render();
   }
@@ -984,7 +996,7 @@ function voiceNote() {
   const st = game.voice ? game.voice.voiceStatus() : 'ok', el = $('lang-voice'), btn = $('btn-getvoice');
   btn.classList.toggle('hidden', st !== 'app');
   if (getLang() === 'en') { el.textContent = ''; el.className = 'lang-voice'; return; }
-  el.textContent = st === 'ok' ? tr('VOICE_OK') : tr('VOICE_MISSING') + (st === 'missing' && !window.AndroidTTS ? ' ' + tr('VOICE_TIP') : '');
+  el.textContent = (st === 'ok' ? tr('VOICE_OK') : tr('VOICE_MISSING') + (st === 'missing' && !window.AndroidTTS ? ' ' + tr('VOICE_TIP') : '')) + ' ' + tr('STORY_NOTE');
   el.className = 'lang-voice ' + (st === 'ok' ? 'ok' : 'miss');
 }
 function renderLangGrid() {
@@ -1215,7 +1227,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.3)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.4)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

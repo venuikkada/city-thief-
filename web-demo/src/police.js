@@ -6,6 +6,10 @@
 //            back (punch with FIGHT or shoot): beat the cops around you or get away, else BUSTED.
 //   2 stars: cops SHOOT. 3 stars: SWAT team, more cars, ROADBLOCKS ahead of you.
 //   4-5 stars: a HELICOPTER with a searchlight, and SPIKE STRIPS in front of roadblocks.
+// BREATHER (v9.4)
+//   Beat the cops who came for him (kill one, none left near him) and the police regroup: no new units
+//   for 2-3 minutes (BACKUP IN m:ss on screen), then a bigger BACKUP comes (+1 star). In a story mission
+//   the stars stay meanwhile (unless the job is to lose the police): finish the job before the backup.
 // ESCAPING
 //   The red circle on the map is where the police are searching (it follows you while they see you).
 //   Get OUT of the circle while nobody sees you -> the stars go in a few seconds.
@@ -50,12 +54,13 @@ export class Dispatch {
     this.outsideT = 0;
     this.busting = false;
     this.arrestT = 0; this.freeT = 0;   // the one-minute fight when a cop grabs him
+    this.lullOn = false; this.lullT = 0; this.lastCopKill = -999; this.lullEnd = -999;   // the breather after he beats them
     this.reportTimer = -1;
     this.reinforceT = 0;
     this.roadblocks = []; this.roadblockT = 4;
     this.heli = null;
     this.raid = null; this.raidT = 0; this.raidAt = 0; this.raidsOn = true;
-    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {}; this.onArrest = () => {};
+    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {}; this.onArrest = () => {}; this.onLull = () => {};
   }
   // Story missions bring extra police (more cars, more officers out of each car).
   get extra() { const m = this.game.mission; return m && !m.done ? 1 : 0; }
@@ -87,6 +92,7 @@ export class Dispatch {
     if (!this.stars) return;
     this.stars = 0;
     if (this.arrestT > 0) { this.arrestT = 0; this.onArrest(false, true); }
+    if (this.lullOn) { this.lullOn = false; this.lullT = 0; this.onLull(false, true); }
     for (const c of this.game.policeCars) c.endPursuit();
     for (const o of this.game.officers) if (!o.dead) o.standDown();
     if (this.raid) { this.raid.end(); this.raid = null; }
@@ -114,7 +120,7 @@ export class Dispatch {
         break;
       case 'kill_ped': this.setStars(seen ? Math.min(5, Math.max(1, this.stars + 1)) : Math.max(1, this.stars), x, z); break;
       case 'hit_cop': this.setStars(Math.max(this.stars, 2), x, z); break;
-      case 'kill_cop': this.setStars(Math.min(5, Math.max(2, this.stars + 1)), x, z); this.report(x, z); break;
+      case 'kill_cop': this.lastCopKill = this.game.time; this.setStars(Math.min(5, Math.max(2, this.stars + 1)), x, z); this.report(x, z); break;
       case 'carjack': if (seen) this.setStars(Math.max(this.stars, 1), x, z); break;
       case 'steal_police': this.setStars(Math.max(this.stars, 2), x, z); break;
       case 'run_over': this.setStars(Math.max(this.stars, seen ? 2 : 1), x, z); break;
@@ -163,6 +169,35 @@ export class Dispatch {
     this.freeT = near ? 0 : this.freeT + dt;
     if (this.freeT > 3) { this.arrestT = 0; this.onArrest(false); return; }
     if (this.arrestT <= 0) { this.arrestT = 0; if (grab) this.bust(); else this.onArrest(false); }
+  }
+
+  // He beat the cops who came for him (killed one in the last minute, no cop left near him): the police
+  // regroup. No new units for 2-3 minutes, then a bigger BACKUP. Scripted shoot-outs keep their pressure.
+  checkCopsDown() {
+    const g = this.game, P = g.player;
+    if (this.lullOn || this.arrestT > 0 || g.time - this.lastCopKill > 60 || g.time - this.lullEnd < 45) return;
+    if (g.mission && g.mission.holdStars && !g.mission.done) return;
+    for (const o of g.officers) if (!o.dead && !o.gang && !o.returning && dist(o.x, o.z, P.x, P.z) < 50) return;
+    this.startLull();
+  }
+  startLull() {
+    const g = this.game;
+    this.lullOn = true; this.lullT = 120 + Math.random() * 60;
+    for (const c of g.policeCars) if (!c.wrecked && !c.parked && !c.roadblock && !c.playerControlled) c.endPursuit();
+    for (const o of g.officers) if (!o.dead && !o.gang && !o.group && !o.forceHostile) o.standDown();
+    if (this.raid) { this.raid.end(); this.raid = null; }
+    if (this.heli && !this.heli.leaving) this.heli.leave();
+    this.onLull(true);
+  }
+  // The breather is over: more police than before, and they know where he is.
+  backup() {
+    const g = this.game, P = g.player;
+    this.lullOn = false; this.lullT = 0; this.lullEnd = g.time;
+    this.setStars(Math.min(5, this.stars + 1), P.x, P.z);
+    this.report(P.x, P.z);
+    for (const c of g.policeCars) if (!c.wrecked && !c.parked && !c.roadblock && !c.playerControlled) c.beginPursuit();
+    this.reinforceT = 0;
+    this.onLull(false);
   }
 
   // Time is up and a cop still has him: BUSTED.
@@ -221,7 +256,12 @@ export class Dispatch {
 
     this.sinceSeen += dt;
     if (g.mission && g.mission.holdStars && !g.mission.done) this.sinceSeen = 0;   // no escape during the shoot-out
-    this.updateRaid(dt);
+    if (this.lullOn) {
+      this.lullT -= dt;
+      // Story mission: they know who he is, the stars stay - unless the job right now is to lose them.
+      const m = g.mission, losing = m && /lose the (police|cops)|shake off/i.test(m.objectiveText || '');
+      if (m && !m.done && !losing) this.sinceSeen = 0;
+    } else this.updateRaid(dt);
     this.circle.r = moveTowards(this.circle.r, this.radius, 30 * dt);
     const T = this.target;
     const outside = dist(T.x, T.z, this.circle.x, this.circle.z) > this.circle.r;
@@ -230,6 +270,9 @@ export class Dispatch {
     if (this.raid && !this.raid.ending && this.raid.contains(T.x, T.z)) this.sinceSeen = Math.min(this.sinceSeen, this.loseTime * 0.5);
     if (this.outsideT >= this.escapeTime || this.sinceSeen >= this.loseTime) { this.clear(true); return; }
 
+    // The breather: no new cars, roadblocks or helicopter until the backup comes.
+    if (this.lullOn) { if (this.lullT <= 0) this.backup(); return; }
+    this.checkCopsDown();
     // Reinforcements: keep enough chasing police cars for the star level.
     this.reinforceT -= dt;
     if (this.reinforceT <= 0) {
@@ -678,7 +721,7 @@ export class Officer {
         gx = this.car.x; gz = this.car.z; speed = 2.6;
         if (dist(this.x, this.z, gx, gz) < 3) { this.car.officerBack(this); this.remove(); return; }
       } else if (camD > 60) { this.remove(); return; }
-      if (D.active) this.returning = false;
+      if (D.active && !D.lullOn) this.returning = false;   // the breather: they go back to their cars
     } else if (hostile && this.seesPlayer && dP < (this.weapon === 'pistol' ? 34 : 42)) {
       // Engage: aim at the player, side-step, shoot. Walk closer if far.
       shooting = true;

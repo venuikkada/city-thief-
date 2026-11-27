@@ -144,8 +144,7 @@ export class Voice {
   }
   installVoice() { try { if (this.native && this.native.installVoice) this.native.installVoice(); } catch (e) { /* old app */ } }
 
-  // A short line in the player's language: { text, en, lang }. The English line is said instead
-  // when the device has no voice for that language (the speech bubble still shows the player's language).
+  // A short line in the player's language: { text, en, lang } (English mode: the game's own line).
   line(key, en) {
     const list = Array.isArray(en) ? en : [en], loc = spoken(key);
     if (!loc) { const s = pick(list); return { text: s, en: s, lang: 'en' }; }
@@ -154,7 +153,7 @@ export class Voice {
   }
   sayLine(who, key, en, o = {}) { const L = this.line(key, en); return this.say(who, L.text, { ...o, lang: L.lang, en: L.en }); }
   // Vikram says hello in the new language (the language picker).
-  sample() { this.stop(); return this.sayLine('VIKRAM', 'hello', ['Namaste! I am Vikram. Chalo, let us rule Navapur.'], { prio: 3 }); }
+  sample() { this.stop(); return this.sayLine('VIKRAM', 'intro', ['Namaste! I am Vikram. Chalo, let us rule Navapur.'], { prio: 3 }); }
 
   castOf(who, sexHint) {
     const name = String(who || '').toUpperCase().replace(/\(.*?\)/g, '').trim();
@@ -169,6 +168,12 @@ export class Voice {
   // Speak one line. prio: 3 = story dialogue, 2 = Vikram's objective lines, 1 = small talk / shouts.
   say(who, text, o = {}) {
     if (!this.enabled || !text) return false;
+    // ONE language only. In Hindi, Telugu, Tamil ... mode only lines written in that language are
+    // spoken, always with that language's own voice (never English or Hindi in between); story scenes
+    // and the Hinglish lines stay as text. No voice for it on this device: silent (Settings says how to get it).
+    const lang = o.lang || 'en';
+    if (lang !== getLang()) return false;
+    if (lang !== 'en' && !this.langOk()) return false;
     const prio = o.prio ?? 1, now = performance.now();
     if (this.cur && this.speaking && prio <= this.cur.prio) {
       // Busy: small talk waits its turn (a greeting, then the answer); old lines are dropped.
@@ -176,9 +181,6 @@ export class Voice {
       return false;
     }
     if (prio >= 2) this.queue = [];
-    // A line in an Indian language: said with that language's voice, or in English if the device has none.
-    let lang = o.lang || 'en';
-    if (lang !== 'en' && !this.langOk()) { if (!o.en) return false; text = o.en; lang = 'en'; }
     const clean = String(text).replace(/[“”"]/g, '').replace(/₹\s?([\d,]+)/g, lang === 'en' ? '$1 rupees' : '$1').replace(/[^\p{L}\p{M}\p{N}\s.,!?'%।\u200c\u200d-]/gu, ' ').replace(/\s+/g, ' ').trim();
     if (!clean) return false;
     const c = o.cast || this.castOf(who, o.sex);

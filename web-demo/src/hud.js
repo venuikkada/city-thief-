@@ -251,6 +251,10 @@ export class Hud {
     if (D.active && D.arrestT > 0) {
       // A cop has him: the one-minute fight.
       s = `${tr('FIGHT BACK!')} ${Math.ceil(D.arrestT)}s · ${tr('beat the cops or get away')}`; color = '#ff3b30';
+    } else if (D.active && D.lullOn) {
+      // The breather: the police backup comes when this reaches 0:00.
+      const left = Math.max(0, Math.ceil(D.lullT));
+      s = `${tr('BACKUP IN')} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${tr('finish the job fast!')}`; color = '#ffb020';
     } else if (D.active) {
       const T = D.target;
       const outside = Math.hypot(T.x - D.circle.x, T.z - D.circle.z) > D.circle.r;

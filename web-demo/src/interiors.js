@@ -588,20 +588,20 @@ export class Interiors {
   // ---------- Buying and robbing ----------
   buy(p) {
     const g = this.game, P = g.player, S = p.shop, b = S && S.buy, ia = g.interact;
-    if (!b) { ia.speak(p, 'Yahan kuch nahi bikta, sir.'); return; }
-    if (p.robbedBy) { ia.speak(p, 'Chor ko kuch nahi bechunga!', 'angry'); return; }
-    if (g.save.coins < b.price) { ia.speak(p, 'Pehle paise lao!'); return; }
+    if (!b) { ia.sayL(p, 'notForSale', ['Yahan kuch nahi bikta, sir.']); return; }
+    if (p.robbedBy) { ia.sayL(p, 'noThief', ['Chor ko kuch nahi bechunga!'], 'angry'); return; }
+    if (g.save.coins < b.price) { ia.sayL(p, 'payFirst', ['Pehle paise lao!']); return; }
     const D = g.dispatch;
     let msg = '';
     if (b.heal) {
-      if (P.health >= (P.maxHealth || 100)) { ia.speak(p, 'Aap to ekdum fit ho!'); return; }
+      if (P.health >= (P.maxHealth || 100)) { ia.sayL(p, 'fit', ['Aap to ekdum fit ho!']); return; }
       P.health = Math.min(P.maxHealth || 100, P.health + b.heal); msg = `+${b.heal} HEALTH`;
       if (P.rig) { P.rig.setGesture('drink'); setTimeout(() => P.rig && P.rig.setGesture(null), 1600); }
     } else if (b.fx === 'ammo') {
       for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2);
       msg = 'AMMO +2 MAGAZINES'; g.audio.reload();
     } else if (b.fx === 'sim') {
-      if (!D.stars) { ia.speak(p, 'Police aapke peeche nahi hai, SIM ka kya karoge?'); return; }
+      if (!D.stars) { ia.sayL(p, 'noSim', ['Police aapke peeche nahi hai, SIM ka kya karoge?']); return; }
       D.setStars(D.stars - 1); msg = 'NEW SIM: POLICE LOST YOUR PHONE  -1 STAR';
     } else if (b.fx === 'look') {
       const pool = loadedCrowd(false).filter((id) => id !== P.outfit);
@@ -611,7 +611,7 @@ export class Interiors {
     }
     g.save.coins -= b.price;
     if (g.voice) g.voice.sayLine('VIKRAM', 'buy', ['Ek dena, bhaiya.', 'Yeh wala, please.', 'Pack kar do.'], { queue: true });
-    ia.speak(p, pick(['Yeh lijiye!', 'Dhanyavaad, phir aana!', 'Bilkul, sir!']), 'happy');
+    ia.sayL(p, 'sold', ['Yeh lijiye!', 'Dhanyavaad, phir aana!', 'Bilkul, sir!'], 'happy');
     g.hud.popup(`${msg}  -₹${b.price}`, 'bonus');
     g.emit('buy', p);
   }

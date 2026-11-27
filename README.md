@@ -96,12 +96,23 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     buttons, banners, police and chase messages and shop texts change. Vikram's objective lines and reminders, his
     greetings, the shopkeepers and the police SPEAK the language in everyday words ("Ravi's garage కి వెళ్ళాలి",
     "டைம் இல்ல மச்சான்"), with the best voice the phone has for it (offline Google voices in the Android app; the
-    natural Edge voices on PC). No voice for the language on a device: those lines are said in Indian English, and the
-    Android app shows GET THE VOICE (opens the phone's voice download). Story dialogue stays Hinglish. Words: `web-demo/src/i18n.js`.
+    natural Edge voices on PC). The Android app shows GET THE VOICE (opens the phone's voice download) when the phone has
+    no voice for the language. Words: `web-demo/src/i18n.js`.
+  - **v9.4 - one language only:** in an Indian language every spoken line is in that language, with that
+    language's voice: Vikram (objective lines and reminders say "go to the yellow mark on the map" - no English names
+    inside), street people, chai / fruit sellers, shopkeepers and the police. Story scenes are subtitles only in those
+    languages (spoken in English mode). A device with no voice for the language stays silent - never English or Hindi
+    instead - and the picker says how to get the voice. Checked by a robot that records every spoken line (app voice
+    bridge and browser voices) in all 10 languages: 0 lines in the wrong language.
   - **Fight back:** a cop who grabs Vikram no longer means instant BUSTED. He gets ONE MINUTE: the FIGHT button punches
     (2 punches knock out a constable, 3 a SWAT officer; each punch knocks him back), or shoot. The cops holding him do not
     shoot during that minute. Beat the cops near him (or get 9 m away for 3 seconds) = YOU BROKE FREE; still held when the
     minute ends = BUSTED. Every cop he takes down gives +20 health (gangsters +10).
+  - **v9.4 - breather, then backup:** beat the cops who came for Vikram (kill one, none left near him) and the police
+    regroup: no new police for 2-3 minutes, the cars go back, the music calms down and BACKUP IN 2:30 counts down on
+    screen ("finish the job fast!"). At 0:00 a bigger backup comes (+1 star, every car chases). In a story mission the
+    stars stay during the breather (except on a "lose the police" step), so the mission has to be finished fast;
+    scripted shoot-outs keep their pressure. Missions still take 5-10 minutes (robot: 307-622 s each).
   - **Tougher Vikram:** all damage x0.65; health comes back after 4 s (was 6) at 8 a second.
   - **More police in story missions:** one more chasing police car at every star level, and one more officer out of each car.
 - **v9 new look (UI):** the main menu is a game lobby that fits any phone screen (STORY, FREE ROAM, SHOP cards, a big PLAY

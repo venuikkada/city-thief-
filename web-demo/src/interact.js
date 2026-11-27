@@ -72,7 +72,10 @@ export class Interact {
   }
 
   // Short line of speech above someone's head.
-  // L: a line from voice.line() (the player's language, with its English twin for devices without that voice).
+  // A line from the list `key` in the player's language (English mode: the Hinglish line `en`).
+  line(key, en) { const v = this.game.voice; return v ? v.line(key, en) : { text: pick(Array.isArray(en) ? en : [en]), lang: 'en' }; }
+  sayL(p, key, en, kind = '') { const L = this.line(key, en); this.speak(p, L.text, kind, L); return L; }
+  // L: a line from line() - spoken only when it is in the player's language.
   speak(p, text, kind = '', L = null) {
     if (!p) return;
     if (this.game.voice) this.game.voice.person(p, text, L ? { lang: L.lang, en: L.en } : {});   // said out loud in their own voice
@@ -148,14 +151,16 @@ export class Interact {
     this.cooldown = 0.4;
     const pr = profileOf(p);
     this.hold(p, 3.5, 'talk');
-    let line = pick(HELLO);
-    if (p.missionTalk) line = p.missionTalk(g, p) || line;
-    else if (p.shop) line = p.robbedBy ? 'Tum?! Nikal jao meri dukaan se!' : p.shop.hi;
-    else if (p.vendor) line = p.vendor === 'chai' ? 'Garam garam chai, sirf 20 rupaye!' : 'Taaze phal, bhaiya! 30 rupaye.';
-    else if (hash(p.seed + 9) < 0.3) line = pick(TIPS);
+    let L = this.line('greetBack', HELLO);
+    const story = p.missionTalk ? p.missionTalk(g, p) : null;
+    if (story) L = { text: story, lang: 'en' };   // mission talk: the story's own words (spoken in English mode only)
+    else if (p.shop) L = p.robbedBy ? this.line('shopOut', ['Tum?! Nikal jao meri dukaan se!']) : this.line('welcome', [p.shop.hi]);
+    else if (p.vendor) L = p.vendor === 'chai' ? this.line('chaiSell', ['Garam garam chai, sirf 20 rupaye!']) : this.line('fruitSell', ['Taaze phal, bhaiya! 30 rupaye.']);
+    else if (hash(p.seed + 9) < 0.3) L = this.line('tips', TIPS);
+    const line = L.text;
     this.cardWho = p;
     // Vikram speaks first, then they answer (in their own voice).
-    if (g.voice) { g.voice.greet(p); g.voice.person(p, line); }
+    if (g.voice) { g.voice.greet(p); g.voice.person(p, line, { lang: L.lang }); }
     $('profile-say').textContent = `“${line}”`;
     $('profile-name').textContent = `${pr.name}, ${pr.age}`;
     $('profile-job').textContent = pr.job;
@@ -169,7 +174,7 @@ export class Interact {
     const g = this.game, P = g.player;
     this.cooldown = 0.8;
     const pr = profileOf(p);
-    if (p.robbed) { this.speak(p, 'Ab kuch nahi bacha bhai!'); return; }
+    if (p.robbed) { this.sayL(p, 'robbedAgain', ['Ab kuch nahi bacha bhai!']); return; }
     // Did they see me? (Facing me = yes; from behind = mostly no.)
     const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
     const dx = P.x - p.x, dz = P.z - p.z, d = Math.hypot(dx, dz) || 1;
@@ -184,7 +189,7 @@ export class Interact {
       p.robbedT = 3 + Math.random() * 4;   // they notice a bit later
       g.emit('rob', { person: p, ok: true, cash });
     } else {
-      this.speak(p, pick(CAUGHT), 'alarm');
+      this.sayL(p, 'caught', CAUGHT, 'alarm');
       if (p.panicFrom) p.panicFrom(P.x, P.z);
       this.crimeSeen(p.x, p.z, 'rob', p);
       g.emit('rob', { person: p, ok: false });
@@ -197,7 +202,7 @@ export class Interact {
     const dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz) || 1;
     p.pushVX = (dx / d) * 4.2; p.pushVZ = (dz / d) * 4.2; p.pushT = 0.35;
     if (g.voice) g.voice.sayLine('VIKRAM', 'push', ['Hatt! Out of my way!', 'Side ho jao, bhai!', 'Move it!'], { queue: true });
-    this.speak(p, pick(PUSHED), 'angry');
+    this.sayL(p, 'pushed', PUSHED, 'angry');
     g.audio.thump(0.4, 120, 0.12);
     if (p.panicFrom && Math.random() < 0.5) setTimeout(() => p.panicFrom(P.x, P.z), 400);
     else this.hold(p, 2, 'talk');
@@ -207,10 +212,10 @@ export class Interact {
 
   give(p) {
     const g = this.game;
-    if (!p || p.given || g.save.coins < 100) { if (p && g.save.coins < 100) this.speak(p, 'Aapke paas bhi kuch nahi hai!'); return; }
+    if (!p || p.given || g.save.coins < 100) { if (p && g.save.coins < 100) this.sayL(p, 'broke', ['Aapke paas bhi kuch nahi hai!']); return; }
     g.save.coins -= 100; p.given = true; p.alert = false;
     if (g.voice) g.voice.sayLine('VIKRAM', 'tip', ['Rakh lo ji, keep it.', 'Here, take this.', 'For you, uncle. Chai pe lena.'], { queue: true });
-    this.speak(p, pick(THANKS), 'happy');
+    this.sayL(p, 'thanks', THANKS, 'happy');
     g.rewards.addXP(3); g.hud.popup('-₹100  GOOD DEED', 'bonus');
     $('profile-give').classList.add('hidden');
     if (p.calling) this.stopCaller(p);
@@ -222,11 +227,11 @@ export class Interact {
     this.cooldown = 1;
     if (p.shop) { g.interiors.buy(p); return; }
     const price = p.vendor === 'chai' ? 20 : 30, heal = p.vendor === 'chai' ? 25 : 40;
-    if (g.save.coins < price) { this.speak(p, 'Pehle paise lao!'); return; }
+    if (g.save.coins < price) { this.sayL(p, 'payFirst', ['Pehle paise lao!']); return; }
     g.save.coins -= price;
     if (g.voice) g.voice.sayLine('VIKRAM', p.vendor === 'chai' ? 'chai' : 'fruit', [p.vendor === 'chai' ? 'Bhaiya, ek cutting chai.' : 'Ek aam dena, bhaiya.'], { queue: true });
     P.health = Math.min(P.maxHealth || 100, P.health + heal);
-    this.speak(p, p.vendor === 'chai' ? 'Ek cutting chai, garam!' : 'Taaza aam, khao aur jiyo!', 'happy');
+    if (p.vendor === 'chai') this.sayL(p, 'chaiGive', ['Ek cutting chai, garam!'], 'happy'); else this.sayL(p, 'fruitGive', ['Taaza aam, khao aur jiyo!'], 'happy');
     g.hud.popup(`+${heal} HEALTH  -₹${price}`, 'bonus');
     if (P.rig) P.rig.setGesture('drink');
     setTimeout(() => P.rig && P.rig.setGesture(null), 1800);
@@ -237,8 +242,8 @@ export class Interact {
     const g = this.game, P = g.player;
     this.cooldown = 1;
     if (this.followers.length >= 2) return;
-    if (g.save.coins < 500) { this.speak(p, '500 rupaye do, phir baat karenge.'); return; }
-    if (p.robbed || p.alert) { this.speak(p, 'Tum? Kabhi nahi!'); return; }
+    if (g.save.coins < 500) { this.sayL(p, 'hireCost', ['500 rupaye do, phir baat karenge.']); return; }
+    if (p.robbed || p.alert) { this.sayL(p, 'never', ['Tum? Kabhi nahi!']); return; }
     g.save.coins -= 500;
     if (g.voice) g.voice.sayLine('VIKRAM', 'hire', ['Five hundred rupees. You are with me now.', 'Chalo, join my crew.', 'I need a strong partner. Come.'], { queue: true });
     // The person becomes a crew member (a new body takes their place in the crowd).
@@ -247,7 +252,7 @@ export class Interact {
     g.ambient.push(f); this.followers.push(f);
     if (p.respawnElsewhere) p.respawnElsewhere(); else p.remove && p.remove();
     g.refreshLists();
-    this.speak(f, pick(HIRED), 'happy');
+    this.sayL(f, 'hired', HIRED, 'happy');
     g.hud.popup(`${f.profile.name.toUpperCase()} JOINED YOUR CREW  -₹500`, 'combo');
     this.target = null; this.bar.classList.add('hidden');
     g.emit('hire', f);
@@ -258,7 +263,7 @@ export class Interact {
     if (p.shop) { g.interiors.robTill(p); return; }   // a gun at the shopkeeper: open the till
     p.handsUp = true;
     this.hold(p, 3, 'cheer');   // arms up
-    this.speak(p, pick(HANDS), 'alarm');
+    this.sayL(p, 'hands', HANDS, 'alarm');
     if (!p.robbed) {
       p.robbed = true;
       const pr = profileOf(p);
@@ -280,12 +285,12 @@ export class Interact {
     w.calling = 5; w.alert = true;
     this.hold(w, 5.2, 'phone');
     this.callers.push(w);
-    this.speak(w, '📞 Hello police? Yahan ek chor hai!', 'alarm');
+    const Lc = this.line('callPolice', ['Hello police? Yahan ek chor hai!']); this.speak(w, '📞 ' + Lc.text, 'alarm', Lc);
     g.hud.toast('A WITNESS IS CALLING THE POLICE! Stop them!');
   }
   stopCaller(p) {
     p.calling = 0; this.callers = this.callers.filter((c) => c !== p);
-    this.speak(p, 'Theek hai, theek hai! Phone band!', 'alarm');
+    this.sayL(p, 'phoneOff', ['Theek hai, theek hai! Phone band!'], 'alarm');
     p.holdT = 0;
   }
   updateCallers(dt) {
@@ -315,7 +320,7 @@ export class Interact {
     }
     // Robbed people notice a few seconds later.
     for (const p of this.game.peds) {
-      if (p.robbedT > 0) { p.robbedT -= dt; if (p.robbedT <= 0) { this.speak(p, pick(ROBBED)); p.holdT = 1.8; p.holdGesture = 'look'; } }
+      if (p.robbedT > 0) { p.robbedT -= dt; if (p.robbedT <= 0) { this.sayL(p, 'robbed', ROBBED); p.holdT = 1.8; p.holdGesture = 'look'; } }
     }
   }
 
