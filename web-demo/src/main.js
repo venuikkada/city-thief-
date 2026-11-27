@@ -17,7 +17,8 @@ import { loadCharacters, loadMoreCrowd, setCharacterQuality, CharacterRig } from
 import { Effects } from './weapons.js';
 import { Driving } from './driving.js';
 import { buildStreetLife, buildWarehouse, Pickups, SpotLife, AmbientPerson } from './ambient.js';
-import { MISSIONS, CHAPTERS, MissionRunner, loadSave, writeSave } from './missions.js';
+import { MISSIONS, CHAPTERS, MissionRunner, loadSave, writeSave, missionCar } from './missions.js';
+import { Director } from './director.js';
 import { Music } from './music.js';
 import { Rewards, RANKS, SHOP, DAILY, rankOf, rankProgress } from './rewards.js';
 import { WEAPONS } from './weapons.js';
@@ -163,6 +164,7 @@ class Game {
     this.interiors = new Interiors(this);   // walk into any shop or office tower
     this.cylinders = new Cylinders(this); this.cylinders.placeCity();   // red gas cylinders that blow up (v9.5)
     this.bombs = new Bombs(this);                                       // sutli bombs
+    this.director = new Director(this, missionCar);                     // the city makes crazy things happen (v9.6)
     this.ambience = new Ambience(this);     // horns, crowds, birds, crickets, sea, police radio, shop fans
 
     const n = COUNTS[quality];
@@ -507,6 +509,7 @@ class Game {
     if (this.interact) this.interact.reset();
     if (this.interiors) this.interiors.closeAll();
     if (this.cylinders) this.cylinders.reset();
+    if (this.director) this.director.reset();
     if (this.bombs) this.bombs.clear();
     if (this.driving) this.driving.coasting = [];
     P.bombs = 3; P.dive = null; P.rollT = 0; this.hud.setBombs(3);
@@ -854,6 +857,7 @@ class Game {
     this.pickups.update(dt);
     if (this.cylinders) this.cylinders.update(dt);
     if (this.bombs) this.bombs.update(dt);
+    if (this.director) this.director.update(dt);
     if (this.driving.coast) this.driving.coast(dt);   // a car he bailed out of rolls on by itself
     this.rewards.update(dt);
     this.interiors.update(dt);
@@ -1239,7 +1243,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.5)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.6)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

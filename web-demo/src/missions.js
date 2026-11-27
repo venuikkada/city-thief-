@@ -58,7 +58,7 @@ function parkedCar(g, m, type, color, x, z, yaw, name) {
   if (name) m.vars[name] = c;
   return m.track(c);
 }
-function missionCar(g, m, type, color, opts, at) {
+export function missionCar(g, m, type, color, opts, at) {
   const c = new MissionCar(g, type, color, opts);
   if (at.node) c.placeAt(at.x, at.z, at.hx, at.hz);
   else { c.x = at.x; c.z = at.z; c.yaw = at.yaw; c.syncMesh(); }

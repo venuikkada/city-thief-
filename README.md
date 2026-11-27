@@ -90,6 +90,13 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9.6: the Navapur Director (free roam is never quiet):** like a film director, the city makes something crazy
+  happen every 45-75 seconds - calm, trouble, relief, calm again - and waits when Vikram is already busy (2+ stars,
+  a fight, inside a shop). Events (with a timer on the mission box, red pins and a reward):
+  CHAIN SNATCHER (sprint after him and tackle him, +₹600 "hero of Navapur"), ROBBERY IN PROGRESS (Kaali's boys at a
+  shop, gas cylinders next to them, +₹900), GOLD VAN (wreck it, the gold spills as cash; the police come), RUNAWAY
+  TANKER (a burning tanker races to the market - blow it up in 45 s, +₹1,000). Code: `web-demo/src/director.js`.
+  A car the mission needs never rolls away in a bail-out.
 - **v9.5: crazy moves + no boring missions:**
   - **Bullet-time dive:** while aiming, press JUMP - Vikram flies sideways through the air in slow motion and keeps
     shooting (bullets rarely hit him in the air), lands flat and gets up.

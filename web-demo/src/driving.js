@@ -107,7 +107,9 @@ export class Driving {
     g.audio.carDoor(); g.audio.screech(0); g.audio.nitro(false);
     g.audio.engine(false);
     g.camera3p.snapBehind();
-    if (!force && v > 11 && !car.isPolice) {
+    // (not with a car the mission needs: it would roll away and crash)
+    const needed = car.missionCar || car.isPolice || (g.mission && (g.mission.ents.includes(car) || Object.values(g.mission.vars).includes(car)));
+    if (!force && v > 11 && !needed) {
       const side = dist(P.x, P.z, car.x - Math.cos(car.yaw) * 2, car.z + Math.sin(car.yaw) * 2) < dist(P.x, P.z, car.x + Math.cos(car.yaw) * 2, car.z - Math.sin(car.yaw) * 2) ? 1 : -1;
       const rx = -Math.cos(car.yaw) * side, rz = Math.sin(car.yaw) * side;
       P.vx = Math.sin(car.yaw) * v * 0.45 + rx * 3; P.vz = Math.cos(car.yaw) * v * 0.45 + rz * 3; P.speed = Math.hypot(P.vx, P.vz);
