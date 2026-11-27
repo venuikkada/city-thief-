@@ -1,11 +1,14 @@
-// Voices: Vikram and the people of Navapur SPEAK (Indian English), using the text-to-speech
-// voices already inside the phone or computer (free, works offline on most phones).
+// Voices: Vikram and the people of Navapur SPEAK, using the text-to-speech voices already inside
+// the phone or computer (free, works offline on most phones). Story dialogue is Indian English;
+// Vikram's reminders, greetings, shopkeepers and police speak the player's language (Hindi, Telugu,
+// Tamil, Kannada, Malayalam, Gujarati, Marathi, Bengali, Odia) with the phone's own voice for it.
 //   - Mission dialogue: every subtitle line is spoken in that character's voice.
 //   - Objectives: Vikram says what to do next ("Okay, first I have to go to Ravi's garage").
 //   - Reminders: stand around too long and Vikram reminds you what to do first.
 //   - Meeting people: Vikram greets them, they answer in their own voice.
 // In the Android app the phone's own TTS engine is used through a small bridge (window.AndroidTTS).
 import { pick } from './util.js';
+import { getLang, langTag, sayObjective, sayReminder, sayGreeting, spoken } from './i18n.js';
 
 // Who sounds how. sex: m / f, pitch and rate tweak the same voice so characters sound different.
 const CAST = {
@@ -31,8 +34,8 @@ const CAST = {
 };
 const FEMALE_WORDS = /\b(DADI|LADY|AUNTY|DIDI|MADAM|WOMAN|GIRL|MEENA|PRIYA|ASSISTANT|NURSE|BRIDE|MOTHER|MAA)\b/;
 // Voice names that tell us male / female (Windows, Edge, Apple, Android).
-const MALE_NAMES = /ravi|prabhat|rishi|hemant|madhur|kunal|aarav|arjun|male|en-in-x-end|en-in-x-cxx/i;
-const FEMALE_NAMES = /heera|neerja|veena|lekha|kalpana|swara|aditi|raveena|female|en-in-x-ene|en-in-x-ahp/i;
+const MALE_NAMES = /ravi|prabhat|rishi|hemant|madhur|kunal|aarav|arjun|mohan|valluvar|gagan|midhun|niranjan|manohar|bashkar|sukant|\bmale|en-in-x-end|hi-in-x-hi[de]|-x-..m-/i;
+const FEMALE_NAMES = /heera|neerja|veena|lekha|kalpana|swara|aditi|raveena|shruti|pallavi|sapna|sobhana|dhwani|aarohi|tanishaa|subhasini|female|en-in-x-ene|en-in-x-ahp|en-in-x-cxx|hi-in-x-hi[ac]|-x-..f-/i;
 
 const GREET_M = ['Namaste ji.', 'Bhai, one minute.', 'Excuse me, boss.', 'Hello uncle, how are you?', 'Arre bhai, suniye.', 'Sir ji, quick question.'];
 const GREET_F = ['Namaste ji.', 'Didi, one minute.', 'Excuse me, madam.', 'Hello aunty, how are you?', 'Suniye ji, one question.'];
@@ -59,6 +62,8 @@ export class Voice {
     this.native = typeof window !== 'undefined' && window.AndroidTTS ? window.AndroidTTS : null;
     this.web = !this.native && typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
     this.voices = { m: null, f: null, n: null, list: [] };
+    this.lv = { m: null, f: null, n: null, ok: false, sexed: false };   // voices for the chosen language
+    this.nativeLang = { tag: '', ok: false, sexed: false, at: -1e9 };
     this.busyUntil = 0; this.cur = null; this.id = 0; this.queue = [];
     this.lastObjKey = ''; this.pendingObj = null; this.objDelay = 0;
     this.idleT = 0; this.reminders = 0; this.lastSpokeObj = -99;
@@ -68,7 +73,10 @@ export class Voice {
     }
     if (this.native) {
       window.__ttsDone = (id) => { if (this.cur && this.cur.id === Number(id)) this.done(); };
-      try { const names = JSON.parse(this.native.voices() || '[]'); this.voices.list = names; } catch (e) { /* old app */ }
+      try {
+        const names = JSON.parse(this.native.voices() || '[]'); this.voices.list = names;
+        this.voices.sexed = names.some((n) => MALE_NAMES.test(n)) && names.some((n) => FEMALE_NAMES.test(n));
+      } catch (e) { /* old app */ }
     }
   }
 
@@ -92,7 +100,61 @@ export class Voice {
     this.voices.m = of(MALE_NAMES) || best;
     this.voices.f = of(FEMALE_NAMES) || best;
     this.voices.n = best;
+    this.voices.sexed = !!(of(MALE_NAMES) && of(FEMALE_NAMES));
+    // The chosen Indian language: the best voice the device has for it (the natural cloud voices first).
+    const tag = langTag().toLowerCase(), base = tag.slice(0, 2);
+    const ls = (v) => {
+      const l = (v.lang || '').toLowerCase().replace('_', '-');
+      let s = l === tag ? 100 : l.slice(0, 2) === base || (base === 'or' && l.startsWith('ory')) ? 90 : 0;
+      if (!s) return 0;
+      if (/natural|online|neural|premium|enhanced|wavenet/i.test(v.name)) s += 8;
+      if (v.localService) s += 1;
+      return s;
+    };
+    const lok = getLang() === 'en' ? [] : all.filter((v) => ls(v) > 0).sort((a, b) => ls(b) - ls(a));
+    const lbest = lok[0] || null, lof = (re) => lok.find((v) => re.test(v.name)) || null;
+    this.lv = { m: lof(MALE_NAMES) || lbest, f: lof(FEMALE_NAMES) || lbest, n: lbest, ok: !!lbest, sexed: !!(lof(MALE_NAMES) && lof(FEMALE_NAMES)) };
   }
+
+  // The player picked a language: find the voices for it.
+  setLang() {
+    if (this.web) this.pickVoices();
+    this.nativeLang.at = -1e9;
+  }
+
+  // Can this device speak the chosen language? (English always works.)
+  langOk() {
+    if (getLang() === 'en') return true;
+    if (this.native) {
+      const N = this.nativeLang, tag = langTag(), now = performance.now();
+      if (N.tag !== tag || (!N.ok && now - N.at > 3000)) {   // ask the phone again (its voice engine starts slowly)
+        N.tag = tag; N.at = now;
+        let r = '';
+        try { r = this.native.hasLang ? String(this.native.hasLang(tag) || '') : ''; } catch (e) { r = ''; }
+        N.ok = !!r; N.sexed = r.includes('m') && r.includes('f');
+      }
+      return N.ok;
+    }
+    return !!(this.web && this.lv.ok);
+  }
+  // 'ok' / 'missing' for the settings screen, 'app' when the Android app can download the voice.
+  voiceStatus() {
+    if (getLang() === 'en' || this.langOk()) return 'ok';
+    return this.native && this.native.installVoice ? 'app' : 'missing';
+  }
+  installVoice() { try { if (this.native && this.native.installVoice) this.native.installVoice(); } catch (e) { /* old app */ } }
+
+  // A short line in the player's language: { text, en, lang }. The English line is said instead
+  // when the device has no voice for that language (the speech bubble still shows the player's language).
+  line(key, en) {
+    const list = Array.isArray(en) ? en : [en], loc = spoken(key);
+    if (!loc) { const s = pick(list); return { text: s, en: s, lang: 'en' }; }
+    const i = Math.floor(Math.random() * loc.length);
+    return { text: loc[i], en: list[i % list.length], lang: getLang() };
+  }
+  sayLine(who, key, en, o = {}) { const L = this.line(key, en); return this.say(who, L.text, { ...o, lang: L.lang, en: L.en }); }
+  // Vikram says hello in the new language (the language picker).
+  sample() { this.stop(); return this.sayLine('VIKRAM', 'hello', ['Namaste! I am Vikram. Chalo, let us rule Navapur.'], { prio: 3 }); }
 
   castOf(who, sexHint) {
     const name = String(who || '').toUpperCase().replace(/\(.*?\)/g, '').trim();
@@ -114,10 +176,17 @@ export class Voice {
       return false;
     }
     if (prio >= 2) this.queue = [];
-    const clean = String(text).replace(/[“”"]/g, '').replace(/₹\s?([\d,]+)/g, '$1 rupees').replace(/[^\p{L}\p{N}\s.,!?'%-]/gu, ' ').replace(/\s+/g, ' ').trim();
+    // A line in an Indian language: said with that language's voice, or in English if the device has none.
+    let lang = o.lang || 'en';
+    if (lang !== 'en' && !this.langOk()) { if (!o.en) return false; text = o.en; lang = 'en'; }
+    const clean = String(text).replace(/[“”"]/g, '').replace(/₹\s?([\d,]+)/g, lang === 'en' ? '$1 rupees' : '$1').replace(/[^\p{L}\p{M}\p{N}\s.,!?'%।\u200c\u200d-]/gu, ' ').replace(/\s+/g, ' ').trim();
     if (!clean) return false;
     const c = o.cast || this.castOf(who, o.sex);
-    const rate = (c.rate || 1) * (o.rate || 1), pitch = c.pitch || 1;
+    // Big pitch changes sound robotic: when the device has a real man's and a real woman's voice,
+    // characters differ only a little (natural); with one voice for everybody, pitch tells them apart.
+    const sexed = lang === 'en' ? !!this.voices.sexed : (this.native ? this.nativeLang.sexed : this.lv.sexed);
+    const soft = (v, k) => 1 + ((v || 1) - 1) * k;
+    const rate = soft(c.rate, lang === 'en' ? 1 : 0.5) * (o.rate || 1), pitch = sexed || lang !== 'en' ? soft(c.pitch, sexed ? 0.35 : 0.6) : c.pitch || 1;
     const id = ++this.id;
     // Safety: even if the speech engine never reports "done", the game goes on.
     const est = (0.75 + clean.length * 0.062 / rate) * 1000;
@@ -125,15 +194,20 @@ export class Voice {
     this.busyUntil = now + est;
     this.hardEnd = now + est * 2 + 2500;
     if (this.native) {
-      try { this.native.speak(clean, pitch, rate, id, (c.sex || 'm') === 'f' ? 1 : 0); } catch (e) { this.done(); return false; }
+      try {
+        const fem = (c.sex || 'm') === 'f' ? 1 : 0;
+        if (this.native.speak2) this.native.speak2(clean, pitch, rate, id, fem, langTag(lang));
+        else this.native.speak(clean, pitch, rate, id, fem);
+      } catch (e) { this.done(); return false; }
       return true;
     }
     if (!this.web || !this.voices.list.length) { this.done(); return false; }
     try {
       this.web.cancel();
       const u = new SpeechSynthesisUtterance(clean);
-      const v = c.sex === 'f' ? this.voices.f : c.sex === 'n' ? this.voices.n : this.voices.m;
-      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-IN';
+      const V = lang === 'en' ? this.voices : this.lv;
+      const v = c.sex === 'f' ? V.f : c.sex === 'n' ? V.n : V.m;
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = langTag(lang);
       u.pitch = pitch; u.rate = rate; u.volume = this.game.settingsVolume ?? 1;
       u.onend = () => { if (this.cur && this.cur.id === id) this.done(); };
       u.onerror = () => { if (this.cur && this.cur.id === id) this.done(); };
@@ -183,7 +257,11 @@ export class Voice {
       if (this.objDelay <= 0 && !g.hud.subQueue.length && g.hud.subT <= 0 && !this.speaking) {
         const x = objectiveToSpeech(this.pendingObj);
         this.pendingObj = null;
-        if (x && m && !m.done) { this.say('VIKRAM', pick(SAY_OBJ).replace('{x}', x), { prio: 2 }); this.lastSpokeObj = g.time; }
+        if (x && m && !m.done) {
+          const en = pick(SAY_OBJ).replace('{x}', x);
+          this.say('VIKRAM', getLang() === 'en' ? en : sayObjective(x), { prio: 2, lang: getLang(), en });
+          this.lastSpokeObj = g.time;
+        }
       }
       return;
     }
@@ -194,15 +272,19 @@ export class Voice {
     this.idleT += busy ? dt * 0.35 : dt;
     if (this.idleT > 24 + this.reminders * 12 && this.reminders < 3 && !g.hud.subQueue.length && g.hud.subT <= 0 && !this.speaking) {
       const x = objectiveToSpeech(m.objectiveText);
-      if (x) { this.say('VIKRAM', pick(SAY_REMIND).replace('{x}', x), { prio: 2 }); g.hud.toast(m.objectiveText); }
+      if (x) {
+        const en = pick(SAY_REMIND).replace('{x}', x), loc = getLang() === 'en' ? null : sayReminder(x);
+        this.say('VIKRAM', loc || en, { prio: 2, lang: getLang(), en });
+        g.hud.toast(loc || m.objectiveText);   // the player reads it in their own language too
+      }
       this.idleT = 0; this.reminders++;
     }
   }
 
   // ---------- Meeting people ----------
   greet(person) {
-    const f = person && person.rig && person.rig.sex === 'f';
-    this.say('VIKRAM', pick(f ? GREET_F : GREET_M), { prio: 1 });
+    const f = person && person.rig && person.rig.sex === 'f', en = pick(f ? GREET_F : GREET_M);
+    this.say('VIKRAM', getLang() === 'en' ? en : sayGreeting(), { prio: 1, lang: getLang(), en });
   }
   // A person answers (their voice depends on who they are).
   person(p, text, o = {}) {
@@ -210,6 +292,6 @@ export class Voice {
     const f = p.rig && p.rig.sex === 'f';
     const seed = Math.floor((p.seed ?? 0) % 997);
     const cast = { sex: f ? 'f' : 'm', pitch: (f ? 1.12 : 0.86) + (seed % 7) * 0.04, rate: 1.0 + (seed % 5) * 0.03 };
-    this.say(p.profile?.name || 'PERSON', text, { prio: o.prio ?? 1, cast, queue: o.queue ?? true });
+    this.say(p.profile?.name || 'PERSON', text, { prio: o.prio ?? 1, cast, queue: o.queue ?? true, lang: o.lang, en: o.en });
   }
 }

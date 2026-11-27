@@ -2,7 +2,8 @@
 // roadblocks, spike strips and a police helicopter.
 //
 // WANTED STARS
-//   1 star : cops chase you and try to ARREST you (BUSTED if one grabs you while you are slow).
+//   1 star : cops chase you and try to ARREST you. When one grabs you, you get ONE MINUTE to fight
+//            back (punch with FIGHT or shoot): beat the cops around you or get away, else BUSTED.
 //   2 stars: cops SHOOT. 3 stars: SWAT team, more cars, ROADBLOCKS ahead of you.
 //   4-5 stars: a HELICOPTER with a searchlight, and SPIKE STRIPS in front of roadblocks.
 // ESCAPING
@@ -23,6 +24,8 @@ import { LINES, HALF_ROAD } from './world.js';
 import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp, pick } from './util.js';
 
 const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
+export const ARREST_TIME = 60;    // seconds to fight your way out when a cop grabs you
+const HEAL_PER_COP = 20;          // health back for every cop Vikram takes down (gangsters: half)
 
 // Can a police unit at (ex, ez) facing (fx, fz) see the player?
 export function canSee(world, ex, ez, fx, fz, target, range, fovDeg, closeRange = 8) {
@@ -46,13 +49,16 @@ export class Dispatch {
     this.circle = { x: 0, z: 0, r: 0 };
     this.outsideT = 0;
     this.busting = false;
+    this.arrestT = 0; this.freeT = 0;   // the one-minute fight when a cop grabs him
     this.reportTimer = -1;
     this.reinforceT = 0;
     this.roadblocks = []; this.roadblockT = 4;
     this.heli = null;
     this.raid = null; this.raidT = 0; this.raidAt = 0; this.raidsOn = true;
-    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {};
+    this.onStars = () => {}; this.onEscaped = () => {}; this.onBusted = () => {}; this.onMessage = () => {}; this.onArrest = () => {};
   }
+  // Story missions bring extra police (more cars, more officers out of each car).
+  get extra() { const m = this.game.mission; return m && !m.done ? 1 : 0; }
 
   get active() { return this.stars > 0; }
   get radius() { return 45 + this.stars * 20; }          // search circle size
@@ -80,6 +86,7 @@ export class Dispatch {
   clear(escaped) {
     if (!this.stars) return;
     this.stars = 0;
+    if (this.arrestT > 0) { this.arrestT = 0; this.onArrest(false, true); }
     for (const c of this.game.policeCars) c.endPursuit();
     for (const o of this.game.officers) if (!o.dead) o.standDown();
     if (this.raid) { this.raid.end(); this.raid = null; }
@@ -128,10 +135,40 @@ export class Dispatch {
     if (this.active && this.sinceSeen > 1.5) { this.sinceSeen += 6; this.onMessage('NEW CAR - THE POLICE DID NOT SEE IT'); }
   }
 
-  // An officer has hold of the player (only at 1 star).
+  // An officer has hold of the player (1 star, or a raid team inside a building). Not BUSTED at once:
+  // Vikram gets one minute to fight his way out - punch (FIGHT) or shoot the cops around him.
   caught() {
     const g = this.game, P = g.player;
-    if (this.busting || this.stars < 1 || this.stars > 3 || P.dead || g.godMode) return;
+    if (this.busting || this.arrestT > 0 || this.stars < 1 || this.stars > 3 || P.dead || g.godMode) return;
+    if (P.inCar) g.driving.exit();   // they pull him out of the car
+    this.arrestT = ARREST_TIME; this.freeT = 0;
+    if (g.voice) g.voice.sayLine('POLICE', 'raidSee', RAID_SEE, { prio: 2 });
+    this.onArrest(true);
+  }
+
+  // The minute is running. The cops around him try to hold and cuff him (they do not shoot, even when
+  // he hits back). Free when no cop is near him for 3 seconds (all beaten, or he got away);
+  // still held by a cop when the minute is over: BUSTED.
+  updateArrest(dt) {
+    const g = this.game, P = g.player;
+    if (P.dead) { this.arrestT = 0; return; }
+    this.arrestT -= dt;
+    let near = false, grab = false;
+    for (const o of g.officers) {
+      if (o.dead || o.gang) continue;
+      const d = dist(o.x, o.z, P.x, P.z);
+      if (d < 9) near = true;
+      if (d < 2.3 && !(o.stunT > 0)) grab = true;
+    }
+    this.freeT = near ? 0 : this.freeT + dt;
+    if (this.freeT > 3) { this.arrestT = 0; this.onArrest(false); return; }
+    if (this.arrestT <= 0) { this.arrestT = 0; if (grab) this.bust(); else this.onArrest(false); }
+  }
+
+  // Time is up and a cop still has him: BUSTED.
+  bust() {
+    const g = this.game, P = g.player;
+    if (this.busting || P.dead || g.godMode) return;
     this.busting = true;
     if (P.inCar) g.driving.exit();
     P.controlsEnabled = false;
@@ -162,7 +199,7 @@ export class Dispatch {
     if (!r.officers.length) return;
     this.raid = r; this.raidAt = g.time;
     this.onMessage('POLICE RAID! They are coming inside to arrest you - get out or fight!');
-    if (g.voice) g.voice.say('POLICE', pick(RAID_START), { prio: 2 });
+    if (g.voice) g.voice.sayLine('POLICE', 'raidStart', RAID_START, { prio: 2 });
   }
 
   // A random point (on a road) inside the search circle, for police to check.
@@ -180,6 +217,7 @@ export class Dispatch {
     for (const rb of [...this.roadblocks]) rb.update(dt);
     if (this.heli) this.heli.update(dt);
     if (!this.stars || this.busting) return;
+    if (this.arrestT > 0) this.updateArrest(dt);
 
     this.sinceSeen += dt;
     if (g.mission && g.mission.holdStars && !g.mission.done) this.sinceSeen = 0;   // no escape during the shoot-out
@@ -197,7 +235,7 @@ export class Dispatch {
     if (this.reinforceT <= 0) {
       this.reinforceT = 3;
       const chasing = g.policeCars.filter((c) => !c.wrecked && !c.roadblock && !c.playerControlled && !c.parked).length;
-      if (chasing < UNITS_FOR_STARS[this.stars]) g.spawnPoliceCar(true);
+      if (chasing < UNITS_FOR_STARS[this.stars] + this.extra) g.spawnPoliceCar(true);
     }
     // Roadblocks (3+ stars) when the player is driving fast.
     this.roadblockT -= dt;
@@ -286,7 +324,7 @@ class Raid {
     this.seenT -= dt;
     if (!this.ending && this.seenT <= 0 && alive.some((o) => o.seesPlayer && dist(o.x, o.z, P.x, P.z) < 25)) {
       this.seenT = 7;
-      if (g.voice) g.voice.say('POLICE', pick(RAID_SEE), { prio: 2 });
+      if (g.voice) g.voice.sayLine('POLICE', 'raidSee', RAID_SEE, { prio: 2 });
     }
     // Over: he got far away from the block, all officers are down, or no stars any more.
     const far = dist(P.x, P.z, this.block.cx, this.block.cz) > 75 || P.inCar;
@@ -394,7 +432,7 @@ export class PoliceCar extends Car {
         this.routeAt(this.search.x, this.search.z, dt);
       }
       // Officers get out when close and you are on foot or stopped (one at 1-2 stars, two at 3+).
-      const crewSize = D.stars >= 3 ? 2 : 1;
+      const crewSize = (D.stars >= 3 ? 2 : 1) + D.extra;
       const stopped = !P.inCar || g.driving.speed < 2.5;
       if (stopped && this.crew.filter((o) => !o.dead).length < crewSize && this.deployT <= 0 && D.sinceSeen < 1.5 && dT < 16 && this.speed < 1.5) {
         const side = this.crew.length % 2 === 0 ? 1 : -1;
@@ -463,6 +501,7 @@ export class Officer {
     this.path = null; this.pathI = 0; this.repathT = 0; this.pathGoal = null; this.directT = 0; this.direct = true;
     this.strafe = Math.random() < 0.5 ? 1 : -1; this.strafeT = 1 + Math.random() * 2;
     this.search = null;
+    this.stunT = 0;   // knocked back by a punch
     this.isOfficer = true;
     this.rig = new CharacterRig(opts.model || (this.swat ? 'swat' : 'police'), { castShadow: game.shadows });
     this.mesh = this.rig.root;
@@ -501,6 +540,40 @@ export class Officer {
     this.forceHostile = true; this.engaged = true;
   }
 
+  // Punched: he stumbles back and cannot grab or shoot for a moment.
+  stun(sec, fromX, fromZ) {
+    const dx = this.x - fromX, dz = this.z - fromZ, d = Math.hypot(dx, dz) || 1;
+    this.vx = (dx / d) * 3.4; this.vz = (dz / d) * 3.4;
+    this.stunT = Math.max(this.stunT, sec); this.catchT = 0; this.fireT = Math.max(this.fireT, sec + 0.3);
+    if (this.guard) this.alert();
+    this.engaged = true;
+  }
+  staggered(dt, camD) {
+    const g = this.game;
+    this.stunT -= dt;
+    const k = Math.max(0, 1 - 5 * dt);
+    this.vx *= k; this.vz *= k;
+    this.x += this.vx * dt; this.z += this.vz * dt;
+    g.world.resolveCircle(this, this.radius);
+    this.groundY = g.world.groundAt(this.x, this.z);
+    this.mesh.position.set(this.x, this.groundY, this.z);
+    this.mesh.rotation.y = this.yaw;
+    this.mesh.rotation.x = Math.min(0.35, this.stunT * 0.4);   // leaning back from the hit
+    if (this.stunT <= 0) this.mesh.rotation.x = 0;
+    this.rig.setMotion(0); this.rig.setAim(0, null);
+    this.rig.update(dt, camD);
+    this.aimW = 0; this.gun.visible = false;
+  }
+  // Every cop (or gangster) Vikram takes down gives him health back.
+  rewardPlayer() {
+    const g = this.game, P = g.player;
+    if (P.dead) return;
+    const heal = this.gang ? HEAL_PER_COP / 2 : HEAL_PER_COP;
+    const before = P.health;
+    P.health = Math.min(P.maxHealth || 100, P.health + heal);
+    if (P.health > before + 0.5) g.hud.popup(`+${Math.round(P.health - before)} HEALTH`, 'bonus');
+  }
+
   // Silent takedown from behind (stealth).
   takedown() {
     const g = this.game, P = g.player;
@@ -508,6 +581,8 @@ export class Officer {
     this.rig.die(this.x - P.x, this.z - P.z);
     this.gun.visible = false; this.setMarker('none');
     g.stats.kills++;
+    this.mesh.rotation.x = 0;
+    this.rewardPlayer();
     if (g.rewards) { g.rewards.event('SILENT TAKEDOWN', 200, 20); g.slowmo(0.5, 0.35); }
     if (g.mission && g.mission.onKill) g.mission.onKill(this);
   }
@@ -530,9 +605,11 @@ export class Officer {
       this.dead = true;
       this.rig.die(this.x - fromX, this.z - fromZ);
       this.gun.visible = false; this.setMarker('none');
+      this.stunT = 0; this.mesh.rotation.x = 0;
       if (byPlayer) {
         if (!this.gang) g.dispatch.crime('kill_cop', this.x, this.z);
         g.stats.kills++;
+        this.rewardPlayer();
         if (g.mission && g.mission.onKill) g.mission.onKill(this);
       }
       // Gangs drop cash (sometimes a JACKPOT); police drop ammo or health.
@@ -575,6 +652,7 @@ export class Officer {
     }
 
     if (this.marker) this.marker.visible = camD < 75 && (!this.guard || this.guard.alerted || this.guard.seen > 0.12);
+    if (this.stunT > 0) { this.staggered(dt, camD); return; }
     if (this.guard && !this.guard.alerted) { this.patrol(dt, camD); return; }
 
     let gx = this.x, gz = this.z, speed = 0, shooting = false;
@@ -582,7 +660,9 @@ export class Officer {
     const dP = dist(this.x, this.z, T.x, T.z);
     // Raid officers try to ARREST him (up to 2 stars) unless he shoots at them.
     const arresting = this.raid && !this.forceHostile && D.stars <= 2 && !P.inCar;
-    const hostile = (D.stars >= 2 || this.forceHostile) && !P.dead && !arresting;
+    // The one-minute fight: the cops close to him try to hold him, they do not shoot.
+    const holding = D.arrestT > 0 && !this.gang && !this.forceHostile && dP < 15;
+    const hostile = (D.stars >= 2 || this.forceHostile) && !P.dead && !arresting && !holding;
 
     this.sightT -= dt;
     if (this.sightT <= 0) {

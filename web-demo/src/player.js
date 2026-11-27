@@ -14,6 +14,9 @@ import { placeGun } from './police.js';
 const _dir = new THREE.Vector3(), _aim = new THREE.Vector3(), _muz = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(), _to = new THREE.Vector3();
 const _bp = new THREE.Vector3(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bm = new THREE.Matrix4();
 
+const TOUGH = 0.65;        // all damage to Vikram x0.65 (v9.3: he lasts longer in a fight)
+const PUNCH_DAMAGE = 50;
+
 export class Player {
   constructor(game, x, z, yaw) {
     this.game = game;
@@ -25,6 +28,7 @@ export class Player {
     this.controlsEnabled = true;
     this.inCar = false; this.dead = false;
     this.health = 100; this.armor = 0; this.lastHurt = -99;
+    this.punchCd = 0; this.punchT = 0; this.punchAt = null;   // hand fight (FIGHT button)
     this.lastGrounded = 0; this.lastJumpPress = -99;
     // Real-life speeds (m/s), like GTA: walk, jog (full push), sprint (push past the ring / sprint lock / Shift).
     this.walkSpeed = 1.55; this.jogSpeed = 3.4; this.sprintSpeed = 5.9; this.crouchSpeed = 1.3; this.aimSpeed = 1.9; this.hipSpeed = 2.6;
@@ -141,6 +145,7 @@ export class Player {
 
   takeDamage(amount, fromX, fromZ) {
     if (this.dead || this.game.godMode) return;
+    amount *= TOUGH;                   // Vikram is tough: he does not go down after a few hits
     if (this.inCar) amount *= 0.45;   // the car body protects you a bit
     if (this.armor > 0) { const a = Math.min(this.armor, amount * 0.7); this.armor -= a; amount -= a; }
     this.health -= amount;
@@ -175,6 +180,8 @@ export class Player {
       return;
     }
     if (this.dead) { this.rig.update(dt, 0); return; }
+    if (this.punchCd > 0) this.punchCd -= dt;
+    if (this.punchT > 0) this.punchT -= dt;
 
     const on = this.controlsEnabled;
     const move = on ? input.move : { x: 0, y: 0 };
@@ -316,7 +323,24 @@ export class Player {
 
   // Health slowly comes back when you are not hit for a while.
   regen(dt) {
-    if (!this.dead && this.health < this.maxHealth && this.game.time - this.lastHurt > 6) this.health = Math.min(this.maxHealth, this.health + 6 * dt);
+    if (!this.dead && this.health < this.maxHealth && this.game.time - this.lastHurt > 4) this.health = Math.min(this.maxHealth, this.health + 8 * dt);
+  }
+
+  // Hand fight: a punch (or a hit with the gun) at a cop or gangster right next to him.
+  // Two punches knock out a constable, three a SWAT officer. Each hit knocks him back for a moment.
+  punch(o) {
+    const g = this.game;
+    if (this.punchCd > 0 || this.dead || this.inCar || !o || o.dead) return false;
+    this.punchCd = 0.45; this.punchT = 0.24; this.punchAt = o;
+    this.yaw = yawOf(o.x - this.x, o.z - this.z);
+    this.vx += Math.sin(this.yaw) * 1.6; this.vz += Math.cos(this.yaw) * 1.6;   // a step into the punch
+    o.takeDamage(PUNCH_DAMAGE, true, this.x, this.z);
+    if (!o.dead && o.stun) o.stun(0.9, this.x, this.z);
+    g.audio.thump(0.9, 80, 0.12); g.audio.impact(0.7);
+    g.camera3p.kick(0.5);
+    g.hud.hitMarker(o.dead, false);
+    if (o.dead) { g.slowmo(0.4, 0.4); if (g.rewards) g.rewards.event('KNOCKOUT!', 150, 15); }
+    return true;
   }
 
   // Can we shoot now? Uses a bullet (or reloads / clicks when empty).
@@ -434,7 +458,10 @@ export class Player {
       // Arms point where the camera aims while aiming/shooting.
       const cam = this.game.camera;
       cam.getWorldDirection(_dir);
-      this.aimW = moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
+      // Punching: the arms shoot out at the man in front (fast), then come back.
+      const o = this.punchT > 0 ? this.punchAt : null;
+      if (o) _dir.set(o.x - this.x, 0.1, o.z - this.z).normalize();
+      this.aimW = o ? moveTowards(this.aimW || 0, 1, 30 * dt) : moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
       this.rig.setAim(this.aimW, _dir);
       this.rig.update(dt, 0);
       // rig.update() turns the body back on, so hide it again while looking through the scope.

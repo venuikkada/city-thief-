@@ -29,6 +29,7 @@ import { Interiors } from './interiors.js';
 import { Ambience } from './ambience.js';
 import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
+import { LANGS, setLang, getLang, t as tr, applyLanguage } from './i18n.js';
 
 // Cinematic colour grade, done inside the normal tone mapping (no extra screen pass, cheap on phones):
 // filmic curve + a little more colour and contrast + teal shadows and warm highlights.
@@ -53,6 +54,7 @@ function loadSettings() {
   catch (e) { return { ...DEFAULTS }; }
 }
 const settings = loadSettings();
+setLang(settings.lang || 'en');   // menus, police and shop messages, Vikram's reminders (v9.3)
 if (settings.v !== 5) { settings.drive = 'buttons'; settings.music = true; settings.v = 5; }   // v5: arrow buttons for cars by default
 const params = new URLSearchParams(location.search);
 const mem = navigator.deviceMemory || 8;
@@ -153,7 +155,7 @@ class Game {
     this.dispatch = new Dispatch(this);
     this.controls = new Controls();
     this.hud = new Hud(this);
-    this.voice = new Voice(this, settings);   // Vikram and everyone else speak (Indian English)
+    this.voice = new Voice(this, settings);   // Vikram and everyone else speak (story: Indian English; reminders: the player's language)
     this.music = new Music(this.audio);
     this.rewards = new Rewards(this);
     this.interact = new Interact(this);
@@ -174,9 +176,14 @@ class Game {
     this.dispatch.onStars = (n, was) => { if (n > 0 && was === 0) this.hud.showBig('COPS ARE COMING!', '#ff4438', 2); };
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
     this.dispatch.onMessage = (t) => this.hud.toast(t);
+    // A cop grabbed Vikram: one minute to fight his way out (punch / shoot), or get away.
+    this.dispatch.onArrest = (on, quiet) => {
+      if (on) { this.hud.showBig('FIGHT BACK!', '#ff3b30', 1.8); this.hud.toast('A COP GRABBED YOU! 1 minute: punch (FIGHT) or shoot to break free'); this.audio.thump(0.8, 70, 0.2); }
+      else if (!quiet && !this.player.dead) { this.hud.showBig('YOU BROKE FREE!', '#4dff66', 2); if (this.rewards) this.rewards.event('BROKE FREE', 200, 20); }
+    };
     this.dispatch.onBusted = () => {
       const m = this.mission;
-      this.endScreen('PAKDE GAYE!', 'Busted by the Navapur police');
+      this.endScreen('PAKDE GAYE!', tr('Busted by the Navapur police'));
       setTimeout(() => {
         if (this.mission !== m) return;   // a new mission already started
         this.endScreen(null);
@@ -527,7 +534,8 @@ class Game {
     if (this.save.weapons.includes('gold')) P.weapon = 'gold';
     P.armor = this.rewards.has('armour') ? 60 : 0;
     P.health = P.maxHealth;
-    this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.driving.nitro = 1;
+    this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.punchTarget = null; this.driving.nitro = 1;
+    if (this.dispatch) { this.dispatch.arrestT = 0; this.dispatch.freeT = 0; }
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -562,7 +570,7 @@ class Game {
     this.hud.setClock('');
     this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission('FREE ROAM', 'Explore Navapur: walk into any shop (BUY or ROB THE TILL), steal cars, grab the shotgun in the courtyard, drive to the beach. Tap a gun slot to switch guns. Want a chase? Pause > CALL THE COPS.');
+    this.hud.setMission(tr('FREE ROAM'), tr('FREE ROAM OBJECTIVE') || 'Explore Navapur: walk into any shop (BUY or ROB THE TILL), steal cars, grab the shotgun in the courtyard, drive to the beach. Tap a gun slot to switch guns. Want a chase? Pause > CALL THE COPS.');
     // Two guns ready from the start: SMG (slot 1) and pistol (slot 2).
     if (!this.player.owned.includes('smg')) this.player.giveWeapon('smg', WEAPONS.smg.mag * 3);
     this.player.weapon = 'smg';
@@ -591,7 +599,7 @@ class Game {
 
   onPlayerDied() {
     const m = this.mission;
-    this.endScreen('KHATAM!', 'Vikram was killed');
+    this.endScreen('KHATAM!', tr('Vikram was killed'));
     setTimeout(() => {
       if (this.mission !== m) return;   // a new mission already started
       this.endScreen(null);
@@ -635,7 +643,7 @@ class Game {
     document.exitPointerLock?.();
     document.getElementById('hud').classList.add('hidden');
     const t = document.getElementById('result-title');
-    t.textContent = passed ? 'MISSION PASSED' : 'MISSION FAILED';
+    t.textContent = tr(passed ? 'MISSION PASSED' : 'MISSION FAILED');
     t.classList.toggle('fail', !passed);
     [...document.getElementById('result-stars').children].forEach((el, i) => el.classList.toggle('on', i < stars));
     document.getElementById('result-text').textContent = text;
@@ -664,6 +672,8 @@ class Game {
     this.music.setLevel(0);
     this.atmo.set('night', true);   // the menu flies over the neon seafront at night
     if (!this.dailyChecked) { this.dailyChecked = true; setTimeout(showDaily, 600); }
+    // First time: choose a language (one tap; the globe button changes it any time).
+    if (settings.lang === undefined && !this.langAsked && !navigator.webdriver) { this.langAsked = true; setTimeout(openLangPicker, 350); }
   }
 
   pause() {
@@ -894,7 +904,20 @@ class Game {
         if (d < 1.8 && (dx * Math.sin(o.yaw) + dz * Math.cos(o.yaw)) / (d || 1) < -0.15) { this.takedownTarget = o; break; }
       }
     }
+    // Hand fight (v9.3): a cop or gangster right next to Vikram -> FIGHT (punch). Calm police and
+    // guards who have not seen him are left alone (sneak up behind a guard for a TAKEDOWN instead).
+    this.punchTarget = null;
+    if (!P.inCar && !P.dead && !this.takedownTarget) {
+      let best = 2.4;
+      for (const o of this.officers) {
+        if (o.dead || o.inactive || (o.guard && !o.guard.alerted)) continue;
+        if (!o.gang && !this.dispatch.active && !o.forceHostile) continue;
+        const d = Math.hypot(o.x - P.x, o.z - P.z);
+        if (d < best) { best = d; this.punchTarget = o; }
+      }
+    }
     if (input.takedownPressed && this.takedownTarget) { this.takedownTarget.takedown(); this.takedownTarget = null; }
+    else if (input.fightPressed && this.punchTarget) P.punch(this.punchTarget);
     if (!this.rhythm) this.interact.update(dt, input); else this.interact.bar.classList.add('hidden');
     this.voice.update(dt);
     if (input.photoPressed) this.photoPressed = true;
@@ -950,6 +973,44 @@ const game = new Game();
 window.__cityThief = game;
 const $ = (id) => document.getElementById(id);
 
+// ---------- Language (v9.3): English + 9 Indian languages ----------
+function refreshLangUI() {
+  const L = LANGS.find((l) => l.id === getLang()) || LANGS[0];
+  $('lang-cur').textContent = L.name;
+  $('set-lang').textContent = '🌐 ' + L.name + (L.id === 'en' ? '' : ` · ${L.en}`);
+}
+// Does the phone / computer have a voice for this language? (Android app: a button downloads it.)
+function voiceNote() {
+  const st = game.voice ? game.voice.voiceStatus() : 'ok', el = $('lang-voice'), btn = $('btn-getvoice');
+  btn.classList.toggle('hidden', st !== 'app');
+  if (getLang() === 'en') { el.textContent = ''; el.className = 'lang-voice'; return; }
+  el.textContent = st === 'ok' ? tr('VOICE_OK') : tr('VOICE_MISSING') + (st === 'missing' && !window.AndroidTTS ? ' ' + tr('VOICE_TIP') : '');
+  el.className = 'lang-voice ' + (st === 'ok' ? 'ok' : 'miss');
+}
+function renderLangGrid() {
+  const grid = $('lang-grid'); grid.innerHTML = '';
+  for (const L of LANGS) {
+    const b = document.createElement('button');
+    b.className = L.id === getLang() && settings.lang !== undefined ? 'on' : '';
+    b.innerHTML = `<b>${L.name}</b><small>${L.en}</small>`;
+    b.addEventListener('click', () => chooseLang(L.id));
+    grid.appendChild(b);
+  }
+}
+function openLangPicker() { renderLangGrid(); voiceNote(); $('lang-pop').classList.remove('hidden'); }
+function chooseLang(id) {
+  settings.lang = id; setLang(id);
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* fine */ }
+  applyLanguage(); refreshLangUI(); renderLangGrid(); updateMenu();
+  if (game.voice) { game.voice.setLang(); if (game.voice.enabled) game.voice.sample(); }   // Vikram says hello in the new language
+  voiceNote(); setTimeout(voiceNote, 1200);         // some phones find their voices a moment later
+}
+$('btn-lang').addEventListener('click', openLangPicker);
+$('set-lang').addEventListener('click', (e) => { e.preventDefault(); openLangPicker(); });
+$('btn-lang-done').addEventListener('click', () => { if (settings.lang === undefined) chooseLang(getLang()); $('lang-pop').classList.add('hidden'); });
+$('btn-getvoice').addEventListener('click', () => game.voice && game.voice.installVoice());
+applyLanguage(); refreshLangUI();
+
 // The opening shows "BUILT BY VENU BRUSHWOOD" for at least 2.5 seconds, even when loading is fast.
 const openedAt = performance.now();
 game.load((p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; })
@@ -999,8 +1060,8 @@ function nextMission() {
 function updateMenu() {
   const s = game.save, r = rankOf(s.xp);
   const done = MISSIONS.filter((m) => (s.stars[m.id] || 0) > 0).length, nm = nextMission();
-  $('menu-story-sub').textContent = `${done} / ${MISSIONS.length} done · ★ ${Object.values(s.stars).reduce((a, b) => a + b, 0)}`;
-  $('continue-sub').textContent = `MISSION ${nm.id} · ${nm.title.toUpperCase()}`;
+  $('menu-story-sub').textContent = `${done} / ${MISSIONS.length} ${tr('done')} · ★ ${Object.values(s.stars).reduce((a, b) => a + b, 0)}`;
+  $('continue-sub').textContent = `${tr('MISSION')} ${nm.id} · ${nm.title.toUpperCase()}`;
   $('menu-coins').textContent = s.coins.toLocaleString('en-IN');
   $('menu-rank').textContent = RANKS[r].name;
   $('menu-xp-fill').style.width = Math.round(rankProgress(s.xp) * 100) + '%';
@@ -1017,14 +1078,14 @@ function renderShop() {
     const d = document.createElement('div');
     d.className = 'scard' + (owned ? ' owned' : '');
     let btn;
-    if (owned) btn = '<span class="own">OWNED &#10003;</span>';
+    if (owned) btn = `<span class="own">${tr('OWNED')} &#10003;</span>`;
     else if (!rankOk) btn = `<span class="need">RANK: ${RANKS[it.rank].name}</span>`;
     else btn = `<button class="buy${game.save.coins >= it.price ? '' : ' poor'}">&#8377;${it.price.toLocaleString('en-IN')}</button>`;
     d.innerHTML = `<div class="ic">${it.icon}</div><div class="nm">${it.name}</div><div class="ds">${it.desc}</div>${btn}`;
     const b = d.querySelector('button');
     if (b) b.addEventListener('click', () => {
       if (R.buy(it.id)) { game.music.start(); game.music.cash(); renderShop(); updateMenu(); }
-      else b.textContent = 'NOT ENOUGH CASH';
+      else b.textContent = tr('NOT ENOUGH CASH');
     });
     list.appendChild(d);
   }
@@ -1035,8 +1096,8 @@ function showDaily() {
   const r = game.rewards.dailyAvailable();
   if (!r || game.mode !== 'menu') return;
   const box = $('daily-days');
-  box.innerHTML = DAILY.map((a, i) => `<div class="day${i + 1 === Math.min(r.day, 7) ? ' today' : i + 1 < r.day ? ' got' : ''}"><small>DAY ${i + 1}</small>&#8377;${a.toLocaleString('en-IN')}</div>`).join('');
-  $('daily-title').textContent = `DAILY REWARD · DAY ${r.day}`;
+  box.innerHTML = DAILY.map((a, i) => `<div class="day${i + 1 === Math.min(r.day, 7) ? ' today' : i + 1 < r.day ? ' got' : ''}"><small>${tr('DAY')} ${i + 1}</small>&#8377;${a.toLocaleString('en-IN')}</div>`).join('');
+  $('daily-title').textContent = `${tr('DAILY REWARD')} · ${tr('DAY')} ${r.day}`;
   $('daily').classList.remove('hidden');
 }
 $('btn-daily').addEventListener('click', () => {
@@ -1154,7 +1215,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.3)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------
@@ -1181,5 +1242,5 @@ $('btn-fullscreen').addEventListener('click', () => {
   if (d.fullscreenElement) d.exitFullscreen?.();
   else (d.documentElement.requestFullscreen?.({ navigationUI: 'hide' }) || Promise.resolve()).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
 });
-document.addEventListener('fullscreenchange', () => { $('btn-fullscreen').textContent = document.fullscreenElement ? 'EXIT FULL SCREEN' : 'FULL SCREEN'; });
+document.addEventListener('fullscreenchange', () => { $('btn-fullscreen').textContent = tr(document.fullscreenElement ? 'EXIT FULL SCREEN' : 'FULL SCREEN'); });
 if (IN_APP && window.AndroidTTS) $('btn-fullscreen').classList.add('hidden');   // the Android app is always full screen

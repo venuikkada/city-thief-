@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { CharacterRig } from './characters.js';
 import { AmbientPerson } from './ambient.js';
+import { t as tr, tLabel } from './i18n.js';
 import { dist, yawOf, pick } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -71,9 +72,10 @@ export class Interact {
   }
 
   // Short line of speech above someone's head.
-  speak(p, text, kind = '') {
+  // L: a line from voice.line() (the player's language, with its English twin for devices without that voice).
+  speak(p, text, kind = '', L = null) {
     if (!p) return;
-    if (this.game.voice) this.game.voice.person(p, text);   // said out loud in their own voice
+    if (this.game.voice) this.game.voice.person(p, text, L ? { lang: L.lang, en: L.en } : {});   // said out loud in their own voice
     let b = this.bubbles.find((x) => x.who === p) || this.bubbles.find((x) => !x.who) || this.bubbles.reduce((a, x) => (x.t < a.t ? x : a));
     b.who = p; b.t = 2.6; b.el.textContent = text; b.el.className = 'bubble ' + kind;
   }
@@ -103,9 +105,9 @@ export class Interact {
       if (best) {
         // Shopkeepers: BUY what the shop sells, or ROB THE TILL.
         $('btn-rob').classList.toggle('hidden', !!best.vendor && !best.shop);
-        $('btn-rob-label').textContent = best.shop ? 'ROB TILL' : 'ROB';
+        $('btn-rob-label').textContent = tr(best.shop ? 'ROB TILL' : 'ROB');
         $('btn-buy').classList.toggle('hidden', !best.vendor || (!!best.shop && !best.shop.buy));
-        $('btn-buy-label').textContent = best.shop ? (best.shop.buy ? best.shop.buy.label : '') : best.vendor === 'chai' ? 'CHAI ₹20' : 'FRUIT ₹30';
+        $('btn-buy-label').textContent = tLabel(best.shop ? (best.shop.buy ? best.shop.buy.label : '') : best.vendor === 'chai' ? 'CHAI ₹20' : 'FRUIT ₹30');
         $('btn-buy-icon').textContent = best.shop ? best.shop.icon || '🛒' : best.vendor === 'chai' ? '☕' : '🍎';
         $('btn-hire').classList.toggle('hidden', !!best.vendor || this.followers.length >= 2 || !!best.isOfficer);
       }
@@ -194,7 +196,7 @@ export class Interact {
     this.cooldown = 0.6;
     const dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz) || 1;
     p.pushVX = (dx / d) * 4.2; p.pushVZ = (dz / d) * 4.2; p.pushT = 0.35;
-    if (g.voice) g.voice.say('VIKRAM', pick(['Hatt! Out of my way!', 'Side ho jao, bhai!', 'Move it!']), { queue: true });
+    if (g.voice) g.voice.sayLine('VIKRAM', 'push', ['Hatt! Out of my way!', 'Side ho jao, bhai!', 'Move it!'], { queue: true });
     this.speak(p, pick(PUSHED), 'angry');
     g.audio.thump(0.4, 120, 0.12);
     if (p.panicFrom && Math.random() < 0.5) setTimeout(() => p.panicFrom(P.x, P.z), 400);
@@ -207,7 +209,7 @@ export class Interact {
     const g = this.game;
     if (!p || p.given || g.save.coins < 100) { if (p && g.save.coins < 100) this.speak(p, 'Aapke paas bhi kuch nahi hai!'); return; }
     g.save.coins -= 100; p.given = true; p.alert = false;
-    if (g.voice) g.voice.say('VIKRAM', pick(['Rakh lo ji, keep it.', 'Here, take this.', 'For you, uncle. Chai pe lena.']), { queue: true });
+    if (g.voice) g.voice.sayLine('VIKRAM', 'tip', ['Rakh lo ji, keep it.', 'Here, take this.', 'For you, uncle. Chai pe lena.'], { queue: true });
     this.speak(p, pick(THANKS), 'happy');
     g.rewards.addXP(3); g.hud.popup('-₹100  GOOD DEED', 'bonus');
     $('profile-give').classList.add('hidden');
@@ -222,7 +224,7 @@ export class Interact {
     const price = p.vendor === 'chai' ? 20 : 30, heal = p.vendor === 'chai' ? 25 : 40;
     if (g.save.coins < price) { this.speak(p, 'Pehle paise lao!'); return; }
     g.save.coins -= price;
-    if (g.voice) g.voice.say('VIKRAM', p.vendor === 'chai' ? 'Bhaiya, ek cutting chai.' : 'Ek aam dena, bhaiya.', { queue: true });
+    if (g.voice) g.voice.sayLine('VIKRAM', p.vendor === 'chai' ? 'chai' : 'fruit', [p.vendor === 'chai' ? 'Bhaiya, ek cutting chai.' : 'Ek aam dena, bhaiya.'], { queue: true });
     P.health = Math.min(P.maxHealth || 100, P.health + heal);
     this.speak(p, p.vendor === 'chai' ? 'Ek cutting chai, garam!' : 'Taaza aam, khao aur jiyo!', 'happy');
     g.hud.popup(`+${heal} HEALTH  -₹${price}`, 'bonus');
@@ -238,7 +240,7 @@ export class Interact {
     if (g.save.coins < 500) { this.speak(p, '500 rupaye do, phir baat karenge.'); return; }
     if (p.robbed || p.alert) { this.speak(p, 'Tum? Kabhi nahi!'); return; }
     g.save.coins -= 500;
-    if (g.voice) g.voice.say('VIKRAM', pick(['Five hundred rupees. You are with me now.', 'Chalo, join my crew.', 'I need a strong partner. Come.']), { queue: true });
+    if (g.voice) g.voice.sayLine('VIKRAM', 'hire', ['Five hundred rupees. You are with me now.', 'Chalo, join my crew.', 'I need a strong partner. Come.'], { queue: true });
     // The person becomes a crew member (a new body takes their place in the crowd).
     const f = new AmbientPerson(g, p.x, p.z, p.yaw, { rig: new CharacterRig(p.rig.id, { castShadow: g.shadows }), health: 160 });
     f.follower = true; f.calm = true; f.noInteract = true; f.profile = profileOf(p); f.walkSpeed = 1.6;

@@ -12,6 +12,7 @@ import { AmbientPerson } from './ambient.js';
 import { CharacterRig, loadedCrowd } from './characters.js';
 import { dist, pick, seededRandom } from './util.js';
 import { WEAPONS } from './weapons.js';
+import { t as tr, tLabel } from './i18n.js';
 
 const OPEN_DIST = 16, CLOSE_DIST = 30, MAX_OPEN = 3;
 const T = 0.25;   // thickness of the front wall
@@ -609,7 +610,7 @@ export class Interiors {
       else msg = D.stars ? 'NEW LOOK (they are still watching you!)' : 'NEW LOOK';
     }
     g.save.coins -= b.price;
-    if (g.voice) g.voice.say('VIKRAM', pick(['Ek dena, bhaiya.', 'Yeh wala, please.', 'Pack kar do.']), { queue: true });
+    if (g.voice) g.voice.sayLine('VIKRAM', 'buy', ['Ek dena, bhaiya.', 'Yeh wala, please.', 'Pack kar do.'], { queue: true });
     ia.speak(p, pick(['Yeh lijiye!', 'Dhanyavaad, phir aana!', 'Bilkul, sir!']), 'happy');
     g.hud.popup(`${msg}  -₹${b.price}`, 'bonus');
     g.emit('buy', p);
@@ -620,11 +621,13 @@ export class Interiors {
     const g = this.game, P = g.player, it = p.interior, ia = g.interact;
     if (!it) return;
     const last = this.robbedAt.get(it.D.id);
-    if (p.robbedBy || (last !== undefined && g.time - last < 300)) { ia.speak(p, pick(EMPTY), 'angry'); return; }
+    // Lines in the player's language (shopkeepers and Vikram), English on devices without that voice.
+    const say = (key, en) => (g.voice ? g.voice.line(key, en) : { text: pick(en), en: null, lang: 'en' });
+    if (p.robbedBy || (last !== undefined && g.time - last < 300)) { const L = say('empty', EMPTY); ia.speak(p, L.text, 'angry', L); return; }
     p.robbedBy = true; this.robbedAt.set(it.D.id, g.time);
-    if (g.voice) g.voice.say('VIKRAM', pick(ROB_SAY), { queue: false, prio: 2 });
+    if (g.voice) g.voice.sayLine('VIKRAM', 'rob', ROB_SAY, { queue: false, prio: 2 });
     p.handsUp = true; ia.hold(p, 4.5, 'cheer');
-    ia.speak(p, pick(ROB_ANSWER), 'alarm');
+    const LA = say('robAnswer', ROB_ANSWER); ia.speak(p, LA.text, 'alarm', LA);
     for (const q of it.npcs) if (q !== p && q.panicFrom) q.panicFrom(P.x, P.z);
     const [lo, hi] = it.S.cash, cash = Math.round((lo + Math.random() * (hi - lo)) / 50) * 50;
     const B = it.B, t = B.till || B.owner;
@@ -700,11 +703,15 @@ function g_indoors(g, on) {
   g.indoors = on;
   if (on && g.interiors && g.interiors.current) {
     const it = g.interiors.current, S = it.S, o = it.owner;
-    g.hud.toast(S.buy ? `${S.name}: ${S.buy.label.replace(/ ₹.*/, '')} here, or ROB THE TILL` : `${S.name}: rob the reception till`);
+    g.hud.toast(S.buy ? `${S.name}: ${tLabel(S.buy.label).replace(/ ₹.*/, '')} ${tr('here')}, ${tr('or ROB THE TILL')}` : `${S.name}: ${tr('rob the reception till')}`);
     // The owner says hello (once per visit), unless you robbed him.
     if (o && !o.dead && !o.removed && !it.greeted && !g.dispatch.stars) {
       it.greeted = true;
-      g.interiors.later(0.5, () => { if (!o.dead && !o.removed) g.interact.speak(o, o.robbedBy ? 'Tum phir aa gaye?!' : S.hi, o.robbedBy ? 'angry' : 'happy'); });
+      g.interiors.later(0.5, () => {
+        if (o.dead || o.removed) return;
+        const L = g.voice ? (o.robbedBy ? g.voice.line('again', ['Tum phir aa gaye?!']) : g.voice.line('welcome', [S.hi])) : { text: o.robbedBy ? 'Tum phir aa gaye?!' : S.hi };
+        g.interact.speak(o, L.text, o.robbedBy ? 'angry' : 'happy', L.lang ? L : null);
+      });
     }
   }
 }

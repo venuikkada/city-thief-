@@ -90,6 +90,20 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9.3: 10 languages + fight the police:**
+  - **Languages:** English, हिन्दी, తెలుగు, தமிழ், ಕನ್ನಡ, മലയാളം, ગુજરાતી, मराठी, বাংলা, ଓଡ଼ିଆ. The globe button on the main
+    menu (and Settings -> Language) opens the picker; the first launch asks once. Menus, settings, pause, result, HUD
+    buttons, banners, police and chase messages and shop texts change. Vikram's objective lines and reminders, his
+    greetings, the shopkeepers and the police SPEAK the language in everyday words ("Ravi's garage కి వెళ్ళాలి",
+    "டைம் இல்ல மச்சான்"), with the best voice the phone has for it (offline Google voices in the Android app; the
+    natural Edge voices on PC). No voice for the language on a device: those lines are said in Indian English, and the
+    Android app shows GET THE VOICE (opens the phone's voice download). Story dialogue stays Hinglish. Words: `web-demo/src/i18n.js`.
+  - **Fight back:** a cop who grabs Vikram no longer means instant BUSTED. He gets ONE MINUTE: the FIGHT button punches
+    (2 punches knock out a constable, 3 a SWAT officer; each punch knocks him back), or shoot. The cops holding him do not
+    shoot during that minute. Beat the cops near him (or get 9 m away for 3 seconds) = YOU BROKE FREE; still held when the
+    minute ends = BUSTED. Every cop he takes down gives +20 health (gangsters +10).
+  - **Tougher Vikram:** all damage x0.65; health comes back after 4 s (was 6) at 8 a second.
+  - **More police in story missions:** one more chasing police car at every star level, and one more officer out of each car.
 - **v9 new look (UI):** the main menu is a game lobby that fits any phone screen (STORY, FREE ROAM, SHOP cards, a big PLAY
   button that continues the story, rank, cash and settings at the top). Missions, shop and settings are full-screen pages
   with a BACK button; the pause menu shows what you are doing; the result card fits on one phone screen. In the game:
@@ -101,7 +115,7 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   ("Okay. First, I have to go to Ravi's garage"), reminds you if you stand around, and greets people he talks to.
   Uses the phone's / PC's own voices (free, works offline). Settings -> Voices.
 - **Police raids:** hiding in a courtyard or an alley no longer works: a police van parks at the block, officers walk in
-  through the gaps and search every corner. If one grabs you while you walk (not run) - BUSTED (up to 3 stars; SWAT shoot).
+  through the gaps and search every corner. If one grabs you while you walk (not run), the one-minute fight starts (v9.3).
 - **Clean controls:** on foot only walking + shooting buttons; in a car only driving + gun buttons. Car buttons sit like
   the popular mobile shooter layout: gas / brake arrows on the left with BRAKE beside them, steer left / right on the right
   with the horn, EXIT VEHICLE under the top-right corner, camera and speed at the bottom left. CALL THE COPS is in the pause menu.

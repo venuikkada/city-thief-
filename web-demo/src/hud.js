@@ -3,6 +3,7 @@
 // car speed + nitro, context buttons (ENTER / PICK UP), subtitles, messages, hit effects.
 import * as THREE from 'three';
 import { WEAPONS, GUN_ICONS } from './weapons.js';
+import { t as tr } from './i18n.js';
 const $ = (id) => document.getElementById(id);
 const _v3 = new THREE.Vector3();
 
@@ -73,7 +74,7 @@ export class Hud {
 
   showBig(text, color, seconds) {
     const b = this.el.big;
-    b.textContent = text; b.style.color = color; b.style.setProperty('--c', color);
+    b.textContent = tr(text); b.style.color = color; b.style.setProperty('--c', color);   // in the player's language when we have it
     b.classList.remove('hidden');
     b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
     this.bigT = seconds;
@@ -82,7 +83,7 @@ export class Hud {
   // Small message under the stars (roadblock ahead, new car, ...).
   toast(text) {
     const t = this.el.toast;
-    t.textContent = text; t.classList.remove('hidden');
+    t.textContent = tr(text); t.classList.remove('hidden');
     t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
     this.toastT = 2.6;
   }
@@ -247,12 +248,15 @@ export class Hud {
 
     // Chase status: how to escape.
     let s = '', color = '#fff';
-    if (D.active) {
+    if (D.active && D.arrestT > 0) {
+      // A cop has him: the one-minute fight.
+      s = `${tr('FIGHT BACK!')} ${Math.ceil(D.arrestT)}s · ${tr('beat the cops or get away')}`; color = '#ff3b30';
+    } else if (D.active) {
       const T = D.target;
       const outside = Math.hypot(T.x - D.circle.x, T.z - D.circle.z) > D.circle.r;
-      if (D.sinceSeen < 1) { s = D.stars >= 2 ? 'UNDER FIRE · get out of sight' : 'SPOTTED · run, don\'t get caught'; color = '#ff6a5c'; }
-      else if (outside) { s = `OUT OF AREA · hide ${Math.max(0, D.escapeTime - D.outsideT).toFixed(1)}s`; color = '#7dff8a'; }
-      else { s = `HIDDEN · leave red circle ${Math.ceil(D.loseTime - D.sinceSeen)}s`; color = '#ffd633'; }
+      if (D.sinceSeen < 1) { s = tr(D.stars >= 2 ? 'UNDER FIRE · get out of sight' : 'SPOTTED · run, don\'t get caught'); color = '#ff6a5c'; }
+      else if (outside) { s = `${tr('OUT OF AREA · hide')} ${Math.max(0, D.escapeTime - D.outsideT).toFixed(1)}s`; color = '#7dff8a'; }
+      else { s = `${tr('HIDDEN · leave red circle')} ${Math.ceil(D.loseTime - D.sinceSeen)}s`; color = '#ffd633'; }
     }
     if (this.cache.status !== s) { this.cache.status = s; E.status.textContent = s; E.status.style.color = color; E.status.style.setProperty('--c', color); E.status.classList.toggle('on', !!s); }
 
@@ -314,7 +318,14 @@ export class Hud {
     E.enter.classList.toggle('hidden', !canEnter);
     const canPick = !P.inCar && !P.dead && !!g.pickups.near(P.x, P.z);
     E.pickup.classList.toggle('hidden', !canPick);
-    E.takedown.classList.toggle('hidden', !g.takedownTarget);
+    // TAKEDOWN (behind an unaware guard) or FIGHT (a cop or gangster right next to him).
+    const fight = !g.takedownTarget && !!g.punchTarget, tdKey = (g.takedownTarget ? 't' : fight ? 'f' : '-') + tr('FIGHT');
+    if (this.cache.takedown !== tdKey) {
+      this.cache.takedown = tdKey;
+      E.takedown.classList.toggle('hidden', !g.takedownTarget && !fight);
+      E.takedown.classList.toggle('fight', fight);
+      const sp = E.takedown.querySelector('span'); if (sp) sp.textContent = tr(fight ? 'FIGHT' : 'TAKEDOWN');
+    }
 
     E.aim.classList.toggle('active', P.aiming);
     E.crouch.classList.toggle('active', P.crouching);

@@ -19,14 +19,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * City Thief for Android.
  * The whole game (HTML + JavaScript + 3D models) is inside the app, so it works without internet.
  * The game is loaded from https://appassets.androidplatform.net/ and every file comes from the app.
- * Voices: the phone's own text-to-speech in Indian English (window.AndroidTTS for the game).
+ * Voices: the phone's own text-to-speech (window.AndroidTTS for the game): Indian English for the story,
+ * and the player's language (Hindi, Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi, Bengali, Odia)
+ * for Vikram's reminders, shopkeepers and police - always the best voice the phone has for it.
  * The back button pauses the game; on the main menu it closes the app.
  */
 public class MainActivity extends Activity {
@@ -36,6 +41,12 @@ public class MainActivity extends Activity {
     private boolean ttsReady = false;
     private Voice maleVoice, femaleVoice;
     private String voiceNames = "[]";
+    private String curLang = "en-IN";
+    // Voices found for each language tag ("te-IN"). Only successes are kept: after the player
+    // downloads a voice, the next look finds it.
+    private static class LangVoices { Voice man, woman; boolean sexed; }
+    private final HashMap<String, LangVoices> langVoices = new HashMap<String, LangVoices>();
+    private static final Pattern SEX_CODE = Pattern.compile("-x-[a-z]{2}([mf])(-|$)");
 
     @Override
     protected void onCreate(Bundle state) {
@@ -128,6 +139,67 @@ public class MainActivity extends Activity {
         } catch (Exception e) { /* old engine: default voice */ }
     }
 
+    // The phone's best voices for one language: a man's and a woman's (the same one if it has only one).
+    private LangVoices voicesFor(String tag) {
+        synchronized (langVoices) { LangVoices c = langVoices.get(tag); if (c != null) return c; }
+        LangVoices r = null;
+        try {
+            Locale want = Locale.forLanguageTag(tag);
+            Set<Voice> all = tts.getVoices();
+            Voice best = null, man = null, woman = null;
+            if (all != null) for (Voice v : all) {
+                if (!sameLang(v.getLocale(), want)) continue;
+                Set<String> f = v.getFeatures();
+                if (f != null && f.contains("notInstalled")) continue;
+                if (better(v, best)) best = v;
+                int sex = sexOf(v.getName().toLowerCase(Locale.ROOT));
+                if (sex == 1 && better(v, man)) man = v;
+                if (sex == 2 && better(v, woman)) woman = v;
+            }
+            if (best != null) {
+                r = new LangVoices();
+                r.man = man != null ? man : best; r.woman = woman != null ? woman : best; r.sexed = man != null && woman != null;
+            } else if (tts.isLanguageAvailable(want) >= TextToSpeech.LANG_AVAILABLE) {
+                r = new LangVoices();   // an engine that speaks the language without listing voices
+            }
+        } catch (Exception e) { r = null; }
+        if (r != null) synchronized (langVoices) { langVoices.put(tag, r); }
+        return r;
+    }
+
+    // Offline voices first (they work without internet and start at once), then the better sounding one.
+    private static boolean better(Voice v, Voice cur) {
+        if (cur == null) return true;
+        boolean vn = v.isNetworkConnectionRequired(), cn = cur.isNetworkConnectionRequired();
+        if (vn != cn) return !vn;
+        if (v.getQuality() != cur.getQuality()) return v.getQuality() > cur.getQuality();
+        return v.getLatency() < cur.getLatency();
+    }
+
+    // 1 = a man's voice, 2 = a woman's, 0 = not known. Google voice names end in a code like
+    // "te-in-x-tem-local": for Indian languages the last letter is m or f; Hindi: hid/hie men, hia/hic women.
+    private static int sexOf(String n) {
+        if (n.contains("female")) return 2;
+        if (n.contains("male")) return 1;
+        if (n.contains("hi-in-x-hid") || n.contains("hi-in-x-hie")) return 1;
+        if (n.contains("hi-in-x-hia") || n.contains("hi-in-x-hic")) return 2;
+        Matcher m = SEX_CODE.matcher(n);
+        if (m.find()) return "m".equals(m.group(1)) ? 1 : 2;
+        return 0;
+    }
+
+    private static boolean sameLang(Locale a, Locale b) {
+        if (a == null || b == null) return false;
+        if (a.getLanguage().equalsIgnoreCase(b.getLanguage())) return true;
+        try { return a.getISO3Language().equalsIgnoreCase(b.getISO3Language()); } catch (Exception e) { return false; }
+    }
+
+    private void say(String text, float pitch, float rate, int id) {
+        tts.setPitch(Math.max(0.5f, Math.min(2f, pitch)));
+        tts.setSpeechRate(Math.max(0.5f, Math.min(2f, rate)));
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u" + id);
+    }
+
     private void done(final String id) {
         if (id == null || !id.startsWith("u")) return;
         final String n = id.substring(1);
@@ -136,7 +208,8 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** The game calls this to speak: window.AndroidTTS.speak(text, pitch, rate, id, female). */
+    /** The game calls this to speak: window.AndroidTTS.speak(text, pitch, rate, id, female) in Indian English,
+     *  speak2(text, pitch, rate, id, female, "te-IN") in another language. */
     public class TtsBridge {
         @JavascriptInterface
         public void speak(String text, float pitch, float rate, int id, int female) {
@@ -144,10 +217,45 @@ public class MainActivity extends Activity {
             try {
                 Voice v = female == 1 ? femaleVoice : maleVoice;
                 if (v != null) tts.setVoice(v);
-                tts.setPitch(Math.max(0.5f, Math.min(2f, pitch)));
-                tts.setSpeechRate(Math.max(0.5f, Math.min(2f, rate)));
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u" + id);
+                else if (!"en-IN".equals(curLang)) tts.setLanguage(new Locale("en", "IN"));
+                curLang = "en-IN";
+                say(text, pitch, rate, id);
             } catch (Exception e) { done("u" + id); }
+        }
+        @JavascriptInterface
+        public void speak2(String text, float pitch, float rate, int id, int female, String tag) {
+            if (tag == null || tag.startsWith("en")) { speak(text, pitch, rate, id, female); return; }
+            if (!ttsReady || tts == null) { done("u" + id); return; }
+            try {
+                LangVoices lv = voicesFor(tag);
+                if (lv == null) { done("u" + id); return; }
+                Voice v = female == 1 ? lv.woman : lv.man;
+                if (v != null) tts.setVoice(v); else tts.setLanguage(Locale.forLanguageTag(tag));
+                curLang = tag;
+                say(text, pitch, rate, id);
+            } catch (Exception e) { done("u" + id); }
+        }
+        /** "" = the phone has no voice for this language, "mf" = a man's and a woman's voice, "x" = one voice. */
+        @JavascriptInterface
+        public String hasLang(String tag) {
+            if (!ttsReady || tts == null || tag == null) return "";
+            LangVoices lv = voicesFor(tag);
+            return lv == null ? "" : lv.sexed ? "mf" : "x";
+        }
+        /** Open the phone's screen for downloading voices. */
+        @JavascriptInterface
+        public void installVoice() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        Intent i = new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    } catch (Exception e) {
+                        try { startActivity(new Intent("com.android.settings.TTS_SETTINGS")); } catch (Exception e2) { /* no settings screen */ }
+                    }
+                }
+            });
         }
         @JavascriptInterface
         public void stop() { if (tts != null) tts.stop(); }
@@ -206,6 +314,7 @@ public class MainActivity extends Activity {
         super.onResume();
         web.onResume();
         hideBars();
+        synchronized (langVoices) { langVoices.clear(); }   // a voice may have been downloaded meanwhile
     }
 
     @Override

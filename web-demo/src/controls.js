@@ -208,7 +208,7 @@ export class Controls {
       gas: h('gas') || k.has('w') || k.has('arrowup'), brake: h('brake') || k.has('s') || k.has('arrowdown'),
       handbrake: h('handbrake') || k.has(' '), horn: h('horn') || k.has('h'),
       boost: h('boost') || k.has('shift'), left: h('left'), right: h('right'), mapPressed: !!p.map,
-      takedownPressed: !!p.takedown || !!p.pickup, drivemodePressed: !!p.drivemode,
+      takedownPressed: !!p.takedown || !!p.pickup, fightPressed: !!p.takedown, drivemodePressed: !!p.drivemode,
       colorPressed: !!p.color, dancePressed: !!p.dance,
       talkPressed: !!p.talk, robPressed: !!p.rob, buyPressed: !!p.buy, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
       slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
