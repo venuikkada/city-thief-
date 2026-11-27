@@ -27,8 +27,9 @@
 
   <!-- ===================== HUD ===================== -->
   <div id="hud" class="hidden foot">
-    <!-- Sniper scope view: first in the HUD so the map, money and buttons stay on top. -->
-    <div id="scope" class="hidden"><div class="lens"></div></div>
+    <!-- Scope view (2X / 4X / 8X): first in the HUD so the map, money and buttons stay on top. -->
+    <div id="scope" class="hidden"><div class="lens"><svg viewBox="-100 -100 200 200"></svg><b class="zoom">4X</b></div></div>
+    <div id="reddot" class="hidden"></div>
     <div id="map-wrap">
       <canvas id="minimap"></canvas>
       <div id="stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
@@ -81,10 +82,11 @@
     </div>
     <div id="money">&#8377; 0</div>
 
-    <!-- Two gun slots (like PUBG): tap one to use it, tap it again for the next gun of that kind -->
+    <!-- Gun slots like PUBG: 1 + 2 = main guns, 3 = pistol. Tap one to take it out, tap the gun in your hands to put it away -->
     <div id="btn-weapon" class="weapon-slots">
-      <button id="btn-slot1" class="slot" aria-label="Main gun"><i class="key">1</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">MAIN GUN</b><span class="am">EMPTY</span></button>
-      <button id="btn-slot2" class="slot" aria-label="Pistol"><i class="key">2</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">PISTOL</b><span class="am">12 | 48</span></button>
+      <button id="btn-slot1" class="slot empty" aria-label="Main gun 1"><i class="key">1</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">EMPTY</b><span class="am">PICK UP</span><em class="sg"></em></button>
+      <button id="btn-slot2" class="slot empty" aria-label="Main gun 2"><i class="key">2</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">EMPTY</b><span class="am">PICK UP</span><em class="sg"></em></button>
+      <button id="btn-slot3" class="slot side" aria-label="Pistol"><i class="key">3</i><svg viewBox="0 0 24 12"><path d=""/></svg><b class="nm">PISTOL</b><span class="am">12 | 48</span><em class="sg"></em></button>
     </div>
     <div id="reloading" class="hidden">RELOADING</div>
 
@@ -107,11 +109,14 @@
 
     <!-- On foot -->
     <button id="btn-fire" class="hud-btn round fire foot-only" aria-label="Fire">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg><span>FIRE</span>
+      <svg class="gun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg>
+      <svg class="fist" viewBox="0 0 24 24"><path d="M6.2 10.2a1.9 1.9 0 0 1 3.8 0v-.6a1.9 1.9 0 0 1 3.8 0v.4a1.9 1.9 0 0 1 3.8.3v5.2a5.6 5.6 0 0 1-5.6 5.6h-.6A5.2 5.2 0 0 1 6.2 16zM6.2 12.4H5a1.5 1.5 0 0 0 0 3h1.2" stroke="none"/></svg>
+      <span class="lf">FIRE</span><span class="lp">PUNCH</span>
     </button>
     <button id="btn-fire-l" class="hud-btn round foot-only" aria-label="Fire (left)">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" fill="none"/></svg>
     </button>
+    <button id="btn-sight" class="hud-btn round foot-only hidden" aria-label="Change the sight"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="6.5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg><b>4X</b></button>
     <button id="btn-aim" class="hud-btn round foot-only" aria-label="Aim">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="#fff"/></svg><span>AIM</span>
     </button>
@@ -234,7 +239,8 @@
         <b>PC CONTROLS</b>
         <span><i>W A S D</i> move / drive &middot; <i>Mouse</i> look &middot; <i>Left click</i> fire &middot; <i>Right click</i> aim</span>
         <span><i>Shift</i> sprint / nitro &middot; <i>Space</i> jump / handbrake (aiming: slow-motion dive) &middot; <i>E</i> get in / out of a car</span>
-        <span><i>1</i> <i>2</i> <i>Wheel</i> guns &middot; <i>R</i> reload &middot; <i>C</i> crouch &middot; <i>G</i> pick up &middot; <i>T</i> takedown / fight &middot; <i>N</i> sutli bomb</span>
+        <span><i>1</i> <i>2</i> <i>3</i> <i>Wheel</i> guns &middot; <i>X</i> gun away (run faster) &middot; <i>V</i> change sight / scope &middot; <i>R</i> reload &middot; <i>G</i> pick up</span>
+        <span><i>C</i> crouch &middot; <i>T</i> takedown / fight &middot; <i>N</i> sutli bomb</span>
         <span><i>Y</i> talk &middot; <i>U</i> rob &middot; <i>I</i> buy &middot; <i>O</i> push &middot; <i>H</i> hire / horn &middot; <i>K</i> photo</span>
         <span><i>M</i> map &middot; <i>V</i> car camera &middot; <i>F11</i> full screen &middot; <i>Esc</i> pause</span>
       </div>
@@ -327,6 +333,6 @@
     <div id="load-text">Loading Navapur...</div>
   </div>
 
-  <script type="module" src="src/main.js?v=9.6"></script>
+  <script type="module" src="src/main.js?v=9.7"></script>
 </body>
 </html>

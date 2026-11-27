@@ -12,8 +12,12 @@
 // (save them first), an ambush hits on the road to the job (gang cars or men from an alley), the
 // police must be lost before the job, every safehouse has a twist, and the talking never makes you
 // wait - the next task starts while they finish their lines. TASK 1, 2, 3... count up on the HUD.
+// v9.7 - every mission also gets its OWN set piece (setpieces.js): sniper nest, arms drop, hold the
+// line, tail a car, intercept a courier, cut the power, plant trackers or a rescue - each with its
+// own story line, a quiet-or-loud choice, and step-by-step escalation instead of instant failure.
 import * as K from './mkit.js';
 import { dist, yawOf, pick } from './util.js';
+import { setPieceStep, setPieceKind } from './setpieces.js';
 import { LINES, HALF_ROAD } from './world.js';
 
 const PI = Math.PI;
@@ -856,20 +860,6 @@ function restoreStep(def, n) {
   };
 }
 
-// Every mission gets at least two jobs to prepare. The second one depends on the first.
-function withSecondPrep(A, id) {
-  if (A.prep.length >= 2) return A.prep;
-  const p = A.prep[0];
-  const pool = {
-    gear: [{ t: 'scout', n: 2 }, { t: 'lookouts', n: 2 }, { t: 'cash', n: 1 }, { t: 'scout', n: 3 }],
-    scout: [{ t: 'lookouts', n: 2 }], lookouts: [{ t: 'scout', n: 2 }], tune: [{ t: 'scout', n: 2 }, { t: 'lookouts', n: 2 }],
-    crew: [gear('a bulletproof vest', 500, 'armour')], bribe: [{ t: 'scout', n: 2 }, { t: 'lookouts', n: 2 }],
-    intel: [{ t: 'lookouts', n: 2 }], cash: [{ t: 'scout', n: 2 }], snitch: [{ t: 'lookouts', n: 2 }], ride: [{ t: 'scout', n: 2 }],
-  }[p.t] || [{ t: 'scout', n: 2 }];
-  const extra = pool[id % pool.length];
-  return p.t === 'ride' ? [extra, p] : [p, extra];   // the stolen car is driven to the job last
-}
-
 // Too fast? The getaway gets harder so that every mission lasts at least ~5 minutes:
 // more police stars, men waiting at the safehouse, or the safehouse is burned (go to a backup one).
 function getawayExtras(m) {
@@ -891,8 +881,13 @@ function buildSteps(def, A, core, m, H) {
     // v9.5: EVERY mission starts with goons at the meeting (more of them in later chapters).
     const trouble = 2 + (def.id > 30 ? 1 : 0) + (def.id > 60 ? 1 : 0);
     out.push(meetStep({ at, who, rig, trouble, lines: [['VIKRAM', `${who.includes('DADI') ? 'Namaste Dadi.' : who === 'RAVI' ? 'Ravi bhai!' : 'Namaste.'}`], ...lines.map((l) => [who, l]), ['VIKRAM', vik]] }));
-    for (const p of withSecondPrep(A, def.id)) {
-      if (p.t === 'gear') out.push(gearStep(p, A));
+    // The mission's own preparation, then its set piece (a stolen car is always driven to the job last).
+    const U = { free, freeOffRoad, ring, onRoad, H };
+    const sp = setPieceStep(def.id, site, U);
+    const preps = [...A.prep.filter((p) => p.t !== 'ride'), ...(sp ? [{ t: 'set' }] : []), ...A.prep.filter((p) => p.t === 'ride')];
+    for (const p of preps) {
+      if (p.t === 'set') out.push(sp);
+      else if (p.t === 'gear') out.push(gearStep(p, A));
       else if (p.t === 'scout') out.push(scoutStep(p, site, H));
       else if (p.t === 'lookouts') out.push(lookoutStep(p, site));
       else if (p.t === 'cash') out.push(cashStep(p));
@@ -905,8 +900,8 @@ function buildSteps(def, A, core, m, H) {
       else if (p.t === 'bribe') out.push(meetStep({ at: p.at || null, who: p.who, rig: p.rig, price: p.price, name: 'bribe', text: p.price ? `Pay ${title(p.who)} ₹${p.price} for information` : `Talk to ${title(p.who)}`,
         lines: [['VIKRAM', p.price ? `Here, ${p.price} rupees. Talk.` : 'Quick, tell me.'], [p.who, p.line]] }));
     }
-    // v9.5: EVERY mission has an ambush on the road to the job.
-    const amb = { cars: def.id > 30 ? 2 : 1, thugs: 2 + (def.id > 50 ? 1 : 0) };
+    // v9.5: an ambush on the road to the job - unless the set piece was already a big fight (v9.7: variety).
+    const amb = ['hold', 'arms', 'rescue'].includes(setPieceKind(def.id)) ? null : { cars: def.id > 30 ? 2 : 1, thugs: 2 + (def.id > 50 ? 1 : 0) };
     out.push(siteStep(site, A.site, amb, H));
   }
   if (from === 2) out.push(restoreStep(def, 2));

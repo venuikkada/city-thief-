@@ -31,7 +31,7 @@ export class Controls {
     // name, held-type?, drag-to-look?
     const buttons = [
       ['btn-fire', 'fire', true, true], ['btn-fire-l', 'fire', true, true], ['btn-aim', 'aim', false, true],
-      ['btn-reload', 'reload'], ['btn-jump', 'jump'], ['btn-crouch', 'crouch'], ['btn-slot1', 'slot1'], ['btn-slot2', 'slot2'],
+      ['btn-reload', 'reload'], ['btn-jump', 'jump'], ['btn-crouch', 'crouch'], ['btn-slot1', 'slot1'], ['btn-slot2', 'slot2'], ['btn-slot3', 'slot3'], ['btn-sight', 'sight'],
       ['btn-enter', 'enter'], ['btn-pickup', 'pickup'], ['btn-callcops', 'callCops'],
       ['btn-gas', 'gas', true], ['btn-brake', 'brake', true], ['btn-handbrake', 'handbrake', true],
       ['btn-horn', 'horn', true], ['btn-cam', 'cam'], ['btn-exit', 'enter'],
@@ -46,10 +46,10 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'color', b: 'dance', n: 'bomb', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'holster', b: 'dance', n: 'bomb', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo' };
         if (map[k]) this.pending[map[k]] = true;
-        // 1 / 2 = gun slots (unless a "choose quiet or loud" question is on screen).
-        if ((k === '1' || k === '2') && document.getElementById('choice').classList.contains('hidden')) this.pending[k === '1' ? 'slot1' : 'slot2'] = true;
+        // 1 / 2 / 3 = gun slots (unless a "choose quiet or loud" question is on screen). X = put the gun away.
+        if ((k === '1' || k === '2' || k === '3') && document.getElementById('choice').classList.contains('hidden')) this.pending['slot' + k] = true;
       }
       this.keys.add(k);
       if ([' ', 'arrowup', 'arrowdown', 'tab'].includes(k)) e.preventDefault();
@@ -211,7 +211,7 @@ export class Controls {
       takedownPressed: !!p.takedown || !!p.pickup, fightPressed: !!p.takedown, drivemodePressed: !!p.drivemode,
       colorPressed: !!p.color, dancePressed: !!p.dance, bombPressed: !!p.bomb,
       talkPressed: !!p.talk, robPressed: !!p.rob, buyPressed: !!p.buy, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
-      slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
+      slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, slot3Pressed: !!p.slot3, holsterPressed: !!p.holster, sightPressed: !!p.sight || !!p.cam, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
     };
     this.mouseAimChanged = false;
     this.lookX = 0; this.lookY = 0;

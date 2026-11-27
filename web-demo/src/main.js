@@ -21,7 +21,8 @@ import { MISSIONS, CHAPTERS, MissionRunner, loadSave, writeSave, missionCar } fr
 import { Director } from './director.js';
 import { Music } from './music.js';
 import { Rewards, RANKS, SHOP, DAILY, rankOf, rankProgress } from './rewards.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, SIGHTS } from './weapons.js';
+import { Loot } from './loot.js';
 import { makeSky } from './sky.js';
 import { Atmosphere } from './atmosphere.js';
 import { WheelSystem, carLod, CAR_COLORS } from './vehicles.js';
@@ -165,6 +166,7 @@ class Game {
     this.cylinders = new Cylinders(this); this.cylinders.placeCity();   // red gas cylinders that blow up (v9.5)
     this.bombs = new Bombs(this);                                       // sutli bombs
     this.director = new Director(this, missionCar);                     // the city makes crazy things happen (v9.6)
+    this.loot = new Loot(this); this.loot.placeCity();                  // guns and scopes lying around, like PUBG (v9.7)
     this.ambience = new Ambience(this);     // horns, crowds, birds, crickets, sea, police radio, shop fans
 
     const n = COUNTS[quality];
@@ -447,7 +449,30 @@ class Game {
     const P = this.player, r = this.rewards.rank;
     P.maxHealth = 100 + (r >= 1 ? 20 : 0) + (r >= 5 ? 20 : 0);
     if (P.health > P.maxHealth || !this.mission) P.health = Math.min(P.maxHealth, Math.max(P.health, 0));
-    for (const id of this.save.weapons) if (!P.owned.includes(id)) P.giveWeapon(id, WEAPONS[id].mag * 3);
+    // Guns are picked up now (like PUBG); only the GOLDEN PISTOL from the shop is kept - it takes the pistol's slot.
+    if (this.save.weapons.includes('gold') && P.slots[3] !== 'gold') {
+      P.slots[3] = 'gold'; P.ammo.gold = { mag: P.magSize('gold'), reserve: WEAPONS.gold.mag * 3 };
+      if (P.weapon === 'pistol') P.weapon = 'gold';
+      if (P.lastGun === 'pistol') P.lastGun = 'gold';
+    }
+  }
+
+  // Something picked up: the PICK UP button (guns), or walked over (scopes, ammo, first aid).
+  collect(pk) {
+    const P = this.player, t = pk.type;
+    if (t === 'health') { P.health = P.maxHealth; this.hud.popup('+HEALTH', 'bonus'); }
+    else if (t === 'ammo') {
+      for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2);
+      P.bombs = Math.min(9, (P.bombs || 0) + 1); this.hud.setBombs(P.bombs); this.hud.popup('+AMMO +1 BOMB', 'bonus');
+    } else if (t.startsWith('sight_')) {
+      const sid = t.slice(6), S = SIGHTS[sid], on = P.addSight(sid);
+      const fits = P.owned.some((id) => WEAPONS[id].takes.includes(sid));
+      this.hud.showBig(S.name, '#6fd3ff', 1.3);
+      this.hud.toast(on ? `${S.name} on the ${WEAPONS[on].name} - AIM to look through it` : fits ? `${S.name} - tap the SIGHT button to put it on` : `${S.name} kept - it goes on a gun it fits (${sid === 'x8' ? 'DMR / sniper' : sid === 'dot' ? 'any gun' : 'AR / DMR / sniper'})`);
+    } else if (WEAPONS[t]) P.pickGun(t, pk.ammo);
+    if (!pk.taken) this.pickups.take(pk);
+    if (!pk.auto && pk.onTake) pk.onTake(pk);   // (auto pick-ups already called it)
+    this.audio.reload(0.5);
   }
 
   // Big end text (death / busted) with grey slow motion.
@@ -511,6 +536,7 @@ class Game {
     if (this.cylinders) this.cylinders.reset();
     if (this.director) this.director.reset();
     if (this.bombs) this.bombs.clear();
+    if (this.loot) this.loot.reset();
     if (this.driving) this.driving.coasting = [];
     P.bombs = 3; P.dive = null; P.rollT = 0; this.hud.setBombs(3);
     if (P.outfit) P.setOutfit(null);   // a shirt bought in a shop: back to Vikram's own clothes
@@ -547,17 +573,18 @@ class Game {
     if (this.dispatch.heli) this.dispatch.heli.remove();
     this.waypoint = null;
     this.ravi = null;
-    P.slots = { 1: null, 2: 'pistol' }; P.owned = ['pistol']; P.weapon = 'pistol'; P.bloom = 0;
+    // Like PUBG: empty hands at the start (he runs faster), only his pistol in the holster.
+    P.slots = { 1: null, 2: null, 3: 'pistol' }; P._weapon = 'fists'; P.lastGun = 'pistol'; P.bloom = 0;
+    P.sights = new Set(['iron']); P.sightOf = {}; P.fp = false;
     this.fx.clearHoles();
     for (const id of Object.keys(P.ammo)) P.ammo[id] = { mag: 0, reserve: 0 };
     P.ammo.pistol = { mag: P.magSize('pistol'), reserve: 48 };
     P.reloadT = 0; P.aiming = false; P.carrying = false;
     this.applyPerks();
-    if (this.save.weapons.includes('gold')) P.weapon = 'gold';
     P.armor = this.rewards.has('armour') ? 60 : 0;
     P.health = P.maxHealth;
     this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.punchTarget = null; this.driving.nitro = 1;
-    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; }
+    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; D.chaseStart = -999; }
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -592,11 +619,10 @@ class Game {
     this.hud.setClock('');
     this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission(tr('FREE ROAM'), tr('FREE ROAM OBJECTIVE') || 'Explore Navapur: walk into any shop (BUY or ROB THE TILL), steal cars, grab the shotgun in the courtyard, drive to the beach. Tap a gun slot to switch guns. Want a chase? Pause > CALL THE COPS.');
-    // Two guns ready from the start: SMG (slot 1) and pistol (slot 2).
-    if (!this.player.owned.includes('smg')) this.player.giveWeapon('smg', WEAPONS.smg.mag * 3);
-    this.player.weapon = 'smg';
-    this.pickups.spawn('shotgun', 41, 41);
+    this.hud.setMission(tr('FREE ROAM'), tr('FREE ROAM OBJECTIVE') || 'Explore Navapur. Guns lie around (yellow light): walk up and PICK UP. Scopes (blue light) go on your gun. Empty hands = you run faster. Walk into any shop, steal cars, drive to the beach. Want a chase? Pause > CALL THE COPS.');
+    // Like PUBG: empty hands. A rifle and a red dot lie right next to him to start with.
+    this.loot.starter(START.x, START.z, 'rifle', 'sight_dot');
+    this.pickups.spawn('shotgun', 41, 41, { yaw: 0.6 });
     this.pickups.spawn('health', 6.4, 35);
     this.pickups.spawn('ammo', 6.4, 45);
     this.enterPlay();
@@ -738,6 +764,9 @@ class Game {
   cutscene(opts) {
     this.mode = 'cutscene';
     this.controls.enabled = false; this.controls.releaseAll();
+    // Leave the first-person sight view (the body must be seen in the scene).
+    const Pl = this.player; Pl.aiming = false; Pl.fp = false; Pl.scopeHide = false; this.camera3p.aimBlend = 0;
+    if (Pl.mesh && !Pl.inCar) Pl.mesh.visible = true;
     document.body.classList.add('cutscene');
     document.getElementById('letterbox').classList.remove('hidden');
     this.cut = { from: new THREE.Vector3(...opts.from), at: new THREE.Vector3(...opts.at), t: 0, onDone: opts.onDone,
@@ -855,6 +884,7 @@ class Game {
     for (const a of [...this.ambient]) a.update(dt);
     for (const o of [...this.officers]) o.update(dt);
     this.pickups.update(dt);
+    if (this.loot) this.loot.update(dt);
     if (this.cylinders) this.cylinders.update(dt);
     if (this.bombs) this.bombs.update(dt);
     if (this.director) this.director.update(dt);
@@ -963,16 +993,18 @@ class Game {
       this.applySettings();
       this.hud.toast(settings.drive === 'buttons' ? 'CAR CONTROLS: ARROW BUTTONS' : 'CAR CONTROLS: JOYSTICK');
     }
+    // A mission starts: a small gun kit lies next to Vikram (he starts with empty hands, like PUBG).
+    if (this.mission && !this.mission.kitDone && !P.inCar && this.mode === 'play' && P.controlsEnabled) {
+      this.mission.kitDone = true;
+      const bought = ['rifle', 'shotgun'].find((id) => this.save.weapons.includes(id));   // a gun from the SHOP always waits here
+      if (!P.slots[1] && !P.slots[2]) { this.loot.starter(P.x, P.z, bought); this.hud.toast('A gun lies next to you (yellow light) - walk up and PICK UP'); }
+    }
     if (input.pickupPressed && !P.inCar) {
       const pk = this.pickups.near(P.x, P.z);
-      if (pk) {
-        if (pk.type === 'health') P.health = P.maxHealth;
-        else if (pk.type === 'ammo') { for (const id of P.owned) P.ammo[id].reserve += Math.round(WEAPONS[id].mag * 2); P.bombs = Math.min(9, (P.bombs || 0) + 1); this.hud.setBombs(P.bombs); }
-        else if (WEAPONS[pk.type]) { P.giveWeapon(pk.type, WEAPONS[pk.type].mag * 3); P.weapon = pk.type; this.hud.showBig(WEAPONS[pk.type].name, '#ffc531', 1.5); }
-        this.pickups.take(pk);
-        this.audio.reload();
-      }
+      if (pk) this.collect(pk);
     }
+    // X: throw colour in the Holi mission, otherwise put the gun away.
+    if (input.holsterPressed && this.holi && this.colorBombs > 0) { this.throwColor(); input.holsterPressed = false; }
     if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars));
     if (input.mapPressed) { this.openMap(); return; }
     if (input.camPressed && P.inCar) this.carCamFar = !this.carCamFar;
@@ -1243,7 +1275,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.6)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.7)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

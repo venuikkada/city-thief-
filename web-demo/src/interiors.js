@@ -12,6 +12,7 @@ import { AmbientPerson } from './ambient.js';
 import { CharacterRig, loadedCrowd } from './characters.js';
 import { dist, pick, seededRandom } from './util.js';
 import { WEAPONS } from './weapons.js';
+import { rollLoot } from './loot.js';
 import { t as tr, tLabel } from './i18n.js';
 
 const OPEN_DIST = 16, CLOSE_DIST = 30, MAX_OPEN = 3;
@@ -532,6 +533,7 @@ export class Interiors {
     nav.markRoom(room.x0, room.z0, room.x1, room.z1, it.undo);
     it.room = room;
     this.spawnPeople(it);
+    this.lootFor(it);
     D.openIt = it;
     this.open.push(it);
     return it;
@@ -554,6 +556,19 @@ export class Interiors {
 
   closeAll() { for (const it of [...this.open]) this.close(it); this.timers = []; g_indoors(this.game, false); }
   later(sec, fn) { this.timers.push({ at: this.game.time + sec, fn }); }
+
+  // v9.7 loot (like PUBG): some shops have a gun or a scope lying inside. Hardware and auto parts shops
+  // ("special maal under the counter") always do. Taken? The shop gets new loot 3 minutes later.
+  lootFor(it) {
+    const g = this.game, D = it.D, B = it.B, S = it.S;
+    if (!g.loot || (D.lootT && g.time - D.lootT < 180) || !B.spots || !B.spots.length) return;
+    const r = seededRandom(D.id * 5.3 + Math.floor(g.time / 180));
+    const special = S.kind === 'hardware' || S.kind === 'auto';
+    if (!special && r() > 0.3) return;
+    const s = B.spots[Math.floor(r() * B.spots.length)];
+    const type = special ? pick(['rifle', 'dmr', 'shotgun', 'smg', 'sniper', 'rifle']) : rollLoot(r());
+    g.pickups.spawn(type, B.wx(s.u, s.v), B.wz(s.u, s.v), { yaw: r() * 6.28, onTake: () => { D.lootT = g.time; } });
+  }
 
   // ---------- People inside ----------
   spawnPeople(it) {

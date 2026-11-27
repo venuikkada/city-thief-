@@ -90,6 +90,30 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9.7: guns like PUBG, a 2-minute police grace, prettier streets, a set piece in every mission:**
+  - **Empty hands first:** Vikram starts with bare FISTS (FIRE = PUNCH) and his pistol in the holster. With empty
+    hands he runs about 18% faster. Guns lie around the city (yellow light; 70 loot spots by the shop doors, fresh
+    loot 3 minutes after you take it) and fallen cops / gangsters drop theirs: walk up and PICK UP (the button shows
+    the gun's name). Slots 1 + 2 = main guns, slot 3 = pistol. Tap a slot to take that gun out, tap the gun in your
+    hands to put it away. Both slots full? The new gun swaps with the one in your hands (it drops on the ground).
+    A small gun kit lies next to Vikram at the start of every mission; SHOP guns always wait there.
+  - **Guns (fictional names):** CHEETAH SMG, DHAMAAL 12 shotgun, TOOFAN AR, SHIKARI DMR (4X), GARUDA SNIPER (8X,
+    bolt action), PISTOL, GOLDEN PISTOL. Heavier guns slow him a little.
+  - **Real sights, first person (AIM):** every gun now aims DOWN ITS SIGHT like PUBG: iron sights (line up the ring /
+    notch and the post), a RED DOT, or a 2X / 4X / 8X SCOPE (black lens, red chevron or mil-dot reticle, a little sway -
+    crouch to steady it). Scopes lie around too (blue light) - walk over one and it goes on a gun it fits. The SIGHT
+    button (PC: V) switches sights. Aiming is far more accurate (a scoped sniper is near perfect). PC: X = gun away,
+    1 / 2 / 3 = slots.
+  - **Police grace:** the first 2 minutes of any chase the police cannot kill or arrest Vikram (he keeps 12 health,
+    a grab lasts until the 2 minutes are over) - time to fight back and take them all down. A blue shield timer shows it.
+  - **Prettier city:** real grey roads (they were almost black), festival bunting across the old-town streets,
+    balconies with painted railings and flower pots, sunshades over the windows, flower boxes on the footpaths,
+    yellow-and-black speed breakers and manhole covers. Phones on LOW skip the heavy bits.
+  - **A set piece in EVERY mission (researched: missions get boring when they are all the same checklist):** each of
+    the 76 missions gets one of eight special tasks with its own story line - SNIPER NEST, ARMS DROP, HOLD THE LINE,
+    TAIL A CAR, INTERCEPT A COURIER, CUT THE POWER, PLANT TRACKERS, RESCUE. Quiet or loud is your choice, and things
+    get harder step by step (backup comes, he runs, his gang protects him) instead of failing at once.
+    Code: `web-demo/src/setpieces.js`, guns: `weapons.js` + `player.js`, loot: `loot.js`.
 - **v9.6: the Navapur Director (free roam is never quiet):** like a film director, the city makes something crazy
   happen every 45-75 seconds - calm, trouble, relief, calm again - and waits when Vikram is already busy (2+ stars,
   a fight, inside a shop). Events (with a timer on the mission box, red pins and a reward):

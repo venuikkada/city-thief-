@@ -19,8 +19,8 @@ export const SHOP = [
   { id: 'armour', name: 'BODY ARMOUR', desc: 'Start every mission with armour (+60)', price: 1500, rank: 0, icon: '🦺' },
   { id: 'nitro', name: 'NITRO TANK', desc: 'Nitro lasts twice as long', price: 2000, rank: 0, icon: '⚡' },
   { id: 'mags', name: 'BIG MAGAZINES', desc: '+50% bullets in every gun', price: 2500, rank: 1, icon: '🔫' },
-  { id: 'shotgun', name: 'SHOTGUN', desc: 'Huge power up close', price: 3000, rank: 2, icon: '💥', weapon: true },
-  { id: 'rifle', name: 'RIFLE', desc: 'Long range, fast fire', price: 6000, rank: 4, icon: '🎯', weapon: true },
+  { id: 'shotgun', name: 'DHAMAAL 12 SHOTGUN', desc: 'Huge power up close. Waits next to you at every start', price: 3000, rank: 2, icon: '💥', weapon: true },
+  { id: 'rifle', name: 'TOOFAN AR', desc: 'Long range, fast fire. Waits next to you at every start', price: 6000, rank: 4, icon: '🎯', weapon: true },
   { id: 'gold', name: 'GOLDEN PISTOL', desc: 'Double damage. Pure style.', price: 15000, rank: 6, icon: '👑', weapon: true },
 ];
 

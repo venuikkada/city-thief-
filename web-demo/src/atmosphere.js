@@ -143,7 +143,7 @@ export class Atmosphere {
     g.renderer.toneMappingExposure = 0.9 + n * 0.32 - st * 0.08 + dark * 0.3 + this.flash * 0.5;
     g.sun.intensity = (2.6 - n * 1.95) * (1 - st * 0.45) + dark * 0.45;
     g.sun.color.copy(DAY.sun).lerp(NIGHT.sun, n);
-    g.hemi.intensity = 0.6 + n * 0.25 + dark * 0.4 + this.flash * 2.5;
+    g.hemi.intensity = 0.78 - n * 0.03 + dark * 0.4 + this.flash * 2.5;   // v9.7: brighter shade by day (streets were too dark)
     g.hemi.color.copy(DAY.hemiSky).lerp(NIGHT.hemiSky, n);
     g.hemi.groundColor.copy(DAY.hemiGround).lerp(NIGHT.hemiGround, n);
     const env = n > 0.5 ? this.nightEnv : this.dayEnv;
@@ -158,7 +158,7 @@ export class Atmosphere {
       M.neon.color.setScalar(2.2 * (1 + lit * 0.6) * (L * 0.97 + 0.03));
       g.world.glowMat.color.setScalar(L > 0.5 || n < 0.5 ? 1 : 0.08);
       M.ground.roughness = 0.92 - Math.max(st, r) * 0.62;
-      M.ground.envMapIntensity = 0.45 + Math.max(st, r) * 0.7;   // dry roads reflect less sky
+      M.ground.envMapIntensity = 0.32 + Math.max(st, r) * 0.8;   // dry roads reflect less sky (no blue tint)
       this.pool.visible = lit > 0.03;
       this.pool.material.opacity = lit * 0.75;
     }

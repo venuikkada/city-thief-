@@ -249,6 +249,71 @@ export class World {
         }
       }
     }
+    this.roadDetails();
+  }
+
+  // v9.7 beauty pass: yellow-and-black speed breakers before some crossings, round manhole covers,
+  // and festival bunting (strings of little coloured flags) across the busy streets.
+  roadDetails() {
+    const r = this.random, y = ROAD_TOP + 0.012;
+    for (let a = 0; a < LINES.length; a++) {
+      const k = LINES[a];
+      for (let j = 0; j < LINES.length - 1; j++) {
+        const s0 = LINES[j], s1 = LINES[j + 1], mid = (s0 + s1) / 2;
+        // Two manholes in the lanes (one each way), not in the same place on every street.
+        for (const lane of [-1, 1]) {
+          const t = mid + (r() - 0.5) * 40, l = k + lane * LANE_OFF + (r() - 0.5) * 0.8;
+          this.add('static', part(MANHOLE, 0x4a4b4f, t, y, l, 1, 1, 1, -Math.PI / 2, 0, 0), t, l);
+          this.add('static', part(MANHOLE, 0x4a4b4f, l, y, t, 1, 1, 1, -Math.PI / 2, 0, 0), l, t);
+        }
+        // Speed breakers in front of one crossing in three.
+        if ((a + j) % 3 === 0) for (const end of [s0 + STOP_BACK + 4, s1 - STOP_BACK - 4]) {
+          this.addBox(end, y, k, 0.55, 0.03, ROAD_W - 0.4, 0x222222);
+          this.addBox(k, y, end, ROAD_W - 0.4, 0.03, 0.55, 0x222222);
+          for (let q = -HALF_ROAD + 0.6; q < HALF_ROAD - 0.4; q += 0.9) {
+            this.addBox(end, y + 0.004, k + q, 0.56, 0.03, 0.42, 0xf2c230);
+            this.addBox(k + q, y + 0.004, end, 0.42, 0.03, 0.56, 0xf2c230);
+          }
+        }
+      }
+    }
+    // Bunting across the streets that have buildings on both sides.
+    const built = (i, j) => i >= 0 && j >= 0 && i < 6 && j < 6 && ['old', 'market', 'start', 'ware'].includes(BLOCKS[j][i]);
+    for (let a = 1; a < LINES.length - 1; a++) {
+      const k = LINES[a];
+      for (let b = 0; b < LINES.length - 1; b++) {
+        const mid = (LINES[b] + LINES[b + 1]) / 2;
+        const market = BLOCKS[a - 1] && (BLOCKS[a - 1][b] === 'market' || BLOCKS[a][b] === 'market');
+        const offs = market ? [-6, 0, 6] : [-5, 5];
+        if (built(b, a - 1) && built(b, a)) for (const o of offs) this.bunting(mid + o, k - 8.35, mid + o, k + 8.35);   // road along X: string runs along Z
+        if (built(a - 1, b) && built(a, b)) for (const o of offs) this.bunting(k - 8.35, mid + o, k + 8.35, mid + o);   // road along Z
+      }
+    }
+  }
+
+  // A string of little triangle flags from wall to wall, sagging in the middle.
+  bunting(ax, az, bx, bz) {
+    const r = this.random, top = FOOT_TOP + 7.1, sag = 0.9 + r() * 0.4;
+    const len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len, uz = (bz - az) / len;
+    const nx = -uz, nz = ux;   // the flags face along the street
+    const n = Math.floor(len / 0.48), pos = [], nor = [], col = [];
+    const cols = BUNTING.map((h) => new THREE.Color(h));
+    const at = (t) => top - sag * (1 - (2 * t - 1) * (2 * t - 1));
+    let prev = null;
+    for (let i = 0; i <= 24; i++) { const t = i / 24, p = [ax + ux * len * t, at(t), az + uz * len * t]; if (prev) this.wires.push(...prev, ...p); prev = p; }
+    for (let i = 0; i < n; i++) {
+      const t0 = (i + 0.15) / n, t1 = (i + 0.85) / n, tm = (t0 + t1) / 2;
+      const c = cols[(i + Math.floor(r() * 2)) % cols.length];
+      const p0 = [ax + ux * len * t0, at(t0), az + uz * len * t0], p1 = [ax + ux * len * t1, at(t1), az + uz * len * t1];
+      const p2 = [ax + ux * len * tm, at(tm) - 0.42, az + uz * len * tm];
+      pos.push(...p0, ...p2, ...p1);
+      for (let v = 0; v < 3; v++) { nor.push(nx, 0, nz); col.push(c.r, c.g, c.b); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    this.add('flags', geo, (ax + bx) / 2, (az + bz) / 2);
   }
 
   slab(x0, z0, x1, z1, mat = 'paving') {
@@ -313,7 +378,9 @@ export class World {
       const s = Math.floor(r() * FACADE_COUNT);
       this.add('facade' + s, wallsGeometry(x0, z0, x1, z1, FOOT_TOP + SHOP_H, top, 3, FLOOR_H), cx, cz);
       const trims = [0xd9ccb0, 0xb5705c, 0x8fae98, 0x9aa0a8, 0x8c4735, 0xd8cc84];
-      if (r() < 0.6) for (let f = 1; f < floors; f++) this.addBox(cx, FOOT_TOP + SHOP_H + f * FLOOR_H - 0.08, cz, w + 0.5, 0.14, d + 0.5, trims[s]);
+      const banded = r() < 0.6;
+      if (banded) for (let f = 1; f < floors; f++) this.addBox(cx, FOOT_TOP + SHOP_H + f * FLOOR_H - 0.08, cz, w + 0.5, 0.14, d + 0.5, trims[s]);
+      this.frontDetails(x0, z0, x1, z1, facing, floors, trims[s], banded);
     }
     this.addBox(cx, FOOT_TOP + SHOP_H, cz, w + 0.3, 0.3, d + 0.3, 0xcfc8ba);
     this.roof(x0, z0, x1, z1, top);
@@ -344,6 +411,43 @@ export class World {
     }
     const solid = this.addSolid(x0, z0, x1, z1, top - FOOT_TOP);
     this.doors.push({ ...door, id: this.doors.length, kind: 'shop', sign: signIdx, x0, z0, x1, z1, top, solid, ceil: 3.5 });
+  }
+
+  // v9.7 beauty pass: real depth on the street fronts - concrete sunshades (chajjas) over the windows,
+  // little balconies with painted railings, flower pots and the odd AC unit.
+  frontDetails(x0, z0, x1, z1, facing, floors, trim, banded) {
+    const r = this.random, [nx, nz] = facing;
+    const side = WALL_SIDES.findIndex(([a, b]) => a === nx && b === nz);
+    const len = side % 2 === 0 ? x1 - x0 : z1 - z0;
+    // A point on the front wall, s metres from its start corner (the same way the wall texture runs).
+    const wall = (s) => side === 0 ? [x1 - s, z0] : side === 1 ? [x1, z1 - s] : side === 2 ? [x0 + s, z1] : [x0, z0 + s];
+    const tiles = Math.floor(len / 3), out = (dist) => [nx * dist, nz * dist];
+    const box = (s, yc, outD, along, h, depth, color) => {
+      const [wx, wz] = wall(s), [ox, oz] = out(outD);
+      if (nx === 0) this.addBox(wx + ox, yc, wz + oz, along, h, depth, color); else this.addBox(wx + ox, yc, wz + oz, depth, h, along, color);
+    };
+    const rails = [0x2f6f8f, 0x8c4735, 0x3e6b48, 0xece4d2, 0x4a4d52, 0xb03a2e];
+    const rail = rails[Math.floor(r() * rails.length)], withBalcony = this.quality !== 'low' && r() < 0.55;
+    const pick1 = 1 + Math.floor(r() * Math.max(1, tiles - 2)), pick2 = tiles - 1 - Math.floor(r() * Math.max(1, tiles / 2));
+    for (let f = 0; f < floors; f++) {
+      const yb = FOOT_TOP + SHOP_H + f * FLOOR_H;
+      // Sunshade over the whole row of windows (not where a floor band already runs).
+      if (!banded) box(len / 2, yb + FLOOR_H - 0.46, 0.22, len - 0.4, 0.08, 0.44, 0xd6cfbf);
+      if (!withBalcony) continue;
+      for (const k of new Set([pick1, pick2])) {
+        if (k < 0 || k >= tiles) continue;
+        const s = 1.5 + k * 3;
+        box(s, yb + 0.06, 0.45, 2.3, 0.12, 0.9, 0xcfc8ba);                          // floor slab
+        box(s, yb + 0.47, 0.88, 2.3, 0.7, 0.05, rail);                               // railing front
+        for (const e of [-1.13, 1.13]) box(s + e, yb + 0.47, 0.45, 0.05, 0.7, 0.9, rail);   // railing sides
+        if (r() < 0.5) {   // a pot of flowers on the railing
+          const [px, pz] = wall(s + (r() - 0.5) * 1.4), [ox, oz] = out(0.62);
+          this.add('static', part(BUSH, 0x3f7a2e, px + ox, yb + 0.95, pz + oz, 0.26, 0.2, 0.26), px, pz);
+          this.addBox(px + ox, yb + 1.12, pz + oz, 0.12, 0.08, 0.12, [0xe8467c, 0xf2a531, 0xd9302f, 0xf5e05a][Math.floor(r() * 4)]);
+        }
+        if (r() < 0.3) box(s + 0.75, yb + 1.35, 0.25, 0.7, 0.45, 0.5, 0xe2e2e2);   // AC unit on the wall
+      }
+    }
   }
 
   // Where the front door of a building goes: the middle of the shop front (unit metres wide)
@@ -501,9 +605,24 @@ export class World {
         if (s + 10 < len - 8) {
           const tx = px + ux * 10 + inx * 0.2, tz = pz + uz * 10 + inz * 0.2;
           if (palms) this.palm(tx, tz, 7 + this.random() * 3); else this.tree(tx, tz, 0.9 + this.random() * 0.4);
+          if (!palms && this.quality !== 'low' && this.random() < 0.55) this.planter(px + ux * 5 + inx * 0.1, pz + uz * 5 + inz * 0.1, ux, uz);
         }
       }
     }
+  }
+
+  // A long concrete flower box on the footpath: green bushes and bright flowers (marigold, bougainvillea).
+  planter(x, z, ux, uz) {
+    const r = this.random, y = FOOT_TOP, L = 1.8;
+    this.addBox(x, y + 0.25, z, ux ? L : 0.55, 0.5, uz ? L : 0.55, 0xbdb5a6);
+    this.addBox(x, y + 0.49, z, ux ? L - 0.12 : 0.43, 0.04, uz ? L - 0.12 : 0.43, 0x4a3524);   // soil
+    const fl = [0xf2a531, 0xe8467c, 0xd9302f, 0xf5e05a, 0xc84fd8];
+    for (let i = 0; i < 3; i++) {
+      const o = (i - 1) * 0.55, bx = x + ux * o, bz = z + uz * o;
+      this.add('static', part(BUSH, i % 2 ? 0x3f7a2e : 0x4f8a34, bx, y + 0.72, bz, 0.34, 0.28, 0.34), x, z);
+      this.addBox(bx + (r() - 0.5) * 0.25, y + 0.96, bz + (r() - 0.5) * 0.25, 0.12, 0.08, 0.12, fl[Math.floor(r() * fl.length)]);
+    }
+    this.addCircle(x, z, 0.5);
   }
 
   lamp(x, z, outX, outZ) {
@@ -719,6 +838,7 @@ export class World {
       glow: vertexColorGlow,
       palm: new THREE.MeshStandardMaterial({ map: palmTexture(), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8, vertexColors: true }),
       pool: new THREE.MeshStandardMaterial({ color: 0x2fb6d6, roughness: 0.05, metalness: 0.2 }),
+      flags: new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.9 }),
     };
     this.poolMat = mats.pool;
     this.mats = mats;
@@ -858,6 +978,9 @@ export class World {
 }
 
 const TANK = new THREE.CylinderGeometry(0.6, 0.6, 1.3, 12);
+const MANHOLE = new THREE.CircleGeometry(0.36, 9);          // flat lid on the road (9 triangles)
+const BUSH = new THREE.IcosahedronGeometry(1, 0);              // cheap little bush (20 triangles)
+const BUNTING = [0xff8c1a, 0xe8467c, 0x2f9e44, 0xf5d000, 0x1f6fb2, 0xd9302f, 0xffffff, 0x8e44ad];
 const POLE = new THREE.CylinderGeometry(0.07, 0.11, 6.8, 6);
 const TRUNK = new THREE.CylinderGeometry(0.16, 0.26, 3.2, 6);
 const LEAVES = new THREE.IcosahedronGeometry(1, 1);

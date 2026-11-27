@@ -1,4 +1,5 @@
-// Vikram: movement on foot, health, guns (pistol / SMG), aiming, reload, cars, pick-ups.
+// Vikram: movement on foot, health, guns (like PUBG: fists, 2 main guns + a pistol, sights and scopes),
+// aiming down the sight, reload, cars, pick-ups.
 // Plus the third-person camera (on foot, aiming, and a chase camera behind cars).
 //
 // Aiming help for touch screens (can be turned off in Settings):
@@ -8,14 +9,17 @@
 import * as THREE from 'three';
 import { clamp, lerp, moveTowards, rotateTowards, yawOf, DEG, pushOutOfBox, angleDiff } from './util.js';
 import { CharacterRig, strafeYaw, twistTo } from './characters.js';
-import { WEAPONS, WEAPON_ORDER, makeGun, castShot } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, SIGHTS, SIGHT_ORDER, makeGunRig, setGunSight, castShot } from './weapons.js';
 import { placeGun } from './police.js';
 
 const _dir = new THREE.Vector3(), _aim = new THREE.Vector3(), _muz = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(), _to = new THREE.Vector3();
 const _bp = new THREE.Vector3(), _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _bm = new THREE.Matrix4();
+const _vmOff = new THREE.Vector3(), _tip = new THREE.Vector3(), _qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const _qKick = new THREE.Quaternion(), _xAxis = new THREE.Vector3(1, 0, 0);
 
 const TOUGH = 0.65;        // all damage to Vikram x0.65 (v9.3: he lasts longer in a fight)
 const PUNCH_DAMAGE = 50;
+const GRACE_FLOOR = 12;    // health he keeps against the police in the 2-minute grace
 
 export class Player {
   constructor(game, x, z, yaw) {
@@ -40,34 +44,56 @@ export class Player {
     game.scene.add(this.mesh);
     this.crouchBlend = 0;
 
-    // Guns: two slots like PUBG - slot 1 = main gun, slot 2 = sidearm. Tap a slot to use it.
-    this.slots = { 1: null, 2: 'pistol' };
-    this.owned = ['pistol'];
-    this.weapon = 'pistol';
-    this.bloom = 0; this.spreadNow = 0.01; this.scopeHide = false;
+    // Guns like PUBG: slots 1 + 2 = main guns, slot 3 = pistol. He starts with bare FISTS (his pistol in
+    // the holster) and runs faster with empty hands; guns are picked up from the ground or from fallen
+    // enemies. Tap a slot to take that gun out, tap the gun in your hands to put it away.
+    this.slots = { 1: null, 2: null, 3: 'pistol' };
+    this._weapon = 'fists'; this.lastGun = 'pistol';
+    this.sights = new Set(['iron']);   // red dots / scopes he picked up (any gun they fit can use them)
+    this.sightOf = {};                 // the sight on each gun
+    this.bloom = 0; this.spreadNow = 0.01; this.scopeHide = false; this.fp = false; this.vmKick = 0;
     this.ammo = {};
-    for (const id of WEAPON_ORDER) this.ammo[id] = { mag: 0, reserve: 0 };
+    for (const id of [...WEAPON_ORDER, 'fists']) this.ammo[id] = { mag: 0, reserve: 0 };
     this.ammo.pistol = { mag: 12, reserve: 48 };
     this.maxHealth = 100; this.armor = 0;
     this.cooldown = 0; this.reloadT = 0; this.lastShot = -99;
     this.guns = {};
-    for (const id of WEAPON_ORDER) this.guns[id] = makeGun(id);
-    for (const gmesh of Object.values(this.guns)) { gmesh.visible = false; game.scene.add(gmesh); }
+    for (const id of WEAPON_ORDER) { const m = makeGunRig(id); m.visible = false; game.scene.add(m); this.guns[id] = m; }
     this.gunMesh = this.guns.pistol;
     this.sync();
   }
 
-  get weaponDef() { return WEAPONS[this.weapon]; }
-  // The gun in the hands. Setting it also puts it in its slot.
+  get weaponDef() { return WEAPONS[this._weapon] || WEAPONS.fists; }
+  // The gun in the hands ('fists' = nothing). Setting a gun he does not have yet puts it in a slot first.
   get weapon() { return this._weapon; }
-  set weapon(id) { this._weapon = id; if (WEAPONS[id] && this.slots) this.slots[WEAPONS[id].slot] = id; }
+  set weapon(id) {
+    if (!WEAPONS[id]) id = 'fists';
+    if (id !== 'fists' && !this.slotOf(id)) { const old = this.putInSlot(id); if (old) this.dropGun(old); }
+    this._weapon = id;
+    if (id !== 'fists') this.lastGun = id;
+  }
+  get armed() { return this._weapon !== 'fists'; }
+  // The guns he carries (slot 1, slot 2, slot 3).
+  get owned() { return [this.slots[1], this.slots[2], this.slots[3]].filter(Boolean); }
+  slotOf(id) { for (const n of [1, 2, 3]) if (this.slots[n] === id) return n; return 0; }
   // Magazine size (the BIG MAGAZINES upgrade from the shop adds 50%).
   magSize(id = this.weapon) { const r = this.game.rewards; return Math.round(WEAPONS[id].mag * (r && r.has('mags') ? 1.5 : 1)); }
 
+  // A gun goes into a free slot (main guns: 1 or 2, pistols: 3). Both full: it takes the place of the
+  // main gun in his hands (or slot 1). Gives back the gun it pushed out (or null).
+  putInSlot(id) {
+    const w = WEAPONS[id];
+    const n = w.kind === 'side' ? 3 : !this.slots[1] ? 1 : !this.slots[2] ? 2 : (this.slotOf(this._weapon) === 2 ? 2 : 1);
+    const old = this.slots[n];
+    this.slots[n] = id;
+    if (w.sight !== 'iron') this.sights.add(w.sight);   // a scoped gun brings its scope
+    if (!this.sightOf[id] || !this.sightChoices(id).includes(this.sightOf[id])) this.sightOf[id] = w.sight;
+    return old && old !== id ? old : null;
+  }
+
+  // Missions and the shop hand over a gun (with bullets). It goes in a slot; it is not drawn.
   giveWeapon(id, ammo) {
-    if (!this.owned.includes(id)) this.owned.push(id);
-    this.owned.sort((a, b) => WEAPON_ORDER.indexOf(a) - WEAPON_ORDER.indexOf(b));
-    this.slots[WEAPONS[id].slot] = id;   // a new gun goes into its slot
+    if (!this.slotOf(id)) { const old = this.putInSlot(id); if (old) this.dropGun(old); }
     const a = this.ammo[id];
     a.reserve += ammo;
     // A new gun comes loaded.
@@ -75,25 +101,94 @@ export class Player {
     a.mag += take; a.reserve -= take;
   }
 
-  // Tap a slot: use that gun. Tap the slot you already hold: the next gun of that kind (SMG -> rifle -> shotgun).
-  selectSlot(n) {
-    const list = this.owned.filter((id) => WEAPONS[id].slot === n);
-    if (!list.length) { this.game.hud.toast(n === 1 ? 'No main gun yet - missions and the SHOP give you one' : 'No pistol'); return; }
-    let next = this.slots[n] && list.includes(this.slots[n]) ? this.slots[n] : list[0];
-    if (WEAPONS[this.weapon].slot === n) { if (list.length < 2) return; next = list[(list.indexOf(this.weapon) + 1) % list.length]; }
-    if (next === this.weapon) return;
-    this.weapon = next;
-    this.reloadT = 0; this.cooldown = 0.35; this.bloom = 0;   // 0.35 s to bring the gun up
-    this.game.audio.equip();
+  // PICK UP a gun from the ground (like PUBG): into a free slot, or it swaps with the gun in his hands
+  // (that one drops where he stands). A gun he already has: he just takes its bullets.
+  pickGun(id, ammo) {
+    const g = this.game, w = WEAPONS[id], a = this.ammo[id];
+    const bullets = ammo ? ammo.mag + ammo.reserve : this.magSize(id) + w.mag * 2;
+    if (this.slotOf(id)) { a.reserve += bullets; g.hud.popup(`+${bullets} ${w.name} BULLETS`, 'bonus'); return; }
+    const inHand = this._weapon, hadMain = !!(this.slots[1] || this.slots[2]);
+    const old = this.putInSlot(id);
+    if (old) this.dropGun(old);
+    a.mag = ammo ? ammo.mag : this.magSize(id); a.reserve = ammo ? ammo.reserve : w.mag * 2;
+    // His first main gun (or the gun that just left his hands) comes straight into his hands.
+    if (old === inHand || (w.kind === 'main' && !hadMain && inHand === 'fists')) this.draw(id, true);
+    const n = this.slotOf(id), sid = this.sightOf[id];
+    g.hud.showBig(w.name, '#ffc531', 1.4);
+    g.hud.toast(this._weapon === id ? `${w.name} in your hands${sid !== 'iron' ? ' (' + SIGHTS[sid].name + ')' : ''} - tap its slot to put it away` : `${w.name} is in SLOT ${n} - tap it to use`);
   }
-  // Swap between the two slots (Q, or the old switch button).
+
+  // The gun leaves his slots and falls on the ground next to him (with its bullets).
+  dropGun(id) {
+    const g = this.game, a = this.ammo[id], n = this.slotOf(id);
+    if (n) this.slots[n] = null;
+    const r = this.yaw + 2.3;
+    if (g.loot) g.loot.drop(id, this.x + Math.sin(r) * 0.9, this.z + Math.cos(r) * 0.9, { mag: a.mag, reserve: a.reserve });
+    this.ammo[id] = { mag: 0, reserve: 0 };
+    if (this._weapon === id) this._weapon = 'fists';
+  }
+
+  // Take a gun out (or 'fists' = put the gun away). 0.35 s to bring a gun up.
+  draw(id, quiet = false) {
+    if (id === this._weapon) return;
+    this.weapon = id;
+    this.reloadT = 0; this.cooldown = id === 'fists' ? 0.1 : 0.35; this.bloom = 0;
+    if (id === 'fists') this.aiming = false;
+    if (!quiet) this.game.audio.equip();
+  }
+  holster() {
+    if (!this.armed) return;
+    this.draw('fists');
+    if (!this.game.holsterTipDone) { this.game.holsterTipDone = true; this.game.hud.toast('Gun away - empty hands, he runs faster. FIRE = punch.'); }
+  }
+
+  // Tap a slot: take that gun out. Tap the gun already in his hands: put it away (empty hands = faster).
+  selectSlot(n) {
+    const id = this.slots[n];
+    if (!id) { this.game.hud.toast(n === 3 ? 'No pistol - pick one up' : 'Empty slot - pick up a gun (look for the yellow light on the ground)'); return; }
+    if (id === this._weapon) { if (!this.inCar) this.holster(); return; }
+    this.draw(id);
+  }
+  // Q / mouse wheel: the next gun (slot 1 -> 2 -> 3 -> empty hands). In a car: guns only.
   switchWeapon() {
-    const other = WEAPONS[this.weapon].slot === 1 ? 2 : 1;
-    if (this.owned.some((id) => WEAPONS[id].slot === other)) this.selectSlot(other);
-    else this.selectSlot(WEAPONS[this.weapon].slot);
+    const order = [this.slots[1], this.slots[2], this.slots[3]].filter(Boolean);
+    if (!this.inCar) order.push('fists');
+    if (!order.length) return;
+    const i = order.indexOf(this._weapon);
+    this.draw(order[(i + 1) % order.length]);
+  }
+  // The best gun to grab in a hurry (AIM with empty hands, shooting from a car).
+  bestGun(forCar = false) {
+    const list = forCar ? [this.slots[3], this.lastGun, this.slots[1], this.slots[2]] : [this.lastGun, this.slots[1], this.slots[2], this.slots[3]];
+    return list.find((id) => id && id !== 'fists' && this.slotOf(id)) || null;
+  }
+
+  // ---- Sights (iron sight / red dot / 2X / 4X / 8X scope) ----
+  get sightId() { return this.armed ? this.sightOf[this._weapon] || WEAPONS[this._weapon].sight : 'iron'; }
+  get sight() { return SIGHTS[this.sightId]; }
+  // The sights this gun can use now (the ones he has and that fit it).
+  sightChoices(id = this._weapon) { return (WEAPONS[id].takes || []).filter((s) => s === 'iron' || this.sights.has(s)); }
+  // SIGHT button (PC: V): the next sight that fits the gun in his hands.
+  cycleSight() {
+    if (!this.armed) return;
+    const list = this.sightChoices();
+    if (list.length < 2) { this.game.hud.toast('No other sight for this gun - pick up a red dot or a scope'); return; }
+    this.sightOf[this._weapon] = list[(list.indexOf(this.sightId) + 1) % list.length];
+    this.game.audio.equip();
+    this.game.hud.popup(this.sight.name, 'bonus');
+  }
+  // A red dot / scope picked up: it goes on the gun in his hands if it fits and zooms more (or another gun).
+  addSight(sid) {
+    this.sights.add(sid);
+    const z = (s) => SIGHT_ORDER.indexOf(s || 'iron');
+    const better = (id) => id && WEAPONS[id].takes.includes(sid) && z(sid) > z(this.sightOf[id]);
+    const on = this.armed && better(this._weapon) ? this._weapon : [this.slots[1], this.slots[2], this.slots[3]].find(better);
+    if (on) this.sightOf[on] = sid;
+    return on || null;
   }
 
   reload(instant = false) {
+    if (!this.armed) return;
     const a = this.ammo[this.weapon], w = this.weaponDef;
     if (a.mag >= this.magSize() || a.reserve <= 0 || this.reloadT > 0) return;
     if (instant) { this.finishReload(); return; }
@@ -144,12 +239,18 @@ export class Player {
     this.sync();
   }
 
-  takeDamage(amount, fromX, fromZ) {
+  takeDamage(amount, fromX, fromZ, src) {
     if (this.dead || this.game.godMode) return;
     amount *= TOUGH;                   // Vikram is tough: he does not go down after a few hits
     if (this.dive && !this.dive.land) amount *= 0.25;   // hard to hit in the middle of a dive
     if (this.inCar) amount *= 0.45;   // the car body protects you a bit
     if (this.armor > 0) { const a = Math.min(this.armor, amount * 0.7); this.armor -= a; amount -= a; }
+    // v9.7: the first 2 minutes of a police chase, police bullets cannot finish him - time to fight back.
+    const D = this.game.dispatch;
+    if (src === 'police' && D && D.graceLeft > 0 && this.health - amount < GRACE_FLOOR) {
+      amount = Math.max(0, this.health - GRACE_FLOOR);
+      if (!this.graceTipT || this.game.time - this.graceTipT > 20) { this.graceTipT = this.game.time; this.game.hud.toast(`The police can't finish you for ${Math.ceil(D.graceLeft)}s - fight back, take them all down!`); }
+    }
     this.health -= amount;
     this.lastHurt = this.game.time;
     this.game.hud.hurt(fromX, fromZ);
@@ -178,6 +279,7 @@ export class Player {
       if (this.controlsEnabled && input.switchPressed) this.switchWeapon();
       if (this.controlsEnabled && input.slot1Pressed) this.selectSlot(1);
       if (this.controlsEnabled && input.slot2Pressed) this.selectSlot(2);
+      if (this.controlsEnabled && input.slot3Pressed) this.selectSlot(3);
       this.regen(dt);
       return;
     }
@@ -191,15 +293,22 @@ export class Player {
     const move = on ? input.move : { x: 0, y: 0 };
     const strength = Math.min(1, Math.hypot(move.x, move.y));
 
-    if (on && input.aimPressed) {
-      this.aiming = !this.aiming;
+    // AIM = look down the sight. With empty hands it takes his last gun out first.
+    const wantAim = on && input.aimPressed ? !this.aiming : on && input.mouseAimChanged ? input.mouseAim : null;
+    if (wantAim !== null) {
+      if (wantAim && !this.armed) {
+        const id = this.bestGun();
+        if (id) this.draw(id); else g.hud.toast('No gun! Pick one up (yellow light on the ground) or take one from a fallen enemy');
+      }
+      this.aiming = wantAim && this.armed;
       if (this.aiming) g.camera3p.snapToTarget();
       if (this.aiming && !g.diveTipDone && g.mode === 'play') { g.diveTipDone = true; g.hud.toast('TIP: while aiming, press JUMP = slow-motion dive!'); }
     }
-    // PC: hold the right mouse button to aim (let go = stop aiming).
-    if (on && input.mouseAimChanged) { this.aiming = input.mouseAim; if (this.aiming) g.camera3p.snapToTarget(); }
     if (on && input.slot1Pressed) this.selectSlot(1);
     if (on && input.slot2Pressed) this.selectSlot(2);
+    if (on && input.slot3Pressed) this.selectSlot(3);
+    if (on && input.holsterPressed) this.holster();
+    if (on && input.sightPressed) this.cycleSight();
     if (on && input.crouchPressed) this.crouching = !this.crouching;
     if (on && input.reloadPressed) this.reload();
     if (on && input.switchPressed) this.switchWeapon();
@@ -225,7 +334,7 @@ export class Player {
       this.vx *= k; this.vz *= k; this.speed = Math.hypot(this.vx, this.vz);
     } else if (strafe) {
       // Combat walk: step any way (camera-relative); the chest stays on the crosshair.
-      const max = this.crouching ? this.crouchSpeed : this.aiming ? this.aimSpeed : this.hipSpeed;
+      const max = (this.crouching ? this.crouchSpeed : this.aiming ? this.aimSpeed : this.hipSpeed) * Math.min(1.05, this.weaponDef.move || 1);
       const k = Math.min(1, strength * 1.25);
       const tvx = wx * max * k, tvz = wz * max * k;
       const up = tvx * tvx + tvz * tvz > this.vx * this.vx + this.vz * this.vz;
@@ -239,8 +348,10 @@ export class Player {
       // he speeds up and slows down over a moment, slows in sharp turns, and skids round for a U-turn.
       let want = 0;
       if (strength > 0.12) {
-        want = this.crouching ? this.crouchSpeed : this.sprinting ? this.sprintSpeed
-          : strength < 0.62 ? this.walkSpeed * Math.max(0.55, strength / 0.62) : this.jogSpeed;
+        // Empty hands = faster (x1.18); a heavy sniper slows him a little (PUBG).
+        const mv = this.weaponDef.move || 1;
+        want = this.crouching ? this.crouchSpeed : this.sprinting ? this.sprintSpeed * mv
+          : strength < 0.62 ? this.walkSpeed * Math.max(0.55, strength / 0.62) * Math.min(mv, 1.1) : this.jogSpeed * mv;
         if (this.carrying) want = Math.min(want, 2.6);   // heavy gold bag
         const diff = angleDiff(this.yaw, yawOf(wx, wz)), ad = Math.abs(diff);
         const turn = (this.speed < 2 ? 520 : this.speed < 4.5 ? 340 : 210) * DEG * dt * air;
@@ -334,12 +445,13 @@ export class Player {
     // jumping or spraying (every shot adds "bloom", which settles again when you stop).
     this.bloom = Math.max(0, this.bloom - dt * (0.03 + this.bloom * 4));
     const ads = g.camera3p.aimBlend, sp2 = Math.hypot(this.vx, this.vz);
-    const stance = lerp(1.25, 0.42, ads) * (this.crouching ? 0.72 : 1) * (!this.grounded ? 2.4 : this.sprinting ? 2.0 : sp2 > 1 ? 1.45 : 1);
+    // Looking down the sight is far more accurate (a sniper is near perfect, but only when scoped).
+    const stance = lerp(1.25, w.adsMul ?? 0.42, ads) * (this.crouching ? 0.72 : 1) * (!this.grounded ? 2.4 : this.sprinting ? 2.0 : sp2 > 1 ? (ads > 0.5 ? 2.2 : 1.45) : 1);
     this.spreadNow = w.spread * stance + this.bloom;
     if (on && (w.auto ? input.fire : input.firePressed)) this.fire();
 
     this.regen(dt);
-    this.sync(dt, firingStance || input.fire);
+    this.sync(dt, this.armed && (firingStance || input.fire));
   }
 
   // BULLET-TIME DIVE: AIM + JUMP. He throws himself through the air (the way you push, or sideways),
@@ -379,6 +491,23 @@ export class Player {
     return true;
   }
 
+  // FIRE with empty hands: punch the cop or gangster in front of him (or a punch in the air).
+  punchSwing() {
+    const g = this.game;
+    if (this.punchCd > 0 || this.dead || this.inCar) return;
+    const fx = Math.sin(g.camera3p.yaw), fz = Math.cos(g.camera3p.yaw);
+    let best = null, bd = 2.3;
+    for (const o of g.officers) {
+      if (o.dead || o.inactive) continue;
+      const dx = o.x - this.x, dz = o.z - this.z, d = Math.hypot(dx, dz);
+      if (d < bd && dx * fx + dz * fz > -0.3 * d) { bd = d; best = o; }
+    }
+    if (best) { this.punch(best); return; }
+    this.punchCd = 0.38; this.punchT = 0.22; this.punchAt = null; this.swingDir = { x: fx, z: fz };
+    this.yaw = Math.atan2(fx, fz);
+    g.audio.burst(0.14, 900, 400, 0.12, 'bandpass');   // whoosh
+  }
+
   // Can we shoot now? Uses a bullet (or reloads / clicks when empty).
   useBullet() {
     const g = this.game, w = this.weaponDef, a = this.ammo[this.weapon];
@@ -390,9 +519,10 @@ export class Player {
     return true;
   }
 
-  // On foot: shoot from the camera through the crosshair.
+  // On foot: shoot from the camera through the crosshair (or through the sight when aiming).
   fire() {
     const g = this.game, w = this.weaponDef;
+    if (!this.armed) { this.punchSwing(); return; }
     if (!this.useBullet()) return;
     const cam = g.camera;
     cam.getWorldDirection(_aim);
@@ -402,18 +532,26 @@ export class Player {
     if (g.aimAssist) target = g.camera3p.findTarget(cam.position, _aim, this.aiming ? 2.6 : 3.6, w.range);
     // Start the ray just past Vikram so he never shoots himself.
     const startAt = Math.max(0, (this.x - cam.position.x) * _aim.x + (this.y + 1.4 - cam.position.y) * _aim.y + (this.z - cam.position.z) * _aim.z) + 0.6;
-    this.rig.handPose(_hp, _hd);
-    _muz.copy(_hp).addScaledVector(_aim, w.muzzle + 0.05);
-    _muz.y += 0.04;
+    if (this.fp && this.gunMesh.visible) this.gunMesh.localToWorld(_muz.set(0, w.tip[0], w.tip[1] + 0.02));   // the muzzle in front of the eye
+    else if (this.fp) _muz.copy(cam.position).addScaledVector(_aim, 0.5).y -= 0.06;
+    else { this.rig.handPose(_hp, _hd); _muz.copy(_hp).addScaledVector(_aim, w.muzzle + 0.05); _muz.y += 0.04; }
     this.shoot(cam.position, _aim, spread, target, startAt, _muz, null);
     g.camera3p.recoilKick(w.recoil[0], w.recoil[1]);
+    this.vmKick = Math.min(1.4, this.vmKick + (w.bolt ? 1.3 : w.pellets ? 1.1 : 0.55));
+    if (w.bolt) setTimeout(() => this.game.audio.bolt && this.game.audio.bolt(), 420);   // work the bolt
     this.bloom = Math.min(w.bloomMax, this.bloom + w.bloom);
     g.noise(this.x, this.z, 38);
   }
 
   // From the car window: aim where the camera looks, help onto police / enemies / their cars.
   driveBy() {
-    const g = this.game, w = this.weaponDef, car = g.driving.car;
+    const g = this.game, car = g.driving.car;
+    if (!this.armed) {   // empty hands: grab a gun first (pistol first: one hand on the wheel)
+      const id = this.bestGun(true);
+      if (id) this.draw(id); else if (!g.noGunTip || g.time - g.noGunTip > 4) { g.noGunTip = g.time; g.hud.toast('No gun to shoot with - pick one up first'); }
+      return;
+    }
+    const w = this.weaponDef;
     if (!car || !this.useBullet()) return;
     const cam = g.camera;
     cam.getWorldDirection(_aim);
@@ -468,7 +606,7 @@ export class Player {
         if (p === 0) g.audio.impact(Math.max(0, 1 - hit.t / 60));
       }
     }
-    g.fx.muzzle(muzzle, w.sound === 'shotgun' ? 1.6 : w.sound === 'rifle' ? 1.3 : w.sound === 'smg' ? 1.05 : 0.85);
+    g.fx.muzzle(muzzle, w.sound === 'shotgun' ? 1.6 : w.sound === 'sniper' ? 1.7 : w.sound === 'rifle' || w.sound === 'dmr' ? 1.3 : w.sound === 'smg' ? 1.05 : 0.85);
     if (!ignore || ignore === this) g.fx.shell(muzzle.x - aimDir.x * (w.muzzle * 0.8), muzzle.y, muzzle.z - aimDir.z * (w.muzzle * 0.8), aimDir.x, aimDir.z);
     g.audio.gunshot(w.sound, 1);
     if (!this.inCar && (!w.auto || Math.random() < 0.45)) g.audio.casings(w.pellets ? 1 : Math.random() < 0.3 ? 2 : 1);   // shells on the ground
@@ -489,12 +627,12 @@ export class Player {
       this.mesh.position.x += sx * Math.cos(this.yaw); this.mesh.position.z -= sx * Math.sin(this.yaw);
       this.mesh.position.y += h * (1 - Math.cos(a)) - flat;
     }
-    const other = WEAPONS[this.weapon].slot === 1 ? this.slots[2] : this.slots[1];
-    const show = !this.inCar && !this.dead && !this.scopeHide;
-    for (const [id, m] of Object.entries(this.guns)) m.visible = show && (id === this.weapon || id === other);
-    if (!this.inCar) this.mesh.visible = !this.scopeHide;
-    this.gunMesh = this.guns[this.weapon];
-    this.holster = show && other ? this.guns[other] : null;
+    // Guns: the one in his hands, the others on his back (main guns) and at his hip (pistol).
+    // Looking down the sight (first person): no body - only the gun in front of the eye (placeViewmodel).
+    const show = !this.inCar && !this.dead && !this.fp;
+    for (const [id, m] of Object.entries(this.guns)) { m.visible = show && !!this.slotOf(id); setGunSight(m, id, this.sightOf[id] || WEAPONS[id].sight); }
+    if (!this.inCar) this.mesh.visible = !this.fp;
+    this.gunMesh = this.guns[this.armed ? this._weapon : this.guns[this.lastGun] ? this.lastGun : 'pistol'];
     if (dt > 0) {
       this.crouchBlend = moveTowards(this.crouchBlend, this.crouching ? 1 : 0, 5 * dt);
       this.rig.setMotion(Math.hypot(this.vx, this.vz), this.crouchBlend);
@@ -502,27 +640,34 @@ export class Player {
       const cam = this.game.camera;
       cam.getWorldDirection(_dir);
       // Punching: the arms shoot out at the man in front (fast), then come back. Throwing a bomb: the same, forwards.
-      const o = this.punchT > 0 ? this.punchAt : null;
-      if (o) _dir.set(o.x - this.x, 0.1, o.z - this.z).normalize();
+      const o = this.punchT > 0 ? this.punchAt || this.swingDir : null;
+      if (o && this.punchAt) _dir.set(o.x - this.x, 0.1, o.z - this.z).normalize();
+      else if (o) _dir.set(o.x, 0.1, o.z).normalize();   // a punch in the air
       else if (this.throwT > 0 && this.throwDir) _dir.set(this.throwDir.x, 0.5, this.throwDir.z).normalize();
       const swing = !!o || this.throwT > 0;
       this.aimW = swing ? moveTowards(this.aimW || 0, 1, 30 * dt) : moveTowards(this.aimW || 0, holdingGun && this.reloadT <= 0 ? 1 : 0, 8 * dt);
       this.rig.setAim(this.aimW, _dir);
       this.rig.update(dt, 0);
-      // rig.update() turns the body back on, so hide it again while looking through the scope.
-      if (!this.inCar) this.mesh.visible = !this.scopeHide;
-      placeGun(this.rig, this.gunMesh, this.aimW > 0.5 ? _dir : null);
-      if (this.holster) this.placeHolster(this.holster, WEAPONS[this.weapon].slot === 2);
+      // rig.update() turns the body back on, so hide it again while looking down the sight.
+      if (!this.inCar) this.mesh.visible = !this.fp;
+      if (show) for (const n of [1, 2, 3]) {
+        const id = this.slots[n];
+        if (!id) continue;
+        if (id === this._weapon) placeGun(this.rig, this.guns[id], this.aimW > 0.5 ? _dir : null);
+        else this.placeHolster(this.guns[id], n);
+      }
     }
   }
 
-  // The other gun rides along: a main gun across the back, a pistol in the hip holster.
-  placeHolster(gun, onBack) {
+  // Guns he is not holding ride along: slot 1 across the back (barrel over the right shoulder),
+  // slot 2 crossed the other way, the pistol (slot 3) in the hip holster.
+  placeHolster(gun, n) {
     const b = this.rig.bones, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), rx = -fz, rz = fx;
-    if (onBack) {
+    if (n !== 3) {
+      const s = n === 1 ? 1 : -1, back = n === 1 ? 0.2 : 0.25;
       if (b.Spine2) b.Spine2.getWorldPosition(_bp); else _bp.set(this.x, this.y + 1.35, this.z);
-      _bp.x -= fx * 0.2; _bp.z -= fz * 0.2; _bp.y -= 0.05;
-      _bz.set(rx * 0.62, 0.78, rz * 0.62).normalize();            // barrel: up over the right shoulder
+      _bp.x -= fx * back; _bp.z -= fz * back; _bp.y -= 0.05;
+      _bz.set(rx * 0.62 * s, 0.78, rz * 0.62 * s).normalize();    // barrel: up over a shoulder
       _by.set(-fx, 0, -fz);                                         // sights point away from the back
     } else {
       if (b.Pelvis) b.Pelvis.getWorldPosition(_bp); else _bp.set(this.x, this.y + 0.95, this.z);
@@ -536,6 +681,29 @@ export class Player {
     gun.position.copy(_bp); gun.quaternion.setFromRotationMatrix(_bm);
   }
 }
+
+// Placed by the camera (after it moved) - see placeViewmodel below.
+Player.prototype.placeViewmodel = function placeViewmodel(dt) {
+  // Looking down the sight: the gun sits in front of the eye with its sights on the middle of the
+  // screen (iron sights: the notch/ring and the post line up; red dot: the frame around the dot).
+  // A 2X/4X/8X scope fills the screen instead (the HUD draws the lens).
+  const g = this.game, cam = g.camera, id = this._weapon, w = WEAPONS[id], m = this.guns[id];
+  this.vmKick = Math.max(0, this.vmKick - dt * 8);
+  if (!m || !this.fp) return;
+  const sid = this.sightId, S = SIGHTS[sid], ab = g.camera3p.aimBlend;
+  m.visible = sid === 'iron' || sid === 'dot' || ab < 0.85;
+  if (!m.visible) return;
+  let ey, ez;   // where the eye is, in the gun's own numbers
+  if (sid === 'iron') { ey = w.sightY; ez = w.rearZ - w.eye; } else { ey = w.rail[0] + S.up; ez = w.rail[1] - (S.back || 0.17); }
+  const k = clamp((ab - 0.55) / 0.4, 0, 1), e = 1 - (1 - k) * (1 - k);   // slides up into place
+  const t = g.time, mv = Math.min(1, Math.hypot(this.vx, this.vz) / 2);
+  const bob = Math.sin(((this.stepDist || 0) / (this.stride || 1)) * Math.PI * 2) * 0.0025 * mv;
+  // Camera space: x right, y up, -z forward. The gun is turned round so it points forward.
+  _vmOff.set(Math.sin(t * 1.1) * 0.0008 + (1 - e) * 0.045, -ey - (1 - e) * 0.08 + Math.sin(t * 1.7) * 0.0005 + bob, ez + this.vmKick * 0.03);
+  m.position.copy(_vmOff).applyQuaternion(cam.quaternion).add(cam.position);
+  _qKick.setFromAxisAngle(_xAxis, -this.vmKick * 0.045);   // the muzzle jumps up with each shot
+  m.quaternion.copy(cam.quaternion).multiply(_qFlip).multiply(_qKick);
+};
 
 // Over-the-shoulder camera, aim zoom, recoil kick, crash shake, aim help, and a chase camera for cars.
 export class ThirdPersonCamera {
@@ -590,26 +758,28 @@ export class ThirdPersonCamera {
       const r = Math.min(this.recoilAcc, this.recoilAcc * dt * 7 + dt * 0.002);
       this.pitch += r * 0.7; this.recoilAcc -= r;
     }
-    const W0 = P.weaponDef, scoped = W0.scope === 'scope';
-    P.scopeHide = scoped && this.aimBlend > 0.85 && !P.inCar;   // look through the scope (first person)
+    const S0 = P.sight, zf = lerp(1, S0.fov / 46, this.aimBlend);   // zf: smaller with a bigger zoom
+    // Looking down the sight (first person, like PUBG) - not in the middle of a dive or a roll.
+    P.fp = this.aimBlend > 0.55 && !P.inCar && P.armed && !P.dive && !(P.rollT > 0);
+    P.scopeHide = P.fp;
 
     // Aim help: slow the camera over a target and follow it a little.
     let slow = 1;
     if (g.aimAssist && !P.inCar && !P.dead && (P.aiming || firing || this.snapT > 0)) {
       this.cam.getWorldDirection(_dir);
-      const t = this.findTarget(this.cam.position, _dir, this.snapT > 0 ? 12 : P.aiming ? 7 : 4.5);
+      const t = this.findTarget(this.cam.position, _dir, (this.snapT > 0 ? 12 : P.aiming ? 7 : 4.5) * zf);
       if (t) {
         slow = 0.55;
         _to.set(t.x - this.cam.position.x, (t.groundY || 0) + 1.25 - this.cam.position.y, t.z - this.cam.position.z);
         const wantYaw = Math.atan2(_to.x, _to.z), wantPitch = -Math.atan2(_to.y, Math.hypot(_to.x, _to.z));
-        const rate = (this.snapT > 0 ? 70 : P.aiming ? 9 : 6) * DEG * dt;
+        const rate = (this.snapT > 0 ? 70 : P.aiming ? 9 : 6) * DEG * dt * zf;
         this.yaw += clamp(angleDiff(this.yaw, wantYaw), -rate, rate);
         this.pitch += clamp(wantPitch - this.pitch, -rate, rate);
       }
     }
     if (this.snapT > 0) this.snapT -= dt;
 
-    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity * Math.min(1, W0.zoom / 44), this.aimBlend) * slow;
+    const k = 0.12 * DEG * this.sensitivity * lerp(1, this.aimSensitivity * Math.min(1, S0.fov / 44), this.aimBlend) * slow;
     this.yaw -= look.x * k;
     this.pitch += (this.invert ? -look.y : look.y) * k;
     this.lookIdle = Math.abs(look.x) + Math.abs(look.y) > 0.5 ? 0 : this.lookIdle + dt;
@@ -650,15 +820,19 @@ export class ThirdPersonCamera {
       px = this.pivot.x; py = this.pivot.y + this.pivotH; pz = this.pivot.z;
       // A small bob of the camera with each running step.
       if (P.grounded && P.speed > 3) py += Math.sin(((P.stepDist || 0) / (P.stride || 1)) * Math.PI * 2) * 0.022 * Math.min(1, P.speed / 5.9);
-      wantDist = lerp(firing ? 2.6 : 3.4, scoped ? 0.1 : 1.45, this.aimBlend);
-      wantShoulder = lerp(firing ? 0.6 : 0.5, scoped ? 0.08 : 0.65, this.aimBlend);
-      fovBase = lerp(P.sprinting && P.speed > 4.5 ? 65 : 60, W0.zoom, this.aimBlend) + this.fovKick * 0.5;
+      const ab = Math.min(1, this.aimBlend * 1.8);   // aiming: the camera gets to his eye early
+      wantDist = lerp(firing ? 2.6 : 3.4, 0.1, ab);
+      wantShoulder = lerp(firing ? 0.6 : 0.5, 0.06, ab);
+      fovBase = lerp(P.sprinting && P.speed > 4.5 ? (P.armed ? 65 : 68) : 60, S0.fov, this.aimBlend) + this.fovKick * 0.5 * zf;
       this.fovKick = Math.max(0, this.fovKick - dt * 14);
     }
     this.pitch = clamp(this.pitch, -40 * DEG, 65 * DEG);
 
-    const cp = Math.cos(this.pitch), spch = Math.sin(this.pitch);
-    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    // A scope sways a little with his breathing (much less when crouching).
+    let swY = 0, swP = 0;
+    if (P.fp && S0.fov < 20) { const a = (P.crouching ? 0.35 : 1) * (S0.fov < 10 ? 0.4 : 0.22) * DEG; swY = Math.sin(g.time * 0.8) * a; swP = Math.sin(g.time * 1.27 + 1) * a * 0.7; }
+    const cp = Math.cos(this.pitch + swP), spch = Math.sin(this.pitch + swP);
+    const fx = Math.sin(this.yaw + swY), fz = Math.cos(this.yaw + swY);
     const dx = fx * cp, dy = -spch, dz = fz * cp;
     const rx = -fz, rz = fx;
 
@@ -674,9 +848,10 @@ export class ThirdPersonCamera {
     this.cam.position.set(sx - dx * this.dist + shx, py - dy * this.dist + shy, sz - dz * this.dist);
     this.cam.lookAt(this.cam.position.x + dx, this.cam.position.y + dy, this.cam.position.z + dz);
 
-    if (Math.abs(this.cam.fov - fovBase) > 0.05) {
-      this.cam.fov = lerp(this.cam.fov, fovBase, 1 - Math.exp(-8 * dt));
+    if (Math.abs(this.cam.fov - fovBase) > 0.02) {
+      this.cam.fov = lerp(this.cam.fov, fovBase, 1 - Math.exp(-(P.fp ? 16 : 8) * dt));
       this.cam.updateProjectionMatrix();
     }
+    P.placeViewmodel(dt);
   }
 }

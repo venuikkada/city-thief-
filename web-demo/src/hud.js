@@ -2,10 +2,24 @@
 // (tap to set a waypoint), compass, wanted stars, mission panel, timer, weapon + ammo, health,
 // car speed + nitro, context buttons (ENTER / PICK UP), subtitles, messages, hit effects.
 import * as THREE from 'three';
-import { WEAPONS, GUN_ICONS } from './weapons.js';
+import { WEAPONS, GUN_ICONS, SIGHTS } from './weapons.js';
 import { t as tr } from './i18n.js';
 const $ = (id) => document.getElementById(id);
 const _v3 = new THREE.Vector3();
+
+// Scope reticles (drawn in a lens 200 wide, middle at 0,0). 2X: red dot in a ring. 4X: a red chevron
+// with bullet-drop marks. 8X: fine cross-hairs with thick posts and range dots (a sniper scope).
+const RETICLES = {
+  x2: '<circle r="15" fill="none" stroke="#ff3030" stroke-width="0.9" opacity="0.9"/><circle r="1.7" fill="#ff2a2a"/>'
+    + '<path d="M0 -15v-5M0 15v5M-15 0h-5M15 0h5" stroke="#ff3030" stroke-width="1.2"/>',
+  x4: '<path d="M-100 0h86M14 0h86M0 9v91" stroke="#111" stroke-width="0.9"/>'
+    + '<path d="M-5 22h10M-4 32h8M-3 42h6M-2 52h4" stroke="#111" stroke-width="1.1"/>'
+    + '<path d="M0 0l-5.5 9h2.6L0 3.6 2.9 9h2.6z" fill="#ff2a2a" stroke="#600" stroke-width="0.3"/>',
+  x8: '<path d="M-100 0h100h100M0 -100v200" stroke="#111" stroke-width="0.45"/>'
+    + '<path d="M-100 0h48M52 0h48M0 52v48M0 -100v48" stroke="#111" stroke-width="3.2"/>'
+    + [10, 20, 30, 40].map((d) => `<circle cx="${d}" r="1.1"/><circle cx="${-d}" r="1.1"/><circle cy="${d}" r="1.1"/><circle cy="${-d}" r="1.1"/>`).join('')
+    + '<circle r="0.9" fill="#ff2a2a"/>',
+};
 
 // The whole city drawn once into a picture (fast: one drawImage per frame).
 const MAP = { x0: -282, z0: -300, x1: 282, z1: 282, s: 1.6 };
@@ -29,7 +43,7 @@ export class Hud {
     this.cctx = this.compass.getContext('2d');
     this.el = {
       status: $('status'), big: $('big-msg'), fps: $('fps'), stars: $('stars'), cross: $('crosshair'),
-      hit: $('hitmarker'), aim: $('btn-aim'), crouch: $('btn-crouch'), slots: [$('btn-slot1'), $('btn-slot2')], scope: $('scope'), ring: $('reload-ring'),
+      hit: $('hitmarker'), aim: $('btn-aim'), crouch: $('btn-crouch'), slots: [$('btn-slot1'), $('btn-slot2'), $('btn-slot3')], scope: $('scope'), scopeSvg: document.querySelector('#scope svg'), scopeZoom: document.querySelector('#scope .zoom'), reddot: $('reddot'), sightBtn: $('btn-sight'), ring: $('reload-ring'),
       dmg: $('dmg-nums'), kf: $('killfeed'),
       reloading: $('reloading'), health: $('health-fill'), carHealth: $('car-health-fill'), speedo: $('speedo'),
       enter: $('btn-enter'), pickup: $('btn-pickup'), objective: $('objective-text'), mTitle: $('mission-title'),
@@ -274,6 +288,10 @@ export class Hud {
     if (D.active && D.arrestT > 0) {
       // A cop has him: the one-minute fight.
       s = `${tr('FIGHT BACK!')} ${Math.ceil(D.arrestT)}s · ${tr('beat the cops or get away')}`; color = '#ff3b30';
+    } else if (D.active && D.graceLeft > 0 && D.sinceSeen < 1 && !D.lullOn) {
+      // The first 2 minutes: the police cannot kill or arrest him yet.
+      const left = Math.ceil(D.graceLeft);
+      s = `🛡 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${tr('police can\'t stop you yet - take them down!')}`; color = '#7dd3ff';
     } else if (D.active && D.lullOn) {
       // The breather: the police backup comes when this reaches 0:00.
       const left = Math.max(0, Math.ceil(D.lullT));
@@ -295,18 +313,26 @@ export class Hud {
       E.stars.classList.toggle('blink', D.active && D.sinceSeen >= 1);
     }
 
-    // Two gun slots: picture, name, ammo; the one in the hands is lit.
-    for (let n = 1; n <= 2; n++) {
+    // Gun slots (1 + 2 main guns, 3 pistol): picture, name, bullets, its sight; the one in his hands is lit.
+    for (let n = 1; n <= 3; n++) {
       const el = E.slots[n - 1], id = P.slots[n];
-      const key = id ? `${id}|${P.ammo[id].mag}|${P.ammo[id].reserve}|${P.weapon === id ? 1 : 0}` : 'empty';
+      if (!el) continue;
+      const sd = id ? P.sightOf[id] || WEAPONS[id].sight : '';
+      const key = id ? `${id}|${P.ammo[id].mag}|${P.ammo[id].reserve}|${P.weapon === id ? 1 : 0}|${sd}` : 'empty';
       if (this.cache['slot' + n] === key) continue;
       this.cache['slot' + n] = key;
       el.classList.toggle('empty', !id); el.classList.toggle('on', !!id && P.weapon === id);
       el.querySelector('path').setAttribute('d', id ? GUN_ICONS[id] : '');
-      el.querySelector('.nm').textContent = id ? WEAPONS[id].name : n === 1 ? 'MAIN GUN' : 'PISTOL';
-      el.querySelector('.am').textContent = id ? `${P.ammo[id].mag} | ${P.ammo[id].reserve}` : 'EMPTY';
+      el.querySelector('.nm').textContent = id ? WEAPONS[id].name : n === 3 ? 'PISTOL' : 'EMPTY';
+      el.querySelector('.am').textContent = id ? `${P.ammo[id].mag} | ${P.ammo[id].reserve}` : n === 3 ? '-' : 'PICK UP';
+      const tag = el.querySelector('.sg'); if (tag) tag.textContent = id && sd !== 'iron' ? SIGHTS[sd].label : '';
       el.classList.toggle('low', !!id && P.ammo[id].mag <= Math.ceil(WEAPONS[id].mag * 0.2));
     }
+    // Empty hands: FIRE = PUNCH (a fist on the button), no crosshair lines.
+    if (this.cache.armed !== P.armed) { this.cache.armed = P.armed; this.root.classList.toggle('unarmed', !P.armed); }
+    // SIGHT button: shown when the gun in his hands has more than one sight to choose from.
+    const sid = P.sightId, sKey = P.armed && P.sightChoices().length > 1 ? SIGHTS[sid].label : '';
+    if (this.cache.sightBtn !== sKey) { this.cache.sightBtn = sKey; E.sightBtn.classList.toggle('hidden', !sKey); E.sightBtn.querySelector('b').textContent = sKey; }
     E.reloading.classList.toggle('hidden', P.reloadT <= 0);
     // Reload circle + crosshair (opens with spread, red over an enemy, red dot / scope while aiming).
     if (P.reloadT > 0 && !P.inCar) { E.ring.classList.remove('hidden'); E.ring.style.setProperty('--p', (1 - P.reloadT / (P.reloadTotal || 1)).toFixed(3)); }
@@ -323,10 +349,12 @@ export class Hud {
       const t = !P.inCar && !P.dead ? cam3.findTarget(g.camera.position, _v3, ads > 0.5 ? 1.0 : 1.6, w.range) : null;
       E.cross.classList.toggle('enemy', !!t);
     }
-    const scoped = w.scope === 'scope' && P.scopeHide, dot = w.scope === 'dot' && ads > 0.6;
-    E.scope.classList.toggle('hidden', !scoped);
-    E.cross.classList.toggle('dot', dot);
-    E.cross.classList.toggle('gone', scoped);
+    // Looking down the sight there is no crosshair: the iron sight, the red dot or the scope is the aim.
+    const fp = P.fp && !P.inCar, scopeOn = fp && ads > 0.85 && !!RETICLES[sid];
+    if (this.cache.reticle !== sid && RETICLES[sid]) { this.cache.reticle = sid; E.scopeSvg.innerHTML = RETICLES[sid]; E.scopeZoom.textContent = SIGHTS[sid].label; }
+    E.scope.classList.toggle('hidden', !scopeOn);
+    E.reddot.classList.toggle('hidden', !(fp && sid === 'dot' && ads > 0.8));
+    E.cross.classList.toggle('gone', fp);
     this.set('hp', E.health.style, Math.max(0, P.health / P.maxHealth * 100).toFixed(0) + '%', 'width');
     this.set('ar', E.armor.style, Math.max(0, Math.min(100, P.armor / 60 * 100)).toFixed(0) + '%', 'width');
     E.health.classList.toggle('low', P.health < 35);
@@ -343,8 +371,11 @@ export class Hud {
     // Context buttons.
     const canEnter = !P.inCar && !P.dead && g.mode === 'play' && !!g.driving.nearestCar(P.x, P.z);
     E.enter.classList.toggle('hidden', !canEnter);
-    const canPick = !P.inCar && !P.dead && !!g.pickups.near(P.x, P.z);
-    E.pickup.classList.toggle('hidden', !canPick);
+    // PICK UP shows what it is (the gun's name).
+    const pk = !P.inCar && !P.dead ? g.pickups.near(P.x, P.z) : null;
+    E.pickup.classList.toggle('hidden', !pk);
+    const pl = pk ? (WEAPONS[pk.type] ? WEAPONS[pk.type].name : 'PICK UP') : '';
+    if (this.cache.pickLbl !== pl) { this.cache.pickLbl = pl; const sp = E.pickup.querySelector('span'); if (sp) sp.textContent = pl; E.pickup.classList.toggle('gun', !!(pk && WEAPONS[pk.type])); }
     // TAKEDOWN (behind an unaware guard) or FIGHT (a cop or gangster right next to him).
     const fight = !g.takedownTarget && !!g.punchTarget, tdKey = (g.takedownTarget ? 't' : fight ? 'f' : '-') + tr('FIGHT');
     if (this.cache.takedown !== tdKey) {
@@ -426,7 +457,7 @@ export class Hud {
       for (const n of this.route) c.lineTo(n.x, n.z);
       c.stroke();
     }
-    for (const p of g.pickups.list) { c.fillStyle = p.type === 'health' ? '#ff6b6b' : p.type === 'ammo' ? '#8fff6b' : '#ffc531'; c.fillRect(p.x - 2 / k, p.z - 2 / k, 4 / k, 4 / k); }
+    for (const p of g.pickups.list) { c.fillStyle = p.type === 'health' ? '#ff6b6b' : p.type === 'ammo' ? '#8fff6b' : p.type.startsWith('sight_') ? '#6fd3ff' : '#ffc531'; c.fillRect(p.x - 2 / k, p.z - 2 / k, 4 / k, 4 / k); }
     for (const p of g.policeCars) {
       if (p.inactive) continue;
       c.fillStyle = p.pursuing || p.roadblock ? (this.flash ? '#ff2a2a' : '#2a5cff') : '#4d7dff';

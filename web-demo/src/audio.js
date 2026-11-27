@@ -102,6 +102,8 @@ export class GameAudio {
     if (type === 'smg') { this.burst(0.5 * v, 4600, 520, 0.1); this.thump(0.32 * v, 150, 0.07); }
     else if (type === 'rifle') { this.burst(0.62 * v, 5200, 380, 0.16); this.thump(0.55 * v, 95, 0.16); this.echo(0.16 * v, 0.09); }
     else if (type === 'shotgun') { this.burst(0.8 * v, 2600, 160, 0.34); this.thump(0.75 * v, 70, 0.24); this.echo(0.22 * v, 0.12); }
+    else if (type === 'sniper') { this.burst(0.95 * v, 4200, 140, 0.32); this.thump(0.9 * v, 60, 0.3); this.echo(0.3 * v, 0.14); this.echo(0.16 * v, 0.42); }
+    else if (type === 'dmr') { this.burst(0.72 * v, 4800, 260, 0.2); this.thump(0.65 * v, 80, 0.2); this.echo(0.2 * v, 0.11); }
     else if (type === 'gold') { this.burst(0.62 * v, 3800, 320, 0.2); this.thump(0.5 * v, 120, 0.13); this.burst(0.08 * v, 6000, 5200, 0.25, 'bandpass'); }
     else { this.burst(0.62 * v, 3600, 300, 0.2); this.thump(0.48 * v, 115, 0.13); this.echo(0.1 * v, 0.07); }
   }
@@ -113,6 +115,8 @@ export class GameAudio {
     setTimeout(() => this.burst(0.3, 1600, 900, 0.07, 'bandpass'), len * 450);
     setTimeout(() => { this.burst(0.34, 3200, 1400, 0.06, 'bandpass'); this.thump(0.12, 300, 0.05); }, len * 850);
   }
+  // Sniper bolt: pulled back, pushed forward.
+  bolt() { this.burst(0.26, 2400, 1300, 0.05, 'bandpass'); setTimeout(() => this.burst(0.3, 3400, 1900, 0.05, 'bandpass'), 210); }
   equip() { this.burst(0.18, 2200, 1500, 0.05, 'bandpass'); setTimeout(() => this.burst(0.2, 3000, 1800, 0.04, 'bandpass'), 120); }
   // Hit feedback: a dull thud on the body, a bright "tink" for a headshot.
   hit(head, kill) {

@@ -28,23 +28,32 @@ function noise(g, w, h, count, colors, size = 2) {
 }
 
 export function asphaltTexture() {
+  // v9.7: a real grey road (it was almost black): dusty warm-grey tar, soft grain, repair patches,
+  // oil stains and a few cracks. Low contrast, so it does not sparkle and the 8 m repeat does not show.
   const [c, g] = canvas(256, 256);
-  g.fillStyle = '#3a3a3e';
+  g.fillStyle = '#64615d';
   g.fillRect(0, 0, 256, 256);
-  noise(g, 256, 256, 9000, ['#2e2e31', '#46464b', '#343438', '#505055', '#2a2a2c'], 2);
-  // A few patches and cracks: Indian roads are well used.
-  for (let i = 0; i < 6; i++) {
-    g.fillStyle = `rgba(20,20,22,${0.15 + rand() * 0.15})`;
+  noise(g, 256, 256, 12000, ['#5e5b56', '#69665f', '#615e5a', '#6e6b65', '#5a5753'], 2.4);
+  noise(g, 256, 256, 900, ['#6f6c67', '#4b4946'], 1);   // small stones, very soft
+  for (let i = 0; i < 2; i++) {   // newer tar patches
+    const w = 40 + rand() * 50, h = 26 + rand() * 30;
+    g.fillStyle = `rgba(48,46,44,${0.18 + rand() * 0.1})`;
+    g.fillRect(rand() * (256 - w), rand() * (256 - h), w, h);
+  }
+  for (let i = 0; i < 6; i++) {   // oil stains
+    g.fillStyle = `rgba(34,32,30,${0.07 + rand() * 0.08})`;
     g.beginPath();
-    g.ellipse(rand() * 256, rand() * 256, 10 + rand() * 30, 6 + rand() * 20, rand() * 3, 0, Math.PI * 2);
+    g.ellipse(rand() * 256, rand() * 256, 8 + rand() * 22, 5 + rand() * 12, rand() * 3, 0, Math.PI * 2);
     g.fill();
   }
-  g.strokeStyle = 'rgba(15,15,15,0.5)'; g.lineWidth = 1;
-  for (let i = 0; i < 5; i++) {
+  g.fillStyle = 'rgba(200,185,160,0.05)';   // dust in the sun
+  for (let i = 0; i < 5; i++) { g.beginPath(); g.ellipse(rand() * 256, rand() * 256, 30 + rand() * 40, 20 + rand() * 30, rand() * 3, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = 'rgba(35,33,31,0.4)'; g.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
     g.beginPath();
     let x = rand() * 256, y = rand() * 256;
     g.moveTo(x, y);
-    for (let k = 0; k < 6; k++) { x += (rand() - 0.5) * 30; y += (rand() - 0.5) * 30; g.lineTo(x, y); }
+    for (let k = 0; k < 6; k++) { x += (rand() - 0.5) * 26; y += (rand() - 0.5) * 26; g.lineTo(x, y); }
     g.stroke();
   }
   return toTexture(c);

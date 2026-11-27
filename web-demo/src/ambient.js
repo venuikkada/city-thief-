@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { CharacterRig, randomPersonRig } from './characters.js';
 import { part, mergeParts, BOX, vertexColorMaterial, signGeometry } from './mesh.js';
 import { FOOT_TOP } from './world.js';
-import { makeGun } from './weapons.js';
+import { makeGun, makeSight, WEAPONS } from './weapons.js';
 import { dist, rotateTowards, yawOf, moveTowards, pick, pushOutOfBox } from './util.js';
 
 // Shared by everyone you can talk to: stand still facing Vikram (talking, hands up, phoning the police),
@@ -325,13 +325,14 @@ export class SpotLife {
 }
 
 // ---------------------------------------------------------------------------
-// Pick-ups: ammo, health, SMG. Glowing, spinning; use the PICK UP button.
+// Pick-ups: guns (lying on the ground, PICK UP button), scopes, ammo, first aid, cash, gold...
 // ---------------------------------------------------------------------------
 export class Pickups {
   constructor(game) { this.game = game; this.list = []; }
 
-  // type: health / ammo / smg / shotgun / rifle (PICK UP button) or, picked up by touching them:
-  // cash (money dropped by gangsters), bag (mission cash bag), intel (papers), gold (gold bars).
+  // type: a gun (rifle / smg / ...: PICK UP button) or, picked up by walking over them: sight_dot /
+  // sight_x2 / sight_x4 / sight_x8 (scopes), ammo, health (only when hurt), cash (money dropped by
+  // gangsters), bag (mission cash bag), intel (papers), gold (gold bars).
   spawn(type, x, z, opts = {}) {
     const g = new THREE.Group();
     const y = this.game.world.groundAt(x, z);
@@ -349,19 +350,25 @@ export class Pickups {
     } else if (type === 'gold') {
       body = new THREE.Mesh(mergeParts([part(BOX, 0xffc531, -0.17, 0, 0, 0.3, 0.12, 0.16), part(BOX, 0xffc531, 0.17, 0, 0, 0.3, 0.12, 0.16), part(BOX, 0xffd75e, 0, 0.12, 0, 0.3, 0.12, 0.16)]),
         new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 1, roughness: 0.25, emissive: 0x553300 }));
+    } else if (type.startsWith('sight_')) {
+      body = makeSight(type.slice(6));
+      body.scale.setScalar(2.4);
     } else {
-      body = makeGun(type);
-      body.scale.setScalar(2.2);
+      body = makeGun(WEAPONS[type] ? type : 'pistol', true);
+      body.scale.setScalar(1.5);
     }
-    body.position.y = 0.55;
+    // Guns and scopes lie still on the ground, on their side (like PUBG); the rest float and turn.
+    const still = !!WEAPONS[type] || type.startsWith('sight_');
+    if (still) { body.rotation.set(0, opts.yaw || 0, Math.PI / 2); body.position.y = type.startsWith('sight_') ? 0.08 : 0.06; }
+    else body.position.y = 0.55;
     g.add(body);
-    const beamColor = { health: 0xff5050, ammo: 0x80ff60, cash: 0x60ff80, bag: 0x60ff80, intel: 0x6fb7ff, gold: 0xffc531 }[type] || 0xffc531;
+    const beamColor = { health: 0xff5050, ammo: 0x80ff60, cash: 0x60ff80, bag: 0x60ff80, intel: 0x6fb7ff, gold: 0xffc531 }[type] || (type.startsWith('sight_') ? 0x6fd3ff : 0xffc531);
     const beam = new THREE.Mesh(BEAM_GEO, new THREE.MeshBasicMaterial({ color: beamColor, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
     beam.position.y = 1.1;
     g.add(beam);
     g.position.set(x, y, z);
     this.game.scene.add(g);
-    const p = { type, x, z, g, body, t: Math.random() * 6, auto: ['cash', 'bag', 'intel', 'gold'].includes(type), car: true, ...opts };
+    const p = { type, x, z, g, body, beam, still, t: Math.random() * 6, auto: ['cash', 'bag', 'intel', 'gold', 'ammo', 'health'].includes(type) || type.startsWith('sight_'), car: true, ...opts };
     this.list.push(p);
     return p;
   }
@@ -385,13 +392,15 @@ export class Pickups {
     const G = this.game, P = G.player;
     for (const p of [...this.list]) {
       p.t += dt;
-      p.body.rotation.y = p.t * 2;
-      p.body.position.y = 0.55 + Math.sin(p.t * 3) * 0.08;
+      if (p.still) p.beam.material.opacity = 0.12 + Math.sin(p.t * 3) * 0.06;
+      else { p.body.rotation.y = p.t * 2; p.body.position.y = 0.55 + Math.sin(p.t * 3) * 0.08; }
       if (!p.auto || P.dead) continue;
+      if (p.type === 'health' && P.health >= P.maxHealth) continue;   // first aid waits until he is hurt
       const reach = P.inCar ? (p.car ? 3 : -1) : 1.5;
       if (dist(p.x, p.z, P.x, P.z) < reach) {
         this.take(p);
         if (p.type === 'cash' && G.rewards) G.rewards.addCash(p.value || 100, p.value >= 1000 ? 'JACKPOT!' : '', p.value >= 1000 ? 'combo' : 'cash');
+        else if ((p.type === 'ammo' || p.type === 'health' || p.type.startsWith('sight_')) && G.collect) G.collect(p);
         if (p.onTake) p.onTake(p);
       }
     }

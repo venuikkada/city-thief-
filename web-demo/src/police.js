@@ -29,6 +29,7 @@ import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp, pick } fr
 
 const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
 export const ARREST_TIME = 60;    // seconds to fight your way out when a cop grabs you
+export const GRACE_TIME = 120;    // v9.7: the first 2 minutes of a chase the police cannot kill or arrest him
 const HEAL_PER_COP = 20;          // health back for every cop Vikram takes down (gangsters: half)
 
 // Can a police unit at (ex, ez) facing (fx, fz) see the player?
@@ -55,6 +56,7 @@ export class Dispatch {
     this.busting = false;
     this.arrestT = 0; this.freeT = 0;   // the one-minute fight when a cop grabs him
     this.lullOn = false; this.lullT = 0; this.lastCopKill = -999; this.lullEnd = -999;   // the breather after he beats them
+    this.chaseStart = -999;   // when this chase began (the 2-minute grace)
     this.reportTimer = -1;
     this.reinforceT = 0;
     this.roadblocks = []; this.roadblockT = 4;
@@ -66,6 +68,8 @@ export class Dispatch {
   get extra() { const m = this.game.mission; return m && !m.done ? 1 : 0; }
 
   get active() { return this.stars > 0; }
+  // Seconds of the grace left: the police can hurt him but not kill or arrest him (0 = over).
+  get graceLeft() { return this.stars > 0 ? Math.max(0, GRACE_TIME - (this.game.time - this.chaseStart)) : 0; }
   get radius() { return 45 + this.stars * 20; }          // search circle size
   get escapeTime() { return 2 + this.stars * 0.6; }      // unseen + outside the circle
   get loseTime() { return 14 + this.stars * 4; }         // unseen anywhere (hiding)
@@ -81,7 +85,7 @@ export class Dispatch {
     this.lastX = x ?? P.x; this.lastZ = z ?? P.z;
     this.circle.x = this.lastX; this.circle.z = this.lastZ; this.circle.r = this.radius;
     this.sinceSeen = 0; this.outsideT = 0;
-    if (was === 0) for (const c of this.game.policeCars) c.beginPursuit();
+    if (was === 0) { this.chaseStart = this.game.time; for (const c of this.game.policeCars) c.beginPursuit(); }
     if (n >= 3 && was < 3) this.onMessage('SWAT TEAM ON THE WAY');
     if (n >= 4 && was < 4) this.onMessage('POLICE HELICOPTER!');
     this.onStars(n, was);
@@ -147,7 +151,7 @@ export class Dispatch {
     const g = this.game, P = g.player;
     if (this.busting || this.arrestT > 0 || this.stars < 1 || this.stars > 3 || P.dead || g.godMode) return;
     if (P.inCar) g.driving.exit();   // they pull him out of the car
-    this.arrestT = ARREST_TIME; this.freeT = 0;
+    this.arrestT = Math.max(ARREST_TIME, this.graceLeft); this.freeT = 0;   // never BUSTED inside the 2-minute grace
     if (g.voice) g.voice.sayLine('POLICE', 'raidSee', RAID_SEE, { prio: 2 });
     this.onArrest(true);
   }
@@ -658,6 +662,7 @@ export class Officer {
       // Gangs drop cash (sometimes a JACKPOT); police drop ammo or health.
       if (this.gang) g.pickups.spawn('cash', this.x, this.z, { value: Math.random() < 0.06 ? 1000 : 60 + Math.floor(Math.random() * 5) * 30 });
       if (!this.gang || Math.random() < 0.35) g.pickups.spawn(Math.random() < 0.7 ? 'ammo' : 'health', this.x + 0.6, this.z + 0.4);
+      if (g.loot) g.loot.enemyDrop(this);   // his gun falls (PUBG style): walk up and PICK UP
       g.alarm(this.x, this.z, 25);
     } else if (byPlayer) {
       if (!this.gang) { g.dispatch.crime('hit_cop', this.x, this.z); if (this.raid) for (const o of this.raid.officers) o.forceHostile = true; }
@@ -879,7 +884,7 @@ export class Officer {
     g.fx.tracer(muzzle, end, 0.8);
     g.audio.gunshot(this.weapon, Math.max(0, 1 - dist(this.x, this.z, g.camera.position.x, g.camera.position.z) / 70));
     const dmg = { smg: 5 + Math.random() * 2, rifle: 10 + Math.random() * 4, shotgun: 16 + Math.random() * 6 }[this.weapon] || 6 + Math.random() * 3;
-    if (res.hit && hit) { P.takeDamage(dmg * this.dmgMul, this.x, this.z); if (g.mission) g.mission.stats.hurt = (g.mission.stats.hurt || 0) + dmg; }
+    if (res.hit && hit) { P.takeDamage(dmg * this.dmgMul, this.x, this.z, this.gang ? 'gang' : 'police'); if (g.mission) g.mission.stats.hurt = (g.mission.stats.hurt || 0) + dmg; }
     else if (res.t < 60) g.fx.impact(end, dir.clone().negate(), false);
     // A miss that flies close past Vikram's head: you hear it whiz by.
     if (!(res.hit && hit) && g.ambience && g.ambience.ready) {
