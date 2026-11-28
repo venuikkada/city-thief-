@@ -399,6 +399,7 @@ export class Pickups {
       const reach = P.inCar ? (p.car ? 3 : -1) : 1.5;
       if (dist(p.x, p.z, P.x, P.z) < reach) {
         this.take(p);
+        if (p.type === 'cash') G.audio.coin();
         if (p.type === 'cash' && G.rewards) G.rewards.addCash(p.value || 100, p.value >= 1000 ? 'JACKPOT!' : '', p.value >= 1000 ? 'combo' : 'cash');
         else if ((p.type === 'ammo' || p.type === 'health' || p.type.startsWith('sight_')) && G.collect) G.collect(p);
         if (p.onTake) p.onTake(p);

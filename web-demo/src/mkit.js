@@ -225,7 +225,7 @@ export function footChase(name, routeIn, text, o = {}) {
       if (far > 6) { m.fail(o.lost || 'He got away'); return false; }
       if (d < 1.7 && !P.inCar) {   // TACKLE!
         r.walkTo = null; r.state = 'cower'; r.cowerT = 999; r.runner = false;
-        g.slowmo(0.8, 0.35); g.hud.showBig('TACKLED!', '#ffc531', 1.4); g.audio.thump(0.6, 90, 0.2);
+        g.slowmo(0.8, 0.35); g.hud.showBig('TACKLED!', '#ffc531', 1.4); g.audio.thump(0.4, 90, 0.2); g.audio.bodyfall(1);
         g.rewards.event('TACKLE', 200, 15);
         return true;
       }

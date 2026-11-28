@@ -1,9 +1,107 @@
-// Sound made in code with Web Audio (no files to download):
-// police siren (louder when close), city traffic rumble, car horns.
+// Game sound.
+// v9.8: REAL RECORDINGS - gunshots of real guns (9mm pistol, AR-15, AK-47, 20-gauge shotgun, a big
+// hunting rifle), footsteps on stone, tiles, sand and water, punches, reloads, explosions, car crashes,
+// tyres, horns, a police siren, a helicopter, Mumbai traffic, an Indian street market, temple bells,
+// crows... (all CC0 from freesound.org - see assets/sfx/CREDITS.txt). They play through a small mixer:
+// an echo off the street walls for shots and explosions, a little random pitch so no two sounds are
+// exactly the same, left / right from where things happen. Until the files have loaded (or if one is
+// missing) the old sounds made in code still play.
+import { SFX_LIST } from './sfxlist.js';
+
+const GUN_SAMPLE = { pistol: 'gun_pistol', gold: 'gun_gold', smg: 'gun_smg', rifle: 'gun_rifle', dmr: 'gun_dmr', sniper: 'gun_sniper', shotgun: 'gun_shotgun' };
+const GUN_VOL = { pistol: 0.8, gold: 0.85, smg: 0.62, rifle: 0.78, dmr: 0.85, sniper: 1, shotgun: 0.95 };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
 export class GameAudio {
   constructor() {
     this.ctx = null;
     this.enabled = false;
+    this.buf = {}; this.lastVar = {}; this.lastShot = {}; this.loops = {};
+  }
+
+  // ---------- Recorded sounds ----------
+  // Load every sound file (in the background; the game does not wait for it).
+  loadSamples() {
+    const ctx = this.ctx;
+    const decode = (ab) => new Promise((res, rej) => { const r = ctx.decodeAudioData(ab, res, rej); if (r && r.catch) r.catch(rej); });
+    const jobs = [];
+    for (const [name, [files]] of Object.entries(SFX_LIST)) {
+      files.forEach((f, k) => jobs.push(fetch('assets/sfx/' + f).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(f)))).then(decode)
+        .then((b) => { (this.buf[name] || (this.buf[name] = []))[k] = b; }).catch(() => {})));
+    }
+    return Promise.all(jobs).then(() => {
+      for (const n of Object.keys(this.buf)) this.buf[n] = this.buf[n].filter(Boolean);
+      this.samplesReady = true;
+      this.startLoops();
+    });
+  }
+  has(name) { const l = this.buf[name]; return !!(l && l.length); }
+
+  // The street echo: a short burst of reflections off the buildings, then a soft tail.
+  makeReverb() {
+    const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * 1.5), ir = ctx.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (const [ms, a] of [[17, 0.55], [29, 0.42], [43, 0.33], [61, 0.25], [83, 0.18], [112, 0.13], [151, 0.09]]) {
+        const i = Math.floor((ms + (ch ? 4 : 0) + Math.random() * 5) * sr / 1000);
+        if (i < len) d[i] += a * (Math.random() < 0.5 ? -1 : 1);
+      }
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, n = (Math.random() * 2 - 1) * Math.exp(-t * 3.4) * 0.3 * Math.min(1, t / 0.012);
+        lp += (n - lp) * Math.max(0.06, 0.55 * Math.exp(-t * 1.8));   // darker as it fades
+        d[i] += lp;
+      }
+    }
+    const conv = ctx.createConvolver(); conv.normalize = true; conv.buffer = ir;
+    this.reverbIn = ctx.createGain(); this.reverbOut = ctx.createGain(); this.reverbOut.gain.value = 0.5;
+    this.reverbIn.connect(conv).connect(this.reverbOut).connect(this.master);
+  }
+
+  // Play a recording. o: { vol, rate, vary (random pitch), pan (-1..1), lp (Hz), wet (echo 0..1), dest, when }
+  play(name, o = {}) {
+    if (!this.enabled) return null;
+    const list = this.buf[name];
+    if (!list || !list.length) return null;
+    const ctx = this.ctx, t = ctx.currentTime + (o.when || 0);
+    let k = Math.floor(Math.random() * list.length);
+    if (list.length > 1 && k === this.lastVar[name]) k = (k + 1) % list.length;   // never the same one twice in a row
+    this.lastVar[name] = k;
+    const src = ctx.createBufferSource(); src.buffer = list[k];
+    src.playbackRate.value = (o.rate || 1) * (1 + (Math.random() - 0.5) * (o.vary ?? 0.06));
+    let node = src;
+    if (o.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; node.connect(f); node = f; }
+    const g = ctx.createGain(); g.gain.value = o.vol ?? 1; node.connect(g); node = g;
+    if (o.pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(o.pan, -1, 1); node.connect(p); node = p; }
+    node.connect(o.dest || this.master);
+    if (o.wet && this.reverbIn) { const sg = ctx.createGain(); sg.gain.value = o.wet; g.connect(sg).connect(this.reverbIn); }
+    src.start(t);
+    return { src, g };
+  }
+
+  // A recording that loops (engine, siren, rain...): returns { src, g } with the volume at 0.
+  loop(name, dest) {
+    const list = this.buf[name];
+    if (!list || !list.length || this.loops[name]) return this.loops[name] || null;
+    const ctx = this.ctx, lp = SFX_LIST[name][1], src = ctx.createBufferSource();
+    src.buffer = list[0]; src.loop = true;
+    if (lp) { src.loopStart = lp[0]; src.loopEnd = lp[1]; }
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(g).connect(dest || this.master);
+    src.start(0, lp ? lp[0] + Math.random() * (lp[1] - lp[0]) : 0);
+    return (this.loops[name] = { src, g });
+  }
+  startLoops() {
+    // Car engine (rev = speed of the recording), siren, helicopter, tyres: ready, volume 0.
+    const e = this.loop('engine');
+    if (e) {
+      this.engFilter2 = this.ctx.createBiquadFilter(); this.engFilter2.type = 'lowpass'; this.engFilter2.frequency.value = 1800;
+      e.g.disconnect(); e.g.connect(this.engFilter2).connect(this.master);
+      if (this.engGain) this.engGain.gain.value = 0;   // the made-in-code engine is not needed now
+    }
+    if (this.loop('siren') && this.siren) this.siren.disconnect();
+    if (this.loop('heli') && this.heliGain) this.heliGain.disconnect();
+    this.loop('screech');
   }
 
   // Browsers only allow sound after a tap, so this runs from the PLAY button.
@@ -70,6 +168,8 @@ export class GameAudio {
 
     this.enabled = true;
     this.lastHorn = 0;
+    this.makeReverb();
+    this.loadSamples();
   }
 
   // Short burst of filtered noise (used for shots, impacts, crashes).
@@ -96,8 +196,18 @@ export class GameAudio {
     o.connect(gn).connect(this.master); o.start(now); o.stop(now + length + 0.05);
   }
 
-  // Each gun has its own voice: a sharp crack, a body thump and a short echo off the buildings.
+  // Each gun has its own real recording. volume < 1 = further away: duller, more echo, plus the
+  // sound of a far-off shot. Fast guns cut off the tail of their previous shot (so bursts stay clean).
   gunshot(type, volume = 1) {
+    const name = GUN_SAMPLE[type] || 'gun_pistol';
+    if (this.has(name) && volume > 0.02) {
+      const now = this.ctx.currentTime, far = volume < 0.5, prev = this.lastShot[name];
+      if (prev && now - prev.t < 0.3) prev.v.g.gain.setTargetAtTime(0, now, 0.025);
+      const v = this.play(name, { vol: (GUN_VOL[type] || 0.8) * (far ? 0.45 + volume * 0.5 : volume), lp: far ? 1600 + volume * 6000 : null, wet: far ? 0.45 : 0.22, vary: 0.05 });
+      if (v) this.lastShot[name] = { v, t: now };
+      if (far) this.play('gun_far', { vol: 0.55 * volume + 0.1, wet: 0.35, vary: 0.08 });
+      return;
+    }
     const v = volume;
     if (type === 'smg') { this.burst(0.5 * v, 4600, 520, 0.1); this.thump(0.32 * v, 150, 0.07); }
     else if (type === 'rifle') { this.burst(0.62 * v, 5200, 380, 0.16); this.thump(0.55 * v, 95, 0.16); this.echo(0.16 * v, 0.09); }
@@ -109,35 +219,66 @@ export class GameAudio {
   }
   // A quieter copy a moment later (the sound bouncing off the walls of the street).
   echo(volume, delay) { if (this.enabled) setTimeout(() => this.burst(volume, 1800, 250, 0.28), delay * 1000); }
-  // Magazine out, magazine in, slide / bolt pulled - spread over the reload time.
-  reload(len = 1.5) {
+  // Magazine out, magazine in, slide / bolt pulled - played to fit the reload time.
+  // kind: the gun (pistols / shotgun / sniper / the rest have their own recording).
+  reload(len = 1.5, kind = 'rifle') {
+    const name = kind === 'pistol' || kind === 'gold' ? 'reload_pistol' : kind === 'shotgun' ? 'pump' : kind === 'sniper' ? 'bolt' : 'reload_rifle';
+    if (this.has(name)) {
+      const d = this.buf[name][0].duration;
+      this.play(name, { vol: 0.55, rate: clamp(d / Math.max(0.35, len * 0.8), 0.85, 1.25), vary: 0.03 });
+      return;
+    }
     this.burst(0.22, 2600, 1700, 0.05, 'bandpass');
     setTimeout(() => this.burst(0.3, 1600, 900, 0.07, 'bandpass'), len * 450);
     setTimeout(() => { this.burst(0.34, 3200, 1400, 0.06, 'bandpass'); this.thump(0.12, 300, 0.05); }, len * 850);
   }
-  // Sniper bolt: pulled back, pushed forward.
-  bolt() { this.burst(0.26, 2400, 1300, 0.05, 'bandpass'); setTimeout(() => this.burst(0.3, 3400, 1900, 0.05, 'bandpass'), 210); }
-  equip() { this.burst(0.18, 2200, 1500, 0.05, 'bandpass'); setTimeout(() => this.burst(0.2, 3000, 1800, 0.04, 'bandpass'), 120); }
+  // Sniper bolt: pulled back, pushed forward. Shotgun: the pump after each shot.
+  pump() { if (!this.play('pump', { vol: 0.45, vary: 0.04 })) this.bolt(); }
+  // Picking something up / putting a gun away.
+  pickup() { if (!this.play('holster', { vol: 0.35, vary: 0.08 })) this.equip(); }
+  bolt() { if (this.play('bolt', { vol: 0.5, rate: 1.15, vary: 0.03 })) return; this.burst(0.26, 2400, 1300, 0.05, 'bandpass'); setTimeout(() => this.burst(0.3, 3400, 1900, 0.05, 'bandpass'), 210); }
+  equip() { if (this.play('holster', { vol: 0.4, rate: 1.25, vary: 0.06 })) return; this.burst(0.18, 2200, 1500, 0.05, 'bandpass'); setTimeout(() => this.burst(0.2, 3000, 1800, 0.04, 'bandpass'), 120); }
   // Hit feedback: a dull thud on the body, a bright "tink" for a headshot.
   hit(head, kill) {
+    this.play('body_hit', { vol: head ? 0.22 : 0.3, vary: 0.1 });
     if (head) { this.burst(0.22, 7000, 5600, 0.09, 'bandpass'); this.thump(0.15, 900, 0.05); }
     else this.thump(0.2, 220, 0.06);
     if (kill) setTimeout(() => this.thump(0.22, 160, 0.12), 60);
   }
-  click() { this.burst(0.2, 3000, 2500, 0.03, 'bandpass'); }
-  ping() { this.burst(0.18, 5000, 3000, 0.08, 'bandpass'); }
-  hurt() { this.thump(0.4, 90, 0.18); }
-  crash(k) { this.burst(0.7 * k, 1800, 120, 0.45); this.thump(0.6 * k, 70, 0.3); }
+  click() { if (!this.play('dry', { vol: 0.5, vary: 0.05 })) this.burst(0.2, 3000, 2500, 0.03, 'bandpass'); }
+  ping() { if (!this.play('impact_metal', { vol: 0.35, vary: 0.2, wet: 0.1 })) this.burst(0.18, 5000, 3000, 0.08, 'bandpass'); }
+  hurt() { this.thump(0.3, 90, 0.18); this.play('body_hit', { vol: 0.35, rate: 0.85, vary: 0.1 }); }
+  crash(k) {
+    if (this.has('crash')) { this.play(k > 0.55 ? 'crash' : 'bump', { vol: Math.min(1, 0.35 + k * 0.6), vary: 0.08, wet: 0.12 }); return; }
+    this.burst(0.7 * k, 1800, 120, 0.45); this.thump(0.6 * k, 70, 0.3);
+  }
+  // Fists: a real punch, a swing through the air, a body hitting the ground.
+  punch() { if (!this.play('punch', { vol: 0.85, vary: 0.08 })) { this.thump(0.9, 80, 0.12); this.impact(0.7); } }
+  swing() { if (!this.play('swing', { vol: 0.4, vary: 0.1 })) this.burst(0.14, 900, 400, 0.12, 'bandpass'); }
+  bodyfall(volume = 1) { if (volume > 0.04) this.play('bodyfall', { vol: 0.5 * volume, vary: 0.08 }); }
+  land(volume = 1) { this.play('land', { vol: 0.5 * volume, vary: 0.08 }); }
+  // Money: a till drawer, a coin.
+  till() { this.play('till', { vol: 0.5 }); }
+  coin() { this.play('coin', { vol: 0.3, vary: 0.12 }); }
 
   engine(on) {
     if (!this.enabled) return;
-    this.engGain.gain.setTargetAtTime(on ? 0.06 : 0, this.ctx.currentTime, 0.15);
+    const e = this.loops.engine;
+    if (e) e.g.gain.setTargetAtTime(on ? 0.18 : 0, this.ctx.currentTime, 0.15);
+    else this.engGain.gain.setTargetAtTime(on ? 0.06 : 0, this.ctx.currentTime, 0.15);
     this.engineOn = on;
   }
 
+  // The recorded engine is played faster as the car goes faster (like a real engine revving).
   engineLevel(speed01, throttle) {
     if (!this.enabled || !this.engineOn) return;
-    const t = this.ctx.currentTime;
+    const t = this.ctx.currentTime, e = this.loops.engine;
+    if (e) {
+      e.src.playbackRate.setTargetAtTime(0.62 + speed01 * 1.05 + throttle * 0.22, t, 0.12);
+      e.g.gain.setTargetAtTime(0.13 + throttle * 0.13 + speed01 * 0.08, t, 0.1);
+      if (this.engFilter2) this.engFilter2.frequency.setTargetAtTime(900 + speed01 * 2600 + throttle * 1500, t, 0.1);
+      return;
+    }
     const f = 42 + speed01 * 120 + throttle * 18;
     this.engOsc1.frequency.setTargetAtTime(f, t, 0.08);
     this.engOsc2.frequency.setTargetAtTime(f * 1.015, t, 0.08);
@@ -149,12 +290,16 @@ export class GameAudio {
   update(sirenDistance) {
     if (!this.enabled) return;
     const target = sirenDistance === Infinity ? 0 : Math.max(0, 0.16 * (1 - sirenDistance / 120));
-    this.siren.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
+    const s = this.loops.siren;
+    if (s) s.g.gain.setTargetAtTime(target * 1.6, this.ctx.currentTime, 0.2);
+    else this.siren.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
   }
 
-  // One footstep: a soft scuff + a tiny thump (sand is muffled, water splashes).
-  footstep(volume, surface = 'hard') {
+  // One footstep (a real step on stone, tiles, sand or water; running steps are their own recording).
+  footstep(volume, surface = 'hard', run = false) {
     if (!this.enabled) return;
+    const name = surface === 'sand' ? 'step_sand' : surface === 'water' ? 'step_water' : surface === 'tile' ? 'step_tile' : run ? 'step_run' : 'step_hard';
+    if (this.play(name, { vol: Math.min(1, volume * (surface === 'sand' ? 1.5 : 1.25)), vary: 0.1 })) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
     const f = ctx.createBiquadFilter();
@@ -172,6 +317,11 @@ export class GameAudio {
   // Big BOOM: deep thump + rumbling noise.
   explosion(volume = 1) {
     if (!this.enabled) return;
+    if (this.has('expl_big')) {
+      this.play(Math.random() < 0.6 ? 'expl_big' : 'expl_bomb', { vol: Math.min(1, 0.95 * volume), vary: 0.1, wet: 0.35 });
+      this.play('expl_small', { vol: 0.6 * volume, vary: 0.1 });   // the close, sharp crack on top
+      return;
+    }
     this.burst(0.9 * volume, 2400, 60, 1.4);
     this.thump(1.0 * volume, 55, 0.7);
     this.thump(0.6 * volume, 38, 1.1);
@@ -180,6 +330,8 @@ export class GameAudio {
   // Steady rain hiss (level 0..1).
   rain(level) {
     if (!this.enabled) return;
+    const r = this.has('amb_rain') ? this.loop('amb_rain') : null;
+    if (r) { if (Math.abs((this.rainLevel ?? -1) - level) > 0.02) { this.rainLevel = level; r.g.gain.setTargetAtTime(level * 0.5, this.ctx.currentTime, 0.4); } return; }
     if (!this.rainGain) {
       const ctx = this.ctx, n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.loop = true;
       const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.4;
@@ -192,6 +344,7 @@ export class GameAudio {
   // Rolling thunder.
   thunder(volume = 1) {
     if (!this.enabled) return;
+    if (this.play('thunder', { vol: Math.min(1, 0.8 * volume), vary: 0.15 })) return;
     this.burst(0.5 * volume, 600, 40, 2.8);
     this.thump(0.7 * volume, 42, 1.6);
   }
@@ -199,6 +352,8 @@ export class GameAudio {
   // Helicopter loudness 0..1.
   heli(level) {
     if (!this.enabled) return;
+    const h = this.loops.heli;
+    if (h) { h.g.gain.setTargetAtTime(level * 0.7, this.ctx.currentTime, 0.3); return; }
     this.heliGain.gain.setTargetAtTime(level * 0.9, this.ctx.currentTime, 0.3);
   }
 
@@ -208,6 +363,7 @@ export class GameAudio {
     const now = this.ctx.currentTime;
     if (now - this.lastHorn < 0.8) return;
     this.lastHorn = now;
+    if (this.play('horn', { vol: 0.55 * volume, vary: 0.04 })) return;
     for (let k = 0; k < 2; k++) {
       const o = this.ctx.createOscillator(); o.type = 'square';
       o.frequency.value = 420 + Math.random() * 60;
@@ -226,6 +382,7 @@ export class GameAudio {
   // Empty shells tinkling on the ground after a shot.
   casings(n = 1) {
     if (!this.enabled) return;
+    if (this.play('casing', { vol: 0.14 + 0.05 * n, vary: 0.15, when: 0.25 + Math.random() * 0.12 })) return;
     const t = this.ctx.currentTime + 0.28 + Math.random() * 0.15;
     for (let k = 0; k < n; k++) {
       const s = t + k * (0.07 + Math.random() * 0.06), f = 3600 + Math.random() * 2200;
@@ -237,11 +394,13 @@ export class GameAudio {
   // A bullet hitting a wall / the road.
   impact(volume = 1) {
     if (!this.enabled || volume < 0.03) return;
+    if (Math.random() < 0.22 && this.play('ricochet', { vol: 0.28 * volume, vary: 0.2, wet: 0.15 })) return;   // sometimes it whines off
     this.burst(0.14 * volume, 3400, 1200, 0.045, 'bandpass'); this.thump(0.05 * volume, 260, 0.04);
   }
   // A police bullet flying past your head (pan: -1 left .. 1 right).
   whiz(pan = 0) {
     if (!this.enabled) return;
+    if (this.play('whiz', { vol: 0.5, pan, vary: 0.15 })) return;
     const ctx = this.ctx, t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 7; f.frequency.setValueAtTime(3400, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.2);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.22, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
@@ -258,6 +417,8 @@ export class GameAudio {
   }
   screech(level) {
     if (!this.enabled) return;
+    const sc = this.loops.screech;
+    if (sc) { const v = clamp(level, 0, 1); if (Math.abs((this.screechL ?? -1) - v) > 0.03) { this.screechL = v; const t = this.ctx.currentTime; sc.g.gain.setTargetAtTime(v * 0.42, t, 0.06); sc.src.playbackRate.setTargetAtTime(0.9 + v * 0.2, t, 0.1); } return; }
     if (!this.screechG) { this.screechG = this.loopNoise('bandpass', 2300, 9); this.screech2 = this.loopNoise('bandpass', 3400, 12); }
     const v = Math.max(0, Math.min(1, level));
     if (Math.abs((this.screechL ?? -1) - v) > 0.03) { this.screechL = v; const t = this.ctx.currentTime; this.screechG.gain.setTargetAtTime(v * 0.16, t, 0.06); this.screech2.gain.setTargetAtTime(v * 0.09, t, 0.06); }
@@ -268,7 +429,7 @@ export class GameAudio {
     if (this.nitroOn !== on) { this.nitroOn = on; this.nitroG.gain.setTargetAtTime(on ? 0.09 : 0, this.ctx.currentTime, on ? 0.05 : 0.2); if (on) this.burst(0.25, 900, 3200, 0.35, 'bandpass'); }
   }
   // Car door slam (getting in / out).
-  carDoor() { if (!this.enabled) return; this.thump(0.35, 120, 0.12); this.burst(0.18, 900, 200, 0.12); }
+  carDoor() { if (!this.enabled) return; if (this.play('car_door', { vol: 0.5, vary: 0.06 })) return; this.thump(0.35, 120, 0.12); this.burst(0.18, 900, 200, 0.12); }
   // Shop door: glass doors slide (whoosh) and the bell rings "ding-dong".
   chime(volume = 1) {
     if (!this.enabled || volume < 0.05) return;

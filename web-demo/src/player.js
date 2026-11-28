@@ -193,7 +193,7 @@ export class Player {
     if (a.mag >= this.magSize() || a.reserve <= 0 || this.reloadT > 0) return;
     if (instant) { this.finishReload(); return; }
     this.reloadT = this.reloadTotal = w.reload * (this.game.rewards && this.game.rewards.rank >= 3 ? 0.75 : 1);
-    this.game.audio.reload(this.reloadT);
+    this.game.audio.reload(this.reloadT, this._weapon);
   }
 
   finishReload() {
@@ -401,11 +401,12 @@ export class Player {
     }
 
     const ground = g.world.groundAt(this.x, this.z);
+    if (this.y <= ground && !this.grounded && this.vy < -6 && !this.dive) g.audio.land(Math.min(1, -this.vy / 13));   // feet hit the ground after a jump / fall
     if (this.y <= ground) { this.y = ground; if (this.vy < 0) this.vy = 0; this.grounded = true; }
     else this.grounded = this.y - ground < 0.02 && this.vy <= 0;
     if (this.dive) {
       this.dive.t += dt;
-      if (!this.dive.land && this.grounded && this.dive.t > 0.15) { this.dive.land = 0.5; g.camera3p.shake(0.25); g.audio.thump(0.6, 80, 0.15); }
+      if (!this.dive.land && this.grounded && this.dive.t > 0.15) { this.dive.land = 0.5; g.camera3p.shake(0.25); g.audio.thump(0.3, 80, 0.15); g.audio.land(1); g.audio.bodyfall(0.6); }
       else if (this.dive.land && (this.dive.land -= dt) <= 0) this.dive = null;
     }
     if (this.rollT > 0 && (this.rollT -= dt) <= 0) { this.rollT = 0; this.bank = 0; }   // two full turns = upright again
@@ -434,7 +435,7 @@ export class Player {
       if (this.stepDist > this.stride) {
         this.stepDist -= this.stride;
         const surface = this.z < -238 ? (this.y < -0.5 ? 'water' : 'sand') : 'hard';
-        g.audio.footstep(0.18 + sp * 0.05, surface);
+        g.audio.footstep(0.18 + sp * 0.05, surface === 'hard' && g.indoors ? 'tile' : surface, sp > 4.5);   // real steps: stone, shop tiles, sand, water; running steps
       }
     }
 
@@ -484,7 +485,7 @@ export class Player {
     this.vx += Math.sin(this.yaw) * 1.6; this.vz += Math.cos(this.yaw) * 1.6;   // a step into the punch
     o.takeDamage(PUNCH_DAMAGE, true, this.x, this.z);
     if (!o.dead && o.stun) o.stun(0.9, this.x, this.z);
-    g.audio.thump(0.9, 80, 0.12); g.audio.impact(0.7);
+    g.audio.punch();
     g.camera3p.kick(0.5);
     g.hud.hitMarker(o.dead, false);
     if (o.dead) { g.slowmo(0.4, 0.4); if (g.rewards) g.rewards.event('KNOCKOUT!', 150, 15); }
@@ -505,7 +506,7 @@ export class Player {
     if (best) { this.punch(best); return; }
     this.punchCd = 0.38; this.punchT = 0.22; this.punchAt = null; this.swingDir = { x: fx, z: fz };
     this.yaw = Math.atan2(fx, fz);
-    g.audio.burst(0.14, 900, 400, 0.12, 'bandpass');   // whoosh
+    g.audio.swing();   // whoosh
   }
 
   // Can we shoot now? Uses a bullet (or reloads / clicks when empty).
@@ -539,6 +540,7 @@ export class Player {
     g.camera3p.recoilKick(w.recoil[0], w.recoil[1]);
     this.vmKick = Math.min(1.4, this.vmKick + (w.bolt ? 1.3 : w.pellets ? 1.1 : 0.55));
     if (w.bolt) setTimeout(() => this.game.audio.bolt && this.game.audio.bolt(), 420);   // work the bolt
+    if (w.pellets) setTimeout(() => this.game.audio.pump && this.game.audio.pump(), 380);   // rack the pump
     this.bloom = Math.min(w.bloomMax, this.bloom + w.bloom);
     g.noise(this.x, this.z, 38);
   }

@@ -16,5 +16,8 @@ Sky lighting
 Libraries: three.js (MIT), meshoptimizer decoder (MIT).
 
 Everything else (the city of Navapur, buildings, seafront hotels, palm trees, cars, auto-rickshaws,
-police SUVs, helicopter, guns, textures, shop signs, missions, sounds) is made in code for this project.
+police SUVs, helicopter, guns, textures, shop signs, missions) is made in code for this project.
 All names, places and police forces are fictional.
+
+Sound effects (v9.8): real recordings from freesound.org, all CC0 (public domain) - the full list of
+authors and links is in assets/sfx/CREDITS.txt. Thank you to every recordist!

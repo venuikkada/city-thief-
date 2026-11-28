@@ -176,7 +176,7 @@ function armsStep(o, site, U) {
         const [gun, extra] = LOOT[(opened + (o.seed || 0)) % LOOT.length];
         m.track(g.pickups.spawn(gun, k.x + 0.5, k.z, { yaw: Math.random() * 6.28, dropped: true }));
         m.track(g.pickups.spawn(extra, k.x - 0.5, k.z + 0.3, { yaw: Math.random() * 6.28, dropped: true }));
-        g.hud.popup('CRATE OPEN: ' + gun.toUpperCase(), 'bonus'); g.audio.thump(0.5, 140, 0.1);
+        g.hud.popup('CRATE OPEN: ' + gun.toUpperCase(), 'bonus'); g.audio.thump(0.3, 140, 0.1); g.audio.pickup();
         m.newTask();
       }
       const shut = crates.filter((k) => !k.open);

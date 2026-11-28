@@ -646,6 +646,7 @@ export class Interiors {
     const LA = say('robAnswer', ROB_ANSWER); ia.speak(p, LA.text, 'alarm', LA);
     for (const q of it.npcs) if (q !== p && q.panicFrom) q.panicFrom(P.x, P.z);
     const [lo, hi] = it.S.cash, cash = Math.round((lo + Math.random() * (hi - lo)) / 50) * 50;
+    g.audio.till();   // the drawer opens with a ching
     const B = it.B, t = B.till || B.owner;
     const tx = B.wx(t.u, t.v - 1.0), tz = B.wz(t.u, t.v - 1.0);
     this.later(1.4, () => {

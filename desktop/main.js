@@ -8,8 +8,7 @@ const fs = require('fs');
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
-  '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.txt': 'text/plain', '.ico': 'image/x-icon',
-};
+  '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.txt': 'text/plain', '.ico': 'image/x-icon', '.mp3': 'audio/mpeg' };
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
 app.whenReady().then(() => {

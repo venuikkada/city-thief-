@@ -1,4 +1,6 @@
-// City life you can hear (all made in code, nothing to download):
+// City life you can hear. v9.8: real recordings when they have loaded - Mumbai traffic, an Indian
+// street market, birds, crickets, sea waves, real car horns, crows, dogs, temple bells, police radio
+// (CC0, see assets/sfx/CREDITS.txt). Before that (or if a file is missing) the old made-in-code sounds:
 //   outside : car / auto-rickshaw / truck horns near and far (from the side they come from),
 //             crowd chatter near people, birds and crows by day, crickets and dogs at night,
 //             a temple bell now and then, sea waves on Marine Drive, police radio near cops.
@@ -79,9 +81,19 @@ export class Ambience {
     return { pan: (dx * -fz + dz * fx) / d, d };
   }
 
+  // Real recordings (when loaded): steady layers that follow where Vikram is.
+  samples() {
+    const A = this.A;
+    if (this.smp || !A.samplesReady) return this.smp;
+    const L = (n) => A.loop(n, this.out);
+    this.smp = { street: L('amb_street'), market: L('amb_market'), birds: L('amb_birds'), crickets: L('amb_crickets'), sea: L('amb_sea') };
+    return this.smp;
+  }
   horn(x, z) {
     const { pan, d } = this.where(x, z), v = 0.09 * Math.max(0, 1 - d / 90);
     if (v < 0.006) return;
+    // A real horn, pitched up for small cars and autos, down for trucks.
+    if (this.A.play('horn', { vol: v * 4.2, pan, dest: this.out, rate: Math.random() < 0.15 ? rnd(0.7, 0.8) : rnd(0.92, 1.25), vary: 0.02, lp: 2500 + 9000 * Math.max(0, 1 - d / 60) })) return;
     const t = this.ctx.currentTime, out = this.panner(pan, 1), kind = Math.random();
     if (kind < 0.25) {   // auto-rickshaw: "pom pom" rubber horn
       for (let k = 0; k < 2; k++) this.tone('square', 330, 250, t + k * 0.2, 0.16, v * 0.8, out, 0.005);
@@ -97,6 +109,7 @@ export class Ambience {
     for (let k = 0; k < n; k++) this.tone('sine', f * rnd(0.9, 1.15), f * rnd(1.15, 1.5), t + k * rnd(0.07, 0.13), rnd(0.04, 0.09), 0.018, out, 0.004);
   }
   crow() {   // the Indian city crow: a harsh "kaa kaa"
+    if (this.A.play('crow', { vol: rnd(0.12, 0.22), pan: rnd(-0.9, 0.9), dest: this.out, vary: 0.08 })) return;
     const t = this.ctx.currentTime, out = this.panner(rnd(-0.9, 0.9), 1), n = 1 + Math.floor(Math.random() * 3);
     for (let k = 0; k < n; k++) {
       const s = t + k * 0.42;
@@ -106,16 +119,23 @@ export class Ambience {
     }
   }
   dog() {
+    if (this.A.play('dog', { vol: rnd(0.1, 0.18), pan: rnd(-1, 1), dest: this.out, vary: 0.1, lp: 5000 })) return;
     const t = this.ctx.currentTime, out = this.panner(rnd(-1, 1), 1), n = 2 + Math.floor(Math.random() * 2);
     for (let k = 0; k < n; k++) { const s = t + k * rnd(0.32, 0.5); this.tone('sawtooth', 340, 180, s, 0.16, 0.022, out, 0.006); this.noise(s, 0.12, 0.02, 'lowpass', 900, 1, out); }
   }
-  bell() {   // a small temple bell far away
+  bell() {   // temple bells far away
+    if (this.A.play('bell', { vol: 0.13, pan: rnd(-0.8, 0.8), dest: this.out, vary: 0.04, lp: 6000 })) return;
     const t = this.ctx.currentTime, out = this.panner(rnd(-0.8, 0.8), 1);
     for (const [f, v] of [[640, 0.022], [1690, 0.012], [3080, 0.006]]) this.tone('sine', f, f, t, 2.6, v, out, 0.003);
   }
   radio(x, z) {   // police radio: click, crackly voice, beep
     const { pan, d } = this.where(x, z), v = 0.05 * Math.max(0, 1 - d / 35);
     if (v < 0.005) return;
+    if (this.A.has('radio')) {   // a real police radio: chirp, voices
+      this.A.play('radio_chirp', { vol: v * 4, pan, dest: this.out });
+      this.A.play('radio', { vol: v * 5, pan, dest: this.out, when: 0.12, vary: 0.04 });
+      return;
+    }
     const t = this.ctx.currentTime, out = this.panner(pan, 1), len = rnd(0.8, 1.7);
     this.tone('square', 1350, 1350, t, 0.07, v * 0.5, out, 0.002);
     for (let s = 0.09; s < len; s += rnd(0.09, 0.16)) this.noise(t + s, rnd(0.06, 0.12), v * rnd(0.5, 1), 'bandpass', rnd(1400, 2600), 4, out);
@@ -133,18 +153,36 @@ export class Ambience {
     const now = this.ctx.currentTime, T = (x, v) => x.gain.setTargetAtTime(v, now, 0.4);
     // Muffle the street inside shops; the fan hums.
     this.muffle.frequency.setTargetAtTime(inside ? 650 : 16000, now, 0.25);
-    if (A.ambience) A.ambience.gain.setTargetAtTime(inside ? 0.07 : 0.22, now, 0.4);
     T(this.fan, inside ? 0.05 : 0);
     // People around: crowd chatter (bazaars and busy footpaths get loud).
     let people = 0;
     if (!menu) for (const p of g.humans()) if (!p.dead && Math.abs(p.x - px) < 22 && Math.abs(p.z - pz) < 22) people++;
-    T(this.crowd, Math.min(0.06, people * 0.007) * (1 - rain * 0.5));
+    const S = this.samples();
+    if (S) {
+      // Real layers: Mumbai traffic (more cars = louder), an Indian market (more people = louder),
+      // birds by day, crickets at night, the sea on Marine Drive.
+      let cars = 0;
+      if (!menu) for (const c of g.cars) if (!c.inactive && Math.abs(c.x - px) < 60 && Math.abs(c.z - pz) < 60) cars++;
+      const seaK = Math.max(0, Math.min(1, (-205 - pz) / 25));
+      if (S.street) T(S.street.g, (0.16 + Math.min(0.24, cars * 0.018)) * (1 - seaK * 0.5) * (1 - rain * 0.3));
+      if (S.market) T(S.market.g, Math.min(0.34, people * 0.03) * (1 - rain * 0.6));
+      if (S.birds) T(S.birds.g, night < 0.5 && rain < 0.3 ? 0.07 : 0);
+      if (S.crickets) T(S.crickets.g, night > 0.5 && rain < 0.3 ? 0.18 : 0);
+      if (S.sea) T(S.sea.g, 0.38 * seaK);
+      T(this.crowd, 0); T(this.sea, 0); T(this.crick, 0);
+      if (A.ambience) A.ambience.gain.setTargetAtTime(inside ? 0.03 : 0.07, now, 0.4);   // the old rumble only fills in under the street
+    } else {
+      T(this.crowd, Math.min(0.06, people * 0.007) * (1 - rain * 0.5));
+      if (A.ambience) A.ambience.gain.setTargetAtTime(inside ? 0.07 : 0.22, now, 0.4);
+    }
     this.babbleT -= dt;
     if (this.babbleT <= 0) { this.babbleT = rnd(0.09, 0.2); for (const v of this.voices) v.gain.setTargetAtTime(Math.random() < 0.6 ? rnd(0.3, 1) : 0.05, now, 0.04); }
-    // Sea waves near Marine Drive and the beach.
-    T(this.sea, 0.13 * Math.max(0, Math.min(1, (-205 - pz) / 25)));
-    // Crickets at night (not in the rain).
-    T(this.crick, night > 0.5 && rain < 0.3 ? 0.012 : 0);
+    if (!S) {
+      // Sea waves near Marine Drive and the beach.
+      T(this.sea, 0.13 * Math.max(0, Math.min(1, (-205 - pz) / 25)));
+      // Crickets at night (not in the rain).
+      T(this.crick, night > 0.5 && rain < 0.3 ? 0.012 : 0);
+    }
     // Random one-shots.
     const tm = this.timers;
     for (const k of Object.keys(tm)) tm[k] -= dt;
@@ -154,7 +192,7 @@ export class Ambience {
       tm.horn = rnd(1.2, 4.5) * (cars > 8 ? 0.7 : 1.3);
       if (pick && !inside) this.horn(pick.x, pick.z); else if (inside && Math.random() < 0.5 && pick) this.horn(pick.x, pick.z);
     }
-    if (tm.bird <= 0) { tm.bird = rnd(1.5, 5); if (night < 0.5 && rain < 0.3 && !inside) this.bird(); }
+    if (tm.bird <= 0) { tm.bird = rnd(1.5, 5); if (night < 0.5 && rain < 0.3 && !inside && !S) this.bird(); }
     if (tm.crow <= 0) { tm.crow = rnd(7, 18); if (night < 0.5 && rain < 0.3 && !inside) this.crow(); }
     if (tm.dog <= 0) { tm.dog = rnd(10, 26); if (night > 0.5 && !inside) this.dog(); }
     if (tm.bell <= 0) { tm.bell = rnd(35, 80); if (!inside && rain < 0.3) this.bell(); }

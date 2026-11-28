@@ -73,7 +73,7 @@ export class Cylinders {
   hit(c, d, byPlayer) {
     if (c.dead || c.fuse >= 0) return;
     c.hp -= d; c.byPlayer = c.byPlayer || !!byPlayer;
-    if (c.hp <= 0) c.fuse = 0.15;   // a hiss, then BOOM
+    if (c.hp <= 0) { c.fuse = 0.15; this.g.audio.play('hiss', { vol: 0.35, vary: 0.1 }); }   // a hiss, then BOOM
   }
   // An explosion nearby sets them off (one after another).
   blast(x, z, r) {
@@ -132,7 +132,7 @@ export class Bombs {
     b.mesh.position.set(b.x, b.y, b.z);
     g.scene.add(b.mesh);
     this.live.push(b);
-    g.music.whoosh();
+    g.music.whoosh(); g.audio.play('fuse', { vol: 0.32, vary: 0.05 });   // the fuse fizzes for 2 seconds
     g.hud.setBombs(P.bombs);
     if (!g.bombTipDone) { g.bombTipDone = true; g.hud.toast('SUTLI BOMB! It blows up in 2 seconds - get clear!'); }
     return true;

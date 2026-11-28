@@ -651,6 +651,7 @@ export class Officer {
     if (this.health <= 0) {
       this.dead = true;
       this.rig.die(this.x - fromX, this.z - fromZ);
+      if (g.audio && g.camera) setTimeout(() => g.audio.bodyfall(Math.max(0, 1 - Math.hypot(this.x - g.camera.position.x, this.z - g.camera.position.z) / 30)), 450);   // he hits the ground
       this.gun.visible = false; this.setMarker('none');
       this.stunT = 0; this.mesh.rotation.x = 0;
       if (byPlayer) {

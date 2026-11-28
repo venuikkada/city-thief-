@@ -78,7 +78,7 @@ export class Director {
     if (th.dead) return this.end(true, false, 'SNATCHER STOPPED', 400);
     if (dist(P.x, P.z, th.x, th.z) < 1.7 && !P.inCar) {
       th.state = 'cower'; th.cowerT = 99; th.rig.die(th.x - P.x, th.z - P.z);
-      g.slowmo(0.8, 0.35); g.audio.thump(0.8, 90, 0.2);
+      g.slowmo(0.8, 0.35); g.audio.thump(0.5, 90, 0.2); g.audio.bodyfall(1);
       g.hud.showBig('TACKLED!', '#ffc531', 1.4);
       return this.end(true, false, 'CHAIN RETURNED - HERO OF NAVAPUR', 600);
     }

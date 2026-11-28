@@ -22,7 +22,7 @@ if ! javac -nowarn -source 8 -target 8 -bootclasspath "$JAR" -d "$B/classes" $(f
 fi
 "$BT/dx" --dex --min-sdk-version=24 --output="$B/classes.dex" "$B/classes"
 # Package, align, sign.
-aapt package -f -M "$REPO/android/AndroidManifest.xml" -S "$B/res" -A "$B/assets" -I "$JAR" -F "$B/app.unsigned.apk" -0 glb -0 hdr -0 jpg -0 png
+aapt package -f -M "$REPO/android/AndroidManifest.xml" -S "$B/res" -A "$B/assets" -I "$JAR" -F "$B/app.unsigned.apk" -0 glb -0 hdr -0 jpg -0 png -0 mp3
 (cd "$B" && aapt add app.unsigned.apk classes.dex > /dev/null)
 zipalign -f -p 4 "$B/app.unsigned.apk" "$B/app.aligned.apk"
 if [ ! -f "$KS" ]; then

@@ -203,7 +203,7 @@ export class Interact {
     p.pushVX = (dx / d) * 4.2; p.pushVZ = (dz / d) * 4.2; p.pushT = 0.35;
     if (g.voice) g.voice.sayLine('VIKRAM', 'push', ['Hatt! Out of my way!', 'Side ho jao, bhai!', 'Move it!'], { queue: true });
     this.sayL(p, 'pushed', PUSHED, 'angry');
-    g.audio.thump(0.4, 120, 0.12);
+    g.audio.thump(0.25, 120, 0.12); g.audio.play('body_hit', { vol: 0.3, vary: 0.1 });
     if (p.panicFrom && Math.random() < 0.5) setTimeout(() => p.panicFrom(P.x, P.z), 400);
     else this.hold(p, 2, 'talk');
     if (p.calling) this.stopCaller(p);

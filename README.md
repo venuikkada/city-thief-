@@ -90,6 +90,17 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
     food, ammo, a new SIM = -1 star, a new shirt = the police lose you at 1-2 stars) or ROB THE TILL (₹600 - ₹6,500,
     then the alarm = 2 stars, and the police come inside after you). Only the 3 nearest buildings are open at once
     (built in 2-8 ms from simple boxes: nothing extra to download).
+- **v9.8: real sounds (they sounded artificial):** every sound made in code was replaced by a REAL RECORDING
+  (88 clips, 1.5 MB, all CC0 from freesound.org - authors in `web-demo/assets/sfx/CREDITS.txt`): real guns
+  (9mm pistol, AR-15, AK-47, a 20-gauge shotgun, a big hunting rifle for the sniper, a .22 magnum for the golden
+  pistol) with their natural outdoor echo, distant shots for far-away police, reloads, a pump after every shotgun
+  shot, the sniper's bolt, a dry-fire click, shells hitting the ground, ricochets, bullets whizzing past; real
+  footsteps on stone, shop tiles, sand and water (and running steps); punches, swings, bodies falling; explosions,
+  car crashes, tyres, car doors, horns, a recorded engine that revs with speed, a police siren, a helicopter;
+  and the city: Mumbai traffic, an Indian street market, birds, crickets, sea waves, rain, thunder, crows, dogs,
+  Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
+  left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
+  (trim, clean, level, slice footsteps, seamless loops).
 - **v9.7: guns like PUBG, a 2-minute police grace, prettier streets, a set piece in every mission:**
   - **Empty hands first:** Vikram starts with bare FISTS (FIRE = PUNCH) and his pistol in the holster. With empty
     hands he runs about 18% faster. Guns lie around the city (yellow light; 70 loot spots by the shop doors, fresh
