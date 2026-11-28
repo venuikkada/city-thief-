@@ -618,7 +618,7 @@ export class Interiors {
       msg = 'AMMO +2 MAGAZINES +2 SUTLI BOMBS'; g.audio.reload();
     } else if (b.fx === 'sim') {
       if (!D.stars) { ia.sayL(p, 'noSim', ['Police aapke peeche nahi hai, SIM ka kya karoge?']); return; }
-      D.setStars(D.stars - 1); msg = 'NEW SIM: POLICE LOST YOUR PHONE  -1 STAR';
+      D.lower(); msg = D.stars ? 'NEW SIM: POLICE LOST YOUR PHONE  -1 STAR' : 'NEW SIM: THE POLICE LOST YOU';   // (v10: it really takes a star off now)
     } else if (b.fx === 'look') {
       const pool = loadedCrowd(false).filter((id) => id !== P.outfit);
       if (pool.length) P.setOutfit(pick(pool));

@@ -288,8 +288,12 @@ export class Hud {
     if (D.active && D.arrestT > 0) {
       // A cop has him: the one-minute fight.
       s = `${tr('FIGHT BACK!')} ${Math.ceil(D.arrestT)}s · ${tr('beat the cops or get away')}`; color = '#ff3b30';
+    } else if (D.responding) {
+      // v10: the police are on the way - this is the time to finish the job or get ready.
+      const left = Math.max(0, Math.ceil(D.respondT));
+      s = `🚓 ${tr('COPS IN')} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${tr('finish the job - a new SIM or shirt can lose them')}`; color = '#ffb020';   // short first part: phones show only ~20 letters
     } else if (D.active && D.graceLeft > 0 && D.sinceSeen < 1 && !D.lullOn) {
-      // The first 2 minutes: the police cannot kill or arrest him yet.
+      // The first 2 minutes after the police arrive: they cannot kill or arrest him yet.
       const left = Math.ceil(D.graceLeft);
       s = `🛡 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${tr('police can\'t stop you yet - take them down!')}`; color = '#7dd3ff';
     } else if (D.active && D.lullOn) {
@@ -306,11 +310,12 @@ export class Hud {
     if (this.cache.status !== s) { this.cache.status = s; E.status.textContent = s; E.status.style.color = color; E.status.style.setProperty('--c', color); E.status.classList.toggle('on', !!s); }
 
     // Wanted stars.
-    const key = D.stars * 10 + (D.active && D.sinceSeen >= 1 ? 1 : 0);
+    const lost = D.active && !D.responding && D.sinceSeen >= 1;   // blinking stars = they lost sight of him
+    const key = D.stars * 10 + (lost ? 1 : 0);
     if (this.cache.stars !== key) {
       this.cache.stars = key;
       [...E.stars.children].forEach((el, i) => el.classList.toggle('on', i < D.stars));
-      E.stars.classList.toggle('blink', D.active && D.sinceSeen >= 1);
+      E.stars.classList.toggle('blink', lost);
     }
 
     // Gun slots (1 + 2 main guns, 3 pistol): picture, name, bullets, its sight; the one in his hands is lit.
@@ -444,8 +449,8 @@ export class Hud {
     c.setTransform(R * a / ms, R * b / ms, R * cc / ms, R * d / ms, R * (a * MAP.x0 + cc * MAP.z0 + e), R * (b * MAP.x0 + d * MAP.z0 + f));
     c.drawImage(this.mapImage, 0, 0);
     c.setTransform(a * R, b * R, cc * R, d * R, e * R, f * R);
-    // Police search circle.
-    if (D.active) {
+    // Police search circle (not while they are still on the way).
+    if (D.active && !D.responding) {
       c.fillStyle = D.sinceSeen < 1 ? 'rgba(255,40,40,0.22)' : 'rgba(255,60,60,0.14)';
       c.strokeStyle = this.flash ? 'rgba(255,70,70,0.95)' : 'rgba(80,120,255,0.95)'; c.lineWidth = 2 / k;
       c.beginPath(); c.arc(D.circle.x, D.circle.z, D.circle.r, 0, Math.PI * 2); c.fill(); c.stroke();
@@ -520,7 +525,7 @@ export class Hud {
     c.setTransform(-R * L.sc / ms, 0, 0, -R * L.sc / ms, R * (L.ox - MAP.x0 * L.sc), R * (L.oy - MAP.z0 * L.sc));
     c.drawImage(this.mapImage, 0, 0);
     c.setTransform(-R * L.sc, 0, 0, -R * L.sc, R * L.ox, R * L.oy);
-    if (D.active) {
+    if (D.active && !D.responding) {
       c.fillStyle = 'rgba(255,50,50,0.2)'; c.strokeStyle = 'rgba(255,70,70,0.9)'; c.lineWidth = 2 / L.sc;
       c.beginPath(); c.arc(D.circle.x, D.circle.z, D.circle.r, 0, Math.PI * 2); c.fill(); c.stroke();
     }

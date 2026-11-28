@@ -101,6 +101,14 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
   left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
   (trim, clean, level, slice footsteps, seamless loops).
+- **v10.0: the police take 2 minutes to come:** new wanted stars no longer bring the police at once. The screen
+  shows POLICE COMING IN 2:00 and counts down; nobody chases Vikram meanwhile (no police cars, roadblocks,
+  helicopter or raids, and cops who happen to be around do nothing). Use the time: finish the job, grab a fast car,
+  buy a NEW SIM (-1 star; this now really works) or a NEW SHIRT (1-2 stars: they lose you). Just running away does
+  not lose them - at 0:00 they come to wherever he is, and for 15 s the control room guides them to him. Then the
+  old 2-minute shield starts (they cannot kill or arrest him yet). A cop he attacks during the wait fights back
+  at once (with the cops next to him). Scripted mission shoot-outs (the police are already there) and the CALL
+  COPS button still bring them at once. In "Lose the police" mission steps the task shows the countdown too.
 - **v9.9: a clean mix like GTA / PUBG (v9.8 had too much horn and crowd noise):** in a minute on a busy road you now
   hear about 2 horns instead of 32, and the background is about 11 dB quieter. The honking Mumbai-traffic loop and
   the street-market crowd loop are gone; under everything there is now soft open air and a far-away city wash

@@ -180,7 +180,18 @@ class Game {
     this.streetLife = this.streetLife.slice(0, n.life);
     this.refreshLists();
 
-    this.dispatch.onStars = (n, was) => { if (n > 0 && was === 0) this.hud.showBig('COPS ARE COMING!', '#ff4438', 2); };
+    this.dispatch.onStars = (n, was) => {
+      if (!(n > 0 && was === 0)) return;
+      if (this.dispatch.responding) {   // v10: the police need 2 minutes to get there
+        this.hud.showBig('POLICE COMING IN 2:00', '#ffb020', 2.4);
+        this.hud.toast('The police need 2 minutes to get here - finish the job, grab a car, or buy a new SIM / shirt!');
+      } else this.hud.showBig('COPS ARE COMING!', '#ff4438', 2);
+    };
+    this.dispatch.onArrive = () => {
+      if (this.player.dead) return;
+      this.hud.showBig('POLICE ARE HERE!', '#ff4438', 2.4);
+      this.voice.sayLine('POLICE', 'backup', ['All units, move in! Get him now!'], { prio: 2 });
+    };
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
     this.dispatch.onMessage = (t) => this.hud.toast(t);
     // He beat the cops who came for him: 2-3 minutes without police, then a bigger backup (v9.4).
@@ -352,7 +363,7 @@ class Game {
     const p = new PoliceCar(this);
     p.init(spots[0]);
     this.cars.push(p); this.policeCars.push(p);
-    if (this.dispatch && this.dispatch.active) p.beginPursuit();
+    if (this.dispatch && this.dispatch.chasing) p.beginPursuit();   // not while the police are still on the way / in the breather
     return p;
   }
 
@@ -584,7 +595,7 @@ class Game {
     P.armor = this.rewards.has('armour') ? 60 : 0;
     P.health = P.maxHealth;
     this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.punchTarget = null; this.driving.nitro = 1;
-    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; D.chaseStart = -999; }
+    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; D.chaseStart = -999; D.respondT = 0; D.trackT = 0; }
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -1005,7 +1016,7 @@ class Game {
     }
     // X: throw colour in the Holi mission, otherwise put the gun away.
     if (input.holsterPressed && this.holi && this.colorBombs > 0) { this.throwColor(); input.holsterPressed = false; }
-    if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars));
+    if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars), undefined, undefined, true);   // you asked for them: at once
     if (input.mapPressed) { this.openMap(); return; }
     if (input.camPressed && P.inCar) this.carCamFar = !this.carCamFar;
 
@@ -1021,7 +1032,7 @@ class Game {
     for (const p of this.policeCars) if (p.pursuing) siren = Math.min(siren, dist(p.x, p.z, P.x, P.z));
     this.audio.update(siren);
     this.ambience.update(dt);
-    const heat = this.dispatch.stars && !this.dispatch.lullOn ? 2 : 0;   // the breather: the music calms down
+    const D = this.dispatch, heat = D.stars && !D.lullOn ? (D.responding ? 1 : 2) : 0;   // on the way: tense; the breather: calm
     const mLevel = this.mission ? Math.max(this.mission.music ?? 1, heat) : heat;
     this.music.setLevel(Math.min(3, mLevel + (this.dispatch.stars >= 4 ? 1 : 0)));
     this.render();
@@ -1255,7 +1266,7 @@ $('btn-resume').addEventListener('click', () => { game.showScreen(null); game.mo
 $('btn-restart').addEventListener('click', () => { if (game.mission) game.startMission(game.mission.def.id); });
 $('btn-pause-settings').addEventListener('click', () => openSettings('pause'));
 // Free roam: start a police chase from the pause menu (the HUD only shows walking / driving buttons).
-$('btn-pause-cops').addEventListener('click', () => { $('btn-resume').click(); if (!game.mission) game.dispatch.setStars(Math.max(1, game.dispatch.stars)); });
+$('btn-pause-cops').addEventListener('click', () => { $('btn-resume').click(); if (!game.mission) game.dispatch.setStars(Math.max(1, game.dispatch.stars), undefined, undefined, true); });
 for (const b of document.querySelectorAll('[data-time]')) {
   b.addEventListener('click', () => {
     settings.time = b.dataset.time;
@@ -1275,7 +1286,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.9)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v10.0)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

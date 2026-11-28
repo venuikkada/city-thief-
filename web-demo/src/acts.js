@@ -719,7 +719,14 @@ function heatStep(base) {
       m.objective('Lose the police (they raid buildings too - do not just hide!)');
       m.music = 2;
     },
-    update: (g, m) => { if (g.dispatch.stars === 0) { m.music = 1; g.hud.showBig('HEAT IS OFF', '#4dff66', 1.6); return true; } return false; },
+    update: (g, m) => {
+      const D = g.dispatch;
+      if (D.stars === 0) { m.music = 1; g.hud.showBig('HEAT IS OFF', '#4dff66', 1.6); return true; }
+      // v10: they need 2 minutes to get there - get ready (or lose them early with a new SIM / shirt).
+      if (D.responding) { const t = Math.ceil(D.respondT); m.objective(`Police are coming (${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}) - get a fast car or a new SIM / shirt, then lose them`); }
+      else m.objective('Lose the police (they raid buildings too - do not just hide!)');
+      return false;
+    },
   };
 }
 
