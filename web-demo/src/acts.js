@@ -658,7 +658,7 @@ function tuneStep(o) {
 // The road to the job is never quiet (amb): gang cars come after him (in a car), or men jump out of
 // an alley (on foot) - half way there, or at the site when it is close. The police must be lost too.
 function siteStep(site, label, amb, H) {
-  let d0 = 0, sprung = false, cleared = true, steerT = 0;
+  let d0 = 0, sprung = false, cleared = true, steerT = 0, hid = false;
   const spring = (g, m) => {
     const P = g.player, T = g.dispatch.target;
     sprung = true; cleared = false; m.newTask();
@@ -700,7 +700,10 @@ function siteStep(site, label, amb, H) {
         cleared = true; g.pins = []; m.music = 1; g.slowmo(0.6, 0.4); g.hud.showBig('AMBUSH CLEARED', '#4dff66', 1.4);
         m.newTask(); m.marker(site.x, site.z, 6);
       }
-      if (g.dispatch.stars > 0) { m.objective('Lose the police before the job'); return false; }
+      // v10.2: police on him (not just on their way): lose them first - the job marker hides meanwhile
+      // (it never shows a yellow point where nothing happens).
+      if (g.dispatch.onYou) { if (!hid) { hid = true; m.marker(null); } m.objective('Police are on you! Lose them first: get out of the red circle on the map'); return false; }
+      if (hid) { hid = false; m.marker(site.x, site.z, 6); }
       const close = near(g, site.x, site.z, 9);
       if (close && P.inCar) { m.objective('Get out of the car - the job starts here'); return false; }
       m.objective(`Go to the job: ${label}`);
@@ -725,7 +728,7 @@ function heatStep(base) {
       const D = g.dispatch;
       if (D.stars === 0) { m.music = 1; g.hud.showBig('HEAT IS OFF', '#4dff66', 1.6); return true; }
       // v10: they need 2 minutes to get there - get ready (or lose them early with a new SIM / shirt).
-      if (D.responding) { const t = Math.ceil(D.respondT); m.objective(`Police are coming (${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}) - get a fast car or a new SIM / shirt, then lose them`); }
+      if (D.responding) { const t = Math.ceil(D.respondT); m.objective(`Get away before the police come (${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}): get out of the red circle on the map`); }
       else m.objective('Lose the police (they raid buildings too - do not just hide!)');
       return false;
     },
@@ -756,8 +759,10 @@ function stashStep(A, H, id) {
     },
     update: (g, m, dt) => {
       const r = m.vars.receiver, P = g.player;
+      // v10.2: the police on him near the safehouse: lose them first (the marker hides meanwhile).
+      const blocked = phase === 0 && g.dispatch.onYou && dist(P.x, P.z, s.x, s.z) < 40;
       if (phase === 0) {
-        m.marker(s.x, s.z, 6);
+        if (blocked) m.marker(null); else m.marker(r.x, r.z, 2.6);   // v10.2: the ring is on the contact (walk into it = meet)
         // The twist: they were waiting for you.
         if (A.twist && dist(P.x, P.z, s.x, s.z) < 55) {
           phase = 1;
@@ -790,9 +795,14 @@ function stashStep(A, H, id) {
           m.objective(`The safehouse is burned! Go to ${b.label}`);
           return false;
         }
-        if (phase === 0 && g.dispatch.stars > 0 && dist(P.x, P.z, s.x, s.z) < 40) { m.objective(`Lose the police first - do not lead them to ${title(who)}!`); return false; }
+        if (phase === 0 && g.dispatch.onYou && dist(P.x, P.z, s.x, s.z) < 40) { m.marker(null); m.objective(`Lose the police first - do not lead them to ${title(who)}! Get out of the red circle on the map`); return false; }
         if (phase === 0 && dist(P.x, P.z, r.x, r.z) < 3.2 && !P.inCar) phase = 2;
-        else if (phase === 0) { if (P.inCar && dist(P.x, P.z, s.x, s.z) < 14) m.objective(`Get out and meet ${title(who)}`); return false; }
+        else if (phase === 0) {
+          const dr = dist(P.x, P.z, r.x, r.z);
+          if (P.inCar && dist(P.x, P.z, s.x, s.z) < 14) m.objective(`Get out and meet ${title(who)}`);
+          else if (!P.inCar && dr < 12) m.objective(`Walk up to ${title(who)} (the yellow circle)`);   // v10.2: close - say the last bit
+          return false;
+        }
       }
       if (phase === 1) {
         const left = g.officers.filter((e) => e.group === 'amb' && !e.dead);

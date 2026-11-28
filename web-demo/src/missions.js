@@ -118,9 +118,9 @@ function goTo(x, z, r, text, o = {}) {
     start: (g, m) => { m.objective(text); m.marker(x, z, r); },
     update: (g, m) => {
       const P = g.player;
-      if (o.car && !P.inCar) { m.objective(o.carText || 'Get in a car'); return false; }
+      if (o.car && !P.inCar) { m.objective(o.carText || 'Get in a car (walk up to any car, tap ENTER)'); return false; }
       if (o.foot && P.inCar) { m.objective('Get out of the car'); return false; }
-      if (o.withCar && g.driving.car !== m.vars[o.withCar]) { m.objective(o.carText || 'Get back in the car'); return false; }
+      if (o.withCar && g.driving.car !== m.vars[o.withCar]) { m.objective(o.carText || 'Get back in the car (walk up to it, tap ENTER)'); return false; }
       m.objective(text);
       return near(g, x, z, r);
     },
@@ -133,10 +133,12 @@ function getIn(name, text) {
     label: text,
     start: (g, m) => { m.objective(text); const c = name && m.vars[name]; if (c) m.marker(c.x, c.z, 3); },
     update: (g, m) => {
-      const c = name && m.vars[name];
+      const c = name && m.vars[name], P = g.player;
       if (c && c.exploded) { m.fail('The car was destroyed'); return false; }
       if (c) m.marker(c.x, c.z, 3);
-      return name ? g.driving.car === c : g.player.inCar;
+      // v10.2: next to the car but not in it - say how (standing at the marker alone does nothing).
+      if (c && g.driving.car !== c) m.objective(Math.hypot(P.x - c.x, P.z - c.z) < 7 ? 'Get in: walk up to the car and tap ENTER' : text);
+      return name ? g.driving.car === c : P.inCar;
     },
     end: (g, m) => m.marker(null),
   };
@@ -237,7 +239,7 @@ function hold(x, z, r, sec, text, o = {}) {
     label: text,
     start: (g, m) => { t = 0; away = 0; m.objective(text); m.marker(x, z, r); },
     update: (g, m, dt) => {
-      const P = g.player, inZone = near(g, x, z, r) && (o.car ? P.inCar : !P.inCar);
+      const P = g.player, there = near(g, x, z, r), inZone = there && (o.car ? P.inCar : !P.inCar);
       const strict = o.failOnLeave && t > 0.5;
       if (inZone) { t += dt; away = 0; }
       // Pushed out (police ram you, a wrong turn)? You get 4 seconds to come back before it fails.
@@ -245,6 +247,9 @@ function hold(x, z, r, sec, text, o = {}) {
       if (o.tick) o.tick(g, m, t, dt);
       const outText = (o.outText || 'Get back in the zone!') + (strict ? ` ${Math.ceil(4 - away)}s` : '');
       if (inZone || t > 0) g.hud.setProgress(inZone ? `${o.label || 'HOLD ON'} ${Math.ceil(sec - t)}s` : outText, t / sec, inZone ? '#ffc531' : '#ff5a4d');
+      // v10.2: never "nothing happens" - a car cannot always get into the circle (lanes, courtyards).
+      else if (!o.car && P.inCar && near(g, x, z, r + 7)) g.hud.setProgress('GET OUT OF THE CAR - walk into the yellow circle', 0, '#ffc531');
+      else if (o.car && !P.inCar && there) g.hud.setProgress('GET IN A CAR - this is done from a car', 0, '#ffc531');
       else g.hud.hideProgress();   // not there yet: the marker shows the way
       return t >= sec;
     },
@@ -265,9 +270,9 @@ function defuse(points, sec, text, o = {}) {
       let best = -1;
       points.forEach(([x, z], i) => { if (!done[i] && (best < 0 || dist(x, z, T.x, T.z) < dist(points[best][0], points[best][1], T.x, T.z))) best = i; });
       if (best >= 0) m.marker(points[best][0], points[best][1], 3, true);
-      const inside = best >= 0 && !g.player.inCar && dist(points[best][0], points[best][1], T.x, T.z) < 3;
+      const dd = best >= 0 ? dist(points[best][0], points[best][1], T.x, T.z) : 99, inside = dd < 3 && !g.player.inCar, close = g.player.inCar && dd < 10;
       if (inside) { if (cur !== best) { cur = best; t = 0; } t += dt; g.hud.setProgress(`${o.doing || 'DEFUSING'}... ${Math.ceil(sec - t)}s`, t / sec, '#ffc531'); }
-      else { cur = -1; t = 0; g.hud.hideProgress(); }
+      else { cur = -1; t = 0; if (close) g.hud.setProgress('GET OUT OF THE CAR - this is done on foot', 0, '#ffc531'); else g.hud.hideProgress(); }
       if (inside && t >= sec) {
         done[best] = true; cur = -1; t = 0; g.hud.hideProgress();
         g.rewards.event(o.label || 'BOMB DEFUSED', 300, 20);
@@ -502,7 +507,7 @@ export const MISSIONS = [
       place(...START),
       act((g, m) => parkedCar(g, m, 'sedan', 0x22468f, ...NEAR_CAR, 'car')),
       say([['RAVI (phone)', 'The rat is Pappu. He hangs around the bazaar near the beach. Bring him to me!']]),
-      getIn(null, 'Get in a car'),
+      getIn(null, 'Get in a car (walk up to any car, tap ENTER)'),
       goTo(BAZAAR_ROAD.x, BAZAAR_ROAD.z, 22, 'Drive to the bazaar (follow the yellow line)', { car: true }),
       act((g, m) => {
         missionCar(g, m, 'hatchback', 0xf2f2f2, { mode: 'flee', health: 160, hostile: true, fastBurn: true, name: 'target', speed: 21 }, { node: true, x: BAZAAR_ROAD.x - 30, z: -75, hx: -1, hz: 0 });
@@ -593,7 +598,7 @@ export const MISSIONS = [
       place(...START),
       act((g, m) => { parkedCar(g, m, 'sedan', 0x1d1e22, ...NEAR_CAR, 'car'); g.player.giveWeapon('smg', 120); }),
       say([['RAVI (phone)', 'Kaali grabbed my brother Sonu at the bazaar! Bring your guns, bhai. I am coming too!']]),
-      getIn(null, 'Get in a car'),
+      getIn(null, 'Get in a car (walk up to any car, tap ENTER)'),
       goTo(BAZAAR_ROAD.x, BAZAAR_ROAD.z, 16, 'Drive to the bazaar', { car: true }),
       act((g, m) => {
         g.ravi = m.track(spawnRavi(g)); g.ravi.x = BAZAAR_ROAD.x + 3; g.ravi.z = BAZAAR_ROAD.z - 4; g.ravi.calm = true;
@@ -647,7 +652,12 @@ export const MISSIONS = [
         for (const [x, z] of [[114.8, -84.5], [104.8, -84.5]]) m.track(g.spawnOfficer(x, z, 0, null, {}));
       }),
       say([['RAVI (phone)', 'Take a police SUV from the parking across the road. They WILL chase you. Bring it to my garage - no scratches!']]),
-      waitFor('Steal a police SUV', (g, m) => { const c = g.driving.car; if (c && c.isPolice) { m.vars.car = c; return true; } m.marker(m.vars.pick.x, m.vars.pick.z, 3); return false; }),
+      waitFor('Steal a police SUV', (g, m) => {
+        const c = g.driving.car; if (c && c.isPolice) { m.vars.car = c; return true; }
+        const k = m.vars.pick, P = g.player; m.marker(k.x, k.z, 3);
+        m.objective(Math.hypot(P.x - k.x, P.z - k.z) < 7 ? 'Get in: walk up to the police SUV and tap ENTER' : 'Steal a police SUV');   // v10.2
+        return false;
+      }),
       act((g, m) => { m.marker(null); g.dispatch.setStars(3); g.hud.toast('ALL UNITS: STOLEN POLICE VEHICLE!'); }),
       waitFor('Drive it to Ravi\'s garage. Keep it in one piece!', (g, m) => {
         const c = m.vars.car;
@@ -1226,7 +1236,10 @@ export class MissionRunner {
   }
   stepChip() { const s = this.stepInfo(); return s.N ? localStep(s.n, s.N) : `TASK ${this.taskNo}`; }
   showSteps() { this.game.hud.setSteps(this.done ? null : this.stepInfo()); }
-  marker(x, z, r, moving = false) { this.game.setMarker(x === null ? null : { x, z, r, moving }); }
+  marker(x, z, r, moving = false) {
+    this.game.setMarker(x === null ? null : { x, z, r, moving });
+    if (x !== null) this.markerBy = this.si;   // which step put it there (v10.2: cleared when that step is over)
+  }
   timer(sec) { this.timeLeft = sec; }
   track(e) {
     if (e) {
@@ -1298,7 +1311,26 @@ export class MissionRunner {
     if (this.def.watch && this.inJob) this.def.watch(g, this, dt);
     if (this.planShowT > 0 && g.mode === 'play' && (this.planShowT -= dt) <= 0) { this.showSteps(); g.hud.toggleSteps(true, 9); }
     const st = this.steps[this.si];
-    if (st && st.update(g, this, dt)) this.next();
+    if (st && st.update(g, this, dt)) {
+      // v10.2: a finished step takes its yellow marker with it (no marker left where nothing happens).
+      const old = this.si, owned = this.markerBy === old;
+      this.next();
+      if (owned && this.markerBy === old && !this.done) this.marker(null);
+      this.atMarkT = 0;
+    }
+    // v10.2 safety net: at the yellow marker and nothing happens for a few seconds? Say what to do
+    // (in a car parked next to it: get out and walk in - cars cannot reach every circle).
+    const mk = g.marker, T = g.dispatch.target, P = g.player, inCar = P.inCar && g.driving.speed < 2;
+    if (!this.done && g.mode === 'play' && mk && !mk.moving && Math.hypot(T.x - mk.x, T.z - mk.z) < mk.r + (inCar ? 7 : 1.5) && (inCar || !P.inCar) && !g.hud.progressOn && !g.hud.subQueue.length && g.hud.subT <= 0) {
+      this.atMarkT = (this.atMarkT || 0) + dt;
+      if (this.atMarkT > 6) {
+        this.atMarkT = -14;
+        // The marker is on a car and the task is about a car: he has to get in (ENTER), not just stand there.
+        const car = !P.inCar && /steal|get in|getaway|(car|suv|van|truck|jeep|auto|taxi|bus|boat|vehicle)\b/i.test(this.objectiveText)
+          && g.cars.some((c) => !c.inactive && !c.wrecked && !c.exploded && Math.hypot(c.x - mk.x, c.z - mk.z) < 3.5);
+        g.hud.toast(localTask(car ? 'Get in: walk up to the car and tap ENTER' : this.objectiveText));
+      }
+    } else if (this.atMarkT > 0) this.atMarkT = 0;
   }
 
   // Stars + bonuses + XP.

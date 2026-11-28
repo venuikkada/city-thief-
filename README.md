@@ -101,6 +101,20 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
   left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
   (trim, clean, level, slice footsteps, seamless loops).
+- **v10.2: no more "nothing happens at the yellow marker":**
+  - The job site and the safehouse no longer wait for "lose the police" while the police are only ON THE WAY
+    (the 4-minute countdown) - that was the stuck point. While the police are really on him, the yellow marker
+    hides and the task says "Police are on you! Lose them first: get out of the red circle on the map".
+  - In a "lose the police" step he can slip away before they come: leave the red circle (shown on the map).
+  - On-foot spots (crack the vault, defuse, plant, gun crates, hold the line) say GET OUT OF THE CAR when he is in a
+    car next to them (a car cannot reach every circle); taxi / bus / ambulance stops say STOP HERE; car markers
+    (the getaway SUV, the police SUV...) say "Get in: walk up to the car and tap ENTER"; the safehouse ring sits on
+    the contact ("Walk up to Salim").
+  - A finished step takes its yellow marker with it, and standing at a marker for 6 s with nothing happening shows
+    what to do (in the player's language).
+  - Tested with an "honest" robot that is not allowed to remove police stars itself, and a marker probe that
+    stands on every yellow marker of all 76 missions (on foot) and checks that something happens.
+  - Police who arrive are guided to him for 12 s (was 20 s), so a real escape is easier.
 - **v10.1: every mission step by step, police timing, the mission box in your language:**
   - **One step after another:** every mission shows STEP n/N, what to do NOW and what comes NEXT. The whole plan
     (done ✓ / now / to do, by act: THE PLAN, THE JOB, THE GETAWAY) opens by itself a few seconds after the mission

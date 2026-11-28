@@ -299,11 +299,13 @@ export function passengers(carName, stops, text, o = {}) {
       const st = stops[si];
       const inCar = g.driving.car === car;
       const slow = inCar && Math.hypot(g.driving.vx, g.driving.vz) < 2.5;
-      if (!inCar) { m.objective(o.getIn || 'Get back in your vehicle'); m.marker(car.x, car.z, 3); return false; }
+      if (!inCar) { m.objective(o.getIn || 'Get back in your vehicle (walk up to it, tap ENTER)'); m.marker(car.x, car.z, 3); return false; }
       if (phase === 'goto') {
         m.marker(st.at[0], st.at[1], 6);
-        m.objective(st.n > 1 ? `${text}: pick up ${st.n} people (stop next to them)` : st.kind === 'injured' ? `${text}: pick up the injured person` : `${text}: pick up the passenger`);
-        if (slow && dist(car.x, car.z, st.at[0], st.at[1]) < 9) phase = 'board';
+        const dS = dist(car.x, car.z, st.at[0], st.at[1]);
+        if (dS < 14 && !slow) m.objective('STOP here - they get in when you stop next to them');   // v10.2: say why nothing happens
+        else m.objective(st.n > 1 ? `${text}: pick up ${st.n} people (stop next to them)` : st.kind === 'injured' ? `${text}: pick up the injured person (stop next to them)` : `${text}: pick up the passenger (stop next to them)`);
+        if (slow && dS < 9) phase = 'board';
       } else if (phase === 'board') {
         m.objective('Wait... they are getting in');
         for (const p of waiting) { p.walkTo = { x: car.x, z: car.z }; p.walkSpeed = p.injured ? 1.0 : 1.6; p.state = 'idle'; p.boardT = (p.boardT || 0) + dt; }
@@ -312,8 +314,10 @@ export function passengers(carName, stops, text, o = {}) {
         if (!slow) phase = 'goto';
       } else if (phase === 'deliver') {
         m.marker(st.dest[0], st.dest[1], 7);
-        m.objective(o.deliverText ? o.deliverText(st) : `Drive to the marker (${st.destName || 'drop-off'})`);
-        if (slow && dist(car.x, car.z, st.dest[0], st.dest[1]) < 9) {
+        const dD = dist(car.x, car.z, st.dest[0], st.dest[1]);
+        if (dD < 14 && !slow) m.objective('STOP here - they get out when you stop');
+        else m.objective(o.deliverText ? o.deliverText(st) : `Drive to the marker (${st.destName || 'drop-off'}) and stop`);
+        if (slow && dD < 9) {
           // Out they get.
           for (const p of riders) {
             p.x = car.x + Math.cos(car.yaw) * (car.halfW + 0.7); p.z = car.z - Math.sin(car.yaw) * (car.halfW + 0.7);
@@ -458,9 +462,9 @@ export function plant(points, sec, text, o = {}) {
       let best = -1;
       points.forEach(([x, z], i) => { if (!done[i] && (best < 0 || dist(x, z, T.x, T.z) < dist(points[best][0], points[best][1], T.x, T.z))) best = i; });
       if (best >= 0) m.marker(points[best][0], points[best][1], 2.5, true);
-      const inside = best >= 0 && !P.inCar && dist(points[best][0], points[best][1], T.x, T.z) < 2.6;
+      const dd = best >= 0 ? dist(points[best][0], points[best][1], T.x, T.z) : 99, inside = dd < 2.6 && !P.inCar, close = P.inCar && dd < 10;
       if (inside) { if (cur !== best) { cur = best; t = 0; } t += dt; g.hud.setProgress(`${o.doing || 'PLANTING'}... ${Math.ceil(sec - t)}s`, t / sec, '#ff5a4d'); }
-      else { cur = -1; t = 0; g.hud.hideProgress(); }
+      else { cur = -1; t = 0; if (close) g.hud.setProgress('GET OUT OF THE CAR - this is done on foot', 0, '#ffc531'); else g.hud.hideProgress(); }
       if (inside && t >= sec) { done[best] = true; cur = -1; t = 0; g.hud.hideProgress(); g.music.checkpoint(); if (o.onEach) o.onEach(g, m, best); }
       m.objective(`${text}: ${done.filter(Boolean).length} / ${points.length}`);
       return done.every(Boolean);
@@ -486,7 +490,7 @@ export function deliver(carName, x, z, r, text, o = {}) {
     update: (g, m) => {
       const c = m.vars[carName];
       if (!c || c.exploded) { m.fail('The car was destroyed'); return false; }
-      if (g.driving.car !== c) { m.objective(o.carText || 'Get back in the car'); m.marker(c.x, c.z, 3); return false; }
+      if (g.driving.car !== c) { m.objective(o.carText || 'Get back in the car (walk up to it, tap ENTER)'); m.marker(c.x, c.z, 3); return false; }
       m.marker(x, z, r);
       const hp = Math.max(0, Math.round(c.health));
       m.objective(`${text}${o.minHealth ? ` · car ${hp}% (keep above ${o.minHealth}%)` : ''}`);

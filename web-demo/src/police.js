@@ -84,6 +84,11 @@ export class Dispatch {
   get responding() { return this.stars > 0 && this.respondT > 0; }
   // Police units actually chase him (not on the way, not in the breather).
   get chasing() { return this.stars > 0 && !(this.respondT > 0) && !this.lullOn; }
+  // The police are after him right now (here, or regrouping) - not just "on the way" (v10.2: mission
+  // stops like the job site or the safehouse wait only for this).
+  get onYou() { return this.stars > 0 && !(this.respondT > 0); }
+  // The mission's task right now is to get rid of the police.
+  losingTask() { const m = this.game.mission; return !!(m && !m.done && /lose the (police|cops)|lose them|shake off|police are coming|before the police come/i.test(m.objectiveText || '')); }
   // Seconds of the grace left: the police can hurt him but not kill or arrest him (0 = over). It starts
   // when the police arrive (full while they are still on the way).
   get graceLeft() { return this.stars > 0 ? (this.respondT > 0 ? GRACE_TIME : Math.max(0, GRACE_TIME - (this.game.time - this.chaseStart))) : 0; }
@@ -106,7 +111,7 @@ export class Dispatch {
       this.chaseStart = this.game.time;
       // v10.1: the first time the police come at once; after that they need 4 minutes.
       this.respondT = now || this.responses === 0 ? 0 : RESPONSE_TIME;
-      if (!this.respondT) { this.responses++; for (const c of this.game.policeCars) c.beginPursuit(); this.sendNear(20); }
+      if (!this.respondT) { this.responses++; for (const c of this.game.policeCars) c.beginPursuit(); this.sendNear(12); }
     }
     if (!(this.respondT > 0)) {
       if (n >= 3 && was < 3) this.onMessage('SWAT TEAM ON THE WAY');
@@ -133,7 +138,7 @@ export class Dispatch {
     this.respondT = 0; this.chaseStart = g.time; this.responses++;
     this.report(T.x, T.z); this.circle.r = this.radius; this.outsideT = 0;
     for (const c of g.policeCars) if (!c.wrecked && !c.parked && !c.roadblock && !c.playerControlled) c.beginPursuit();
-    this.reinforceT = 0; this.sendNear(15);
+    this.reinforceT = 0; this.sendNear(12);
     if (this.stars >= 4) this.onMessage('SWAT AND A POLICE HELICOPTER!');
     else if (this.stars >= 3) this.onMessage('SWAT TEAM IS HERE!');
     this.onArrive();
@@ -326,7 +331,12 @@ export class Dispatch {
     if (this.respondT > 0) {
       const m = g.mission;
       this.respondT = m && m.holdStars && !m.done ? 0 : this.respondT - dt;
-      this.sinceSeen += dt; this.outsideT = 0;
+      this.sinceSeen += dt;
+      // v10.2: when the mission says "lose the police", he can slip away before they come: get out of
+      // the red circle (never stuck waiting for them).
+      const T = this.target, out = dist(T.x, T.z, this.circle.x, this.circle.z) > this.circle.r;
+      this.outsideT = this.losingTask() && out ? this.outsideT + dt : 0;
+      if (this.outsideT >= this.escapeTime) { this.clear(true); return; }
       if (this.respondT <= 0) this.arrive();
       return;
     }

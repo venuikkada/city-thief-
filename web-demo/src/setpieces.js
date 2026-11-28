@@ -192,7 +192,9 @@ function armsStep(o, site, U) {
       }
       const near = shut.sort((a, b) => dist(a.x, a.z, P.x, P.z) - dist(b.x, b.z, P.x, P.z))[0];
       m.marker(near.x, near.z, 1.5, true);
-      m.objective(`Grab the gun crates before the truck leaves: ${opened} / ${crates.length} · ${Math.ceil(t)}s`);
+      // v10.2: in a car next to the crates? Say so (crates open on foot).
+      if (P.inCar && dist(near.x, near.z, P.x, P.z) < 9) m.objective(`Get out of the car and walk to the gun crates · ${Math.ceil(t)}s`);
+      else m.objective(`Grab the gun crates before the truck leaves: ${opened} / ${crates.length} · ${Math.ceil(t)}s`);
       g.hud.setProgress(`TRUCK LEAVES IN ${Math.ceil(t)}s`, clamp(t / (o.sec || 90), 0, 1), '#ffb020');
       return false;
     },
@@ -224,6 +226,7 @@ function holdStep(o, site, U) {
     update: (g, m, dt) => {
       const P = g.player, d = dist(P.x, P.z, spot.x, spot.z);
       if (!started) {
+        if (P.inCar && d <= 14) { m.objective(`Get out of the car and stand next to ${o.who || 'your friend'}`); return false; }   // v10.2
         if (d > 14 || P.inCar) { m.objective(`Get to ${o.who || 'your friend'} (${Math.round(d)} m) - ${o.doing || 'he needs time'}`); return false; }
         started = true; m.newTask(); m.marker(null); m.music = 3;
         g.hud.showBig('HOLD THE LINE!', '#ff4438', 1.5);
@@ -245,7 +248,7 @@ function holdStep(o, site, U) {
       const men = left(g, 'hold');
       g.pins = men.map((e) => ({ x: e.x, z: e.z, color: '#ff5a4d' }));
       g.hud.setProgress(`${(o.doing || 'WORKING').toUpperCase()} ${Math.min(100, Math.round(prog / NEED * 100))}%`, Math.min(1, prog / NEED), '#4dff66');
-      m.objective(away ? `Get back to ${o.who || 'him'} - nothing happens while you are away!` : `Hold the line while ${o.who || 'he'} ${o.doing || 'works'} (${men.length} attackers)`);
+      m.objective(away ? (P.inCar ? `Get out of the car - nothing happens while you are in it!` : `Get back to ${o.who || 'him'} - nothing happens while you are away!`) : `Hold the line while ${o.who || 'he'} ${o.doing || 'works'} (${men.length} attackers)`);
       if (prog >= NEED) {
         bonus(g, 'HELD THE LINE', 800, 30);
         if (o.done) g.say([[o.who || 'RAVI', o.done]]);
