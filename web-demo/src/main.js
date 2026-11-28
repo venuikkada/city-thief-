@@ -32,7 +32,8 @@ import { Cylinders, Bombs } from './stunts.js';
 import { Ambience } from './ambience.js';
 import { Voice } from './voice.js';
 import { LayoutEditor, applyLayout } from './layout.js';
-import { LANGS, setLang, getLang, t as tr, applyLanguage } from './i18n.js';
+import { LANGS, setLang, getLang, t as tr, applyLanguage, howGuide } from './i18n.js';
+import { FreeWorld } from './freeworld.js';
 
 // Cinematic colour grade, done inside the normal tone mapping (no extra screen pass, cheap on phones):
 // filmic curve + a little more colour and contrast + teal shadows and warm highlights.
@@ -239,6 +240,7 @@ class Game {
     this.markerMesh.add(beam, ring);
     this.markerMesh.visible = false;
     this.scene.add(this.markerMesh);
+    this.free = new FreeWorld(this);   // v10.3: the next mission waits in the city (orange M)
 
     this.applySettings();
     applyLayout();
@@ -542,9 +544,12 @@ class Game {
   say(lines) { this.hud.say(lines); }
 
   // ---------- Resetting the city between missions ----------
-  resetCity() {
+  // keep (v10.3 KEEP EXPLORING): Vikram stays where he is, in his car, with his guns.
+  resetCity(keep = false) {
     this.voice.stop(); this.voice.lastObjKey = '';
     const P = this.player;
+    const myCar = keep && P.inCar ? this.driving.car : null;
+    if (this.free && !keep) this.free.setOffer(null);
     if (this.interact) this.interact.reset();
     if (this.interiors) this.interiors.closeAll();
     if (this.cylinders) this.cylinders.reset();
@@ -553,7 +558,7 @@ class Game {
     if (this.loot) this.loot.reset();
     if (this.driving) this.driving.coasting = [];
     P.bombs = 3; P.dive = null; P.rollT = 0; this.hud.setBombs(3);
-    if (P.outfit) P.setOutfit(null);   // a shirt bought in a shop: back to Vikram's own clothes
+    if (P.outfit && !keep) P.setOutfit(null);   // a shirt bought in a shop: back to Vikram's own clothes
     this.noParkZones = [];
     // No half-finished cutscene or flashback may survive a reset.
     if (this.intro) this.intro.abort();
@@ -563,15 +568,16 @@ class Game {
     document.getElementById('flashback').classList.add('hidden');
     if (this.mission) { this.mission.cleanup(); this.mission = null; }
     this.endScreen(null);
-    if (P.inCar) this.driving.exit(true);
+    if (P.inCar && !myCar) this.driving.exit(true);
     this.dispatch.clear(false);
     this.dispatch.reportTimer = -1; this.dispatch.busting = false; this.dispatch.raid = null; this.dispatch.raidAt = -99;
     for (const o of [...this.officers]) o.remove();
     // Remove stolen / parked / wrecked cars and extra police; keep the traffic count.
-    for (const c of [...this.cars]) if (c.parked || c.wrecked || c.missionCar) this.removeCar(c);
+    for (const c of [...this.cars]) if ((c.parked || c.wrecked || c.missionCar) && c !== myCar) this.removeCar(c);
+    if (myCar) myCar.missionCar = false;   // his car now (a mission car would be taken away later)
     for (const c of this.cars) { c.hold = false; c.bypassT = 0; }   // a mission may have stopped the traffic
-    while (this.policeCars.length > 2) this.removeCar(this.policeCars[this.policeCars.length - 1]);
-    for (const c of this.policeCars) { c.crew = []; c.hold = false; c.state = 'patrol'; c.endPursuit(); }
+    for (let i = this.policeCars.length - 1; i >= 0 && this.policeCars.length > 2; i--) if (this.policeCars[i] !== myCar) this.removeCar(this.policeCars[i]);
+    for (const c of this.policeCars) { if (c === myCar) continue; c.crew = []; c.hold = false; c.state = 'patrol'; c.endPursuit(); }
     const n = COUNTS[quality];
     const trafficNow = this.cars.length - this.policeCars.length;
     if (trafficNow < n.cars) this.spawnTraffic(n.cars - trafficNow, 2 - this.policeCars.length);
@@ -588,11 +594,14 @@ class Game {
     this.waypoint = null;
     this.ravi = null;
     // Like PUBG: empty hands at the start (he runs faster), only his pistol in the holster.
-    P.slots = { 1: null, 2: null, 3: 'pistol' }; P._weapon = 'fists'; P.lastGun = 'pistol'; P.bloom = 0;
-    P.sights = new Set(['iron']); P.sightOf = {}; P.fp = false;
+    if (!keep) {
+      P.slots = { 1: null, 2: null, 3: 'pistol' }; P._weapon = 'fists'; P.lastGun = 'pistol';
+      P.sights = new Set(['iron']); P.sightOf = {};
+      for (const id of Object.keys(P.ammo)) P.ammo[id] = { mag: 0, reserve: 0 };
+      P.ammo.pistol = { mag: P.magSize('pistol'), reserve: 48 };
+    }
+    P.bloom = 0; P.fp = false;
     this.fx.clearHoles();
-    for (const id of Object.keys(P.ammo)) P.ammo[id] = { mag: 0, reserve: 0 };
-    P.ammo.pistol = { mag: P.magSize('pistol'), reserve: 48 };
     P.reloadT = 0; P.aiming = false; P.carrying = false;
     this.applyPerks();
     P.armor = this.rewards.has('armour') ? 60 : 0;
@@ -630,22 +639,45 @@ class Game {
 
   startFreeRoam() {
     this.resetCity();
-    this.hud.setClock('');
     this.atmo.set(settings.time || 'day', true);
     this.placePlayer(START.x, START.z, START.yaw);
-    this.hud.setMission(tr('FREE ROAM'), tr('FREE ROAM OBJECTIVE') || 'Explore Navapur. Guns lie around (yellow light): walk up and PICK UP. Scopes (blue light) go on your gun. Empty hands = you run faster. Walk into any shop, steal cars, drive to the beach. Want a chase? Pause > CALL THE COPS.');
     // Like PUBG: empty hands. A rifle and a red dot lie right next to him to start with.
     this.loot.starter(START.x, START.z, 'rifle', 'sight_dot');
     this.pickups.spawn('shotgun', 41, 41, { yaw: 0.6 });
     this.pickups.spawn('health', 6.4, 35);
     this.pickups.spawn('ammo', 6.4, 45);
+    this.startFreeWorld();
+  }
+
+  // v10.3 free world: explore and do what you want; the next story mission waits in the city (orange M).
+  startFreeWorld() {
+    this.hud.setClock('');
+    this.free.setOffer(nextMission());
+    const o = this.free.offer;
+    this.hud.setMission(tr('FREE ROAM'), (o ? `Explore Navapur and do what you want. Your next mission is the orange M on the map: MISSION ${o.def.id} · ${o.def.title.toUpperCase()} (${o.label}). Go there when you are ready. ` : 'Explore Navapur and do what you want. ')
+      + 'Guns lie around (yellow light): walk up and PICK UP. Walk into any shop, steal cars, drive to the beach. Want a chase? Pause > CALL THE COPS.');
     this.enterPlay();
+    this.voice.pause(false);
+    this.hud.showHow(howGuide('free'), 12);
+  }
+
+  // v10.3: after a mission (or leaving one from the pause menu): keep exploring right here.
+  continueFree() {
+    const P = this.player;
+    const down = P.dead || this.dispatch.busting || this.dispatch.arrestT > 0;   // killed or arrested: back home
+    this.resetCity(true);
+    if (down) { if (P.inCar) this.driving.exit(true); this.placePlayer(START.x, START.z, START.yaw); }
+    P.health = P.maxHealth;
+    this.startFreeWorld();
   }
 
   startMission(id, opts = {}) {
     const def = MISSIONS.find((m) => m.id === id);
     if (!def) { this.goMenu(); return; }
+    // v10.3: started from the orange M in the city - he keeps the guns he picked up.
+    const P = this.player, kit = opts.here ? { slots: { ...P.slots }, ammo: JSON.parse(JSON.stringify(P.ammo)), sights: new Set(P.sights), sightOf: { ...P.sightOf }, lastGun: P.lastGun } : null;
     this.resetCity();
+    if (kit) { Object.assign(P, kit); P._weapon = 'fists'; }
     this.atmo.set(def.atmo || 'day', true);
     this.mission = new MissionRunner(this, def, opts);   // opts.fromAct: restart at a checkpoint
     this.hud.setMission(`MISSION ${def.id} · ${def.title.toUpperCase()}`, '');
@@ -744,6 +776,7 @@ class Game {
     this.controls.enabled = false; this.controls.releaseAll();
     document.exitPointerLock?.();
     document.getElementById('btn-restart').classList.toggle('hidden', !this.mission);
+    document.getElementById('btn-pause-explore').classList.toggle('hidden', !this.mission);   // v10.3
     document.getElementById('btn-pause-cops').classList.toggle('hidden', !!this.mission);
     document.getElementById('time-row').classList.toggle('hidden', !!this.mission);
     for (const x of document.querySelectorAll('[data-time]')) x.classList.toggle('on', x.dataset.time === (settings.time || 'day'));
@@ -1021,6 +1054,9 @@ class Game {
     if (input.holsterPressed && this.holi && this.colorBombs > 0) { this.throwColor(); input.holsterPressed = false; }
     if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars), undefined, undefined, true);   // you asked for them: at once
     if (input.stepsPressed && this.mission) this.hud.toggleSteps(undefined, 0, true);   // J: all mission steps (v10.1)
+    else if (input.stepsPressed) this.hud.showHow(howGuide('free'), 10);                 // free roam: how the free world works
+    this.free.update(dt, input);   // v10.3: the next mission waits in the city (orange M)
+    if (this.mode !== 'play') return;   // it started a mission (a flashback = cutscene mode)
     if (input.mapPressed) { this.openMap(); return; }
     if (input.camPressed && P.inCar) this.carCamFar = !this.carCamFar;
 
@@ -1280,6 +1316,9 @@ for (const b of document.querySelectorAll('[data-time]')) {
   });
 }
 $('btn-quit').addEventListener('click', () => game.goMenu());
+// v10.3 free world: leave the mission / after the result, stay in the city and explore.
+$('btn-pause-explore').addEventListener('click', () => game.continueFree());
+$('btn-explore').addEventListener('click', () => game.continueFree());
 $('btn-next').addEventListener('click', () => game.startMission(game.lastDef.id + 1));
 $('btn-retry').addEventListener('click', () => game.startMission(game.lastDef.id));
 $('btn-retry-cp').addEventListener('click', () => { const cp = game.checkpoint; game.startMission(game.lastDef.id, { fromAct: cp && cp.id === game.lastDef.id ? cp.act : 1 }); });
@@ -1290,7 +1329,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v10.2)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v10.3)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

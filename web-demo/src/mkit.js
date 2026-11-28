@@ -131,6 +131,7 @@ const near = (g, x, z, r) => { const T = g.dispatch.target; return dist(T.x, T.z
 export function askAround(people, text, o = {}) {
   return {
     label: text,
+    how: 'ask',
     start: (g, m) => {
       m.objective(text);
       m.vars.ask = people.map((d) => {
@@ -163,6 +164,7 @@ export function askAround(people, text, o = {}) {
 export function pickpocket(list, text, o = {}) {
   return {
     label: text,
+    how: 'rob',
     start: (g, m) => {
       m.objective(text);
       m.vars.marks = list.map((d) => {
@@ -205,6 +207,7 @@ export function footChase(name, routeIn, text, o = {}) {
   let far = 0, route = [];
   return {
     label: text,
+    how: 'chase',
     start: (g, m) => {
       route = typeof routeIn === 'function' ? routeIn(g, m) : routeIn;
       m.objective(text);
@@ -259,6 +262,7 @@ export function photo(targets, text, o = {}) {
   let list = [];
   return {
     label: text,
+    how: 'photo',
     start: (g, m) => { list = targets(g, m).map((t) => ({ ...t, done: false })); m.objective(text); $('btn-photo').classList.remove('hidden'); g.photoMode = true; },
     update: (g, m) => {
       const left = list.filter((t) => !t.done);
@@ -292,6 +296,7 @@ export function passengers(carName, stops, text, o = {}) {
   const carOf = (g, m) => m.vars[carName];
   return {
     label: text,
+    how: 'passengers',
     start: (g, m) => { si = 0; phase = 'goto'; riders = []; waiting = []; m.objective(text); spawnStop(g, m); },
     update: (g, m, dt) => {
       const car = carOf(g, m);
@@ -353,6 +358,7 @@ export function passengers(carName, stops, text, o = {}) {
 export function escort(name, dest, text, o = {}) {
   return {
     label: text,
+    how: 'protect',
     start: (g, m) => {
       m.objective(text);
       const v = m.vars[name];
@@ -385,6 +391,7 @@ export function waves(list, text, spawn, o = {}) {
   let wi = -1, gap = 0;
   return {
     label: text,
+    how: 'waves',
     start: (g, m) => { wi = -1; gap = 0.5; m.objective(text); m.music = 3; m.vars.waveGroup = 'wave'; },
     update: (g, m, dt) => {
       const alive = g.officers.filter((e) => e.group === 'wave' && !e.dead).length;
@@ -411,6 +418,7 @@ export function waves(list, text, spawn, o = {}) {
 export function drones(list, text) {
   return {
     label: text,
+    how: 'drones',
     start: (g, m) => { m.objective(text); m.vars.drones = list.map(([x, z, r, h], i) => m.track(new Drone(g, x, z, r, h, i * 1.7))); },
     update: (g, m, dt) => {
       for (const d of m.vars.drones) d.update(dt);
@@ -429,6 +437,7 @@ export function targets(spots, need, sec, text) {
   let t = 0, hit = 0, live = [], next = 0;
   return {
     label: text,
+    how: 'targets',
     start: (g, m) => { t = sec; hit = 0; live = []; next = 0; m.objective(text); g.onTarget = () => { hit++; g.rewards.addCash(40, 'BULLSEYE', 'cash'); }; },
     update: (g, m, dt) => {
       t -= dt; next -= dt;
@@ -455,6 +464,7 @@ export function plant(points, sec, text, o = {}) {
   let cur = -1, t = 0;
   return {
     label: text,
+    how: 'plant',
     start: (g, m) => m.objective(text),
     update: (g, m, dt) => {
       const T = g.dispatch.target, P = g.player;
@@ -486,6 +496,7 @@ export function blowUp(points) {
 export function deliver(carName, x, z, r, text, o = {}) {
   return {
     label: text,
+    how: 'deliver',
     start: (g, m) => { m.objective(text); m.marker(x, z, r); },
     update: (g, m) => {
       const c = m.vars[carName];
@@ -506,6 +517,7 @@ export function stealList(list, to, text, o = {}) {
   let i = 0;
   return {
     label: text,
+    how: 'stealcar',
     start: (g, m) => {
       i = 0; m.objective(text);
       m.vars.list = list.map((d, k) => { const c = g.spawnParkedCar(d.type, d.color, d.at[0], d.at[1], d.yaw ?? 0); c.missionCar = true; c.listName = d.name; m.track(c); return c; });
@@ -535,6 +547,7 @@ export function choose(question, a, b, stepsA, stepsB) {
   let picked = null;
   return {
     label: 'Choose how to do it',
+    how: 'choose',
     start: (g, m) => {
       picked = null;
       g.controls.releaseAll();
@@ -561,6 +574,7 @@ export function choose(question, a, b, stepsA, stepsB) {
 export function beat(need, text, o = {}) {
   return {
     label: text,
+    how: 'beat',
     start: (g, m) => {
       g.rhythm = new Rhythm(g, o.bpm || 100);
       $('btn-dance').querySelector('span').textContent = o.button || 'DANCE';

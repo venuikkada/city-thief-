@@ -39,6 +39,7 @@ export class Controls {
       ['btn-carfire', 'fire', true, true], ['btn-takedown', 'takedown'], ['btn-drivemode', 'drivemode'],
       ['btn-color', 'color'], ['btn-dance', 'dance'], ['btn-bomb', 'bomb'],
       ['btn-talk', 'talk'], ['btn-rob', 'rob'], ['btn-buy', 'buy'], ['btn-push', 'push'], ['btn-hire', 'hire'], ['btn-photo', 'photo'],
+      ['btn-mstart', 'mstart'],   // v10.3: START MISSION at the orange M
     ];
     for (const [id, name, held, look] of buttons) this.button(id, name, !!held, !!look);
 
@@ -46,7 +47,7 @@ export class Controls {
       if (!this.enabled) return;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) {
-        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'holster', b: 'dance', n: 'bomb', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo', j: 'steps' };
+        const map = { ' ': 'jump', c: 'crouch', r: 'reload', q: 'switch', e: 'enter', f: 'enter', g: 'pickup', p: 'callCops', v: 'cam', z: 'aim', m: 'map', t: 'takedown', x: 'holster', b: 'dance', n: 'bomb', y: 'talk', u: 'rob', i: 'buy', o: 'push', h: 'hire', k: 'photo', j: 'steps', enter: 'mstart' };
         if (map[k]) this.pending[map[k]] = true;
         // 1 / 2 / 3 = gun slots (unless a "choose quiet or loud" question is on screen). X = put the gun away.
         if ((k === '1' || k === '2' || k === '3') && document.getElementById('choice').classList.contains('hidden')) this.pending['slot' + k] = true;
@@ -211,7 +212,7 @@ export class Controls {
       takedownPressed: !!p.takedown || !!p.pickup, fightPressed: !!p.takedown, drivemodePressed: !!p.drivemode,
       colorPressed: !!p.color, dancePressed: !!p.dance, bombPressed: !!p.bomb,
       talkPressed: !!p.talk, robPressed: !!p.rob, buyPressed: !!p.buy, pushPressed: !!p.push, hirePressed: !!p.hire, photoPressed: !!p.photo,
-      stepsPressed: !!p.steps, slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, slot3Pressed: !!p.slot3, holsterPressed: !!p.holster, sightPressed: !!p.sight || !!p.cam, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
+      stepsPressed: !!p.steps, mstartPressed: !!p.mstart, slot1Pressed: !!p.slot1, slot2Pressed: !!p.slot2, slot3Pressed: !!p.slot3, holsterPressed: !!p.holster, sightPressed: !!p.sight || !!p.cam, mouseAim: !!this.mouseAim, mouseAimChanged: !!this.mouseAimChanged,
     };
     this.mouseAimChanged = false;
     this.lookX = 0; this.lookY = 0;

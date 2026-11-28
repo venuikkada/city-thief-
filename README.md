@@ -101,6 +101,19 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
   left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
   (trim, clean, level, slice footsteps, seamless loops).
+- **v10.3: HOW TO DO IT for every task, and a free world:**
+  - Every new mission task opens a small "HOW TO DO IT" box under the mini-map: 2-3 short lines that say exactly
+    how (for example rob: "Walk up from BEHIND them and tap ROB" / "If they face you, they see you and shout").
+    43 guides cover all 616 tasks of the 76 missions (no task falls back to a general hint), in English and all
+    9 Indian languages. The STEPS list shows the same lines under the step being done, and standing 6 s at a
+    marker with nothing happening shows the box again.
+  - FREE ROAM is now a free world: explore and do what you want; the next story mission waits in the city as an
+    orange M (beam, ring, mini-map pin, big-map label, compass, GPS line). Stand in the orange circle and tap
+    START MISSION (PC: Enter) - the mission begins right there, with the guns you picked up. Not while the police
+    are after you (lose them first).
+  - After a mission: KEEP EXPLORING (stay in the city, next mission = the new orange M). In a mission, the pause
+    menu has LEAVE MISSION · EXPLORE. Killed or arrested: you wake up at home in free roam.
+  - J (PC) in free roam shows how the free world works again.
 - **v10.2: no more "nothing happens at the yellow marker":**
   - The job site and the safehouse no longer wait for "lose the police" while the police are only ON THE WAY
     (the 4-minute countdown) - that was the stuck point. While the police are really on him, the yellow marker
@@ -269,7 +282,7 @@ The **Unity project stays the real game** - the demo is for feedback and promoti
   click INSTALL APP (works offline after the first visit thanks to `sw.js`, made by `tools/make-sw.py`).
 - **PC controls:** W A S D move / drive, mouse look, left click fire, right click aim, Shift sprint / nitro, Space jump /
   handbrake, E car, R reload, 1 / 2 or mouse wheel or Q gun slots, C crouch, Y talk, U rob (rob the till in a shop),
-  I buy, O push, H hire / horn, K photo, T takedown, M map, J mission steps, Esc pause.
+  I buy, O push, H hire / horn, K photo, T takedown, M map, J mission steps (free roam: free world help), Enter START MISSION at the orange M, Esc pause.
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).

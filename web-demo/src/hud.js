@@ -134,6 +134,7 @@ export class Hud {
     if (!info || !info.N) {
       E.next.classList.add('hidden'); E.btn.classList.add('hidden'); E.list.classList.add('hidden'); E.btn.classList.remove('open');
       this.el.panel.classList.remove('has-steps', 'steps-open'); this.stepsOpen = false; this.stepsKey = ''; clearTimeout(this.stepsT);
+      this.hideHow();
       return;
     }
     E.btn.classList.remove('hidden'); this.el.panel.classList.add('has-steps');
@@ -153,9 +154,28 @@ export class Hud {
       const b = document.createElement('b'); b.textContent = n < info.n ? '✓' : String(n);
       li.appendChild(b); li.appendChild(document.createTextNode(localTask(p.label)));
       E.list.appendChild(li);
+      // v10.3: under the step being done - HOW to do it.
+      if (n === info.n && info.how && info.how.lines.length) {
+        const h = document.createElement('li'); h.className = 'howli';
+        for (const l of info.how.lines) { const d = document.createElement('div'); d.textContent = l; h.appendChild(d); }
+        E.list.appendChild(h);
+      }
     }
     if (this.stepsOpen) this.scrollToNow();
   }
+  // v10.3: the help box (left, under the map): HOW to do the current task. sec = how long it stays.
+  showHow(h, sec = 10) {
+    const box = this.howEl || (this.howEl = $('howbox'));
+    if (!box || !h || !h.lines || !h.lines.length) return;
+    box.textContent = '';
+    const t = document.createElement('div'); t.className = 'ht'; t.textContent = `❓ ${h.title}`; box.appendChild(t);
+    const ol = document.createElement('ol');
+    for (const l of h.lines) { const li = document.createElement('li'); li.textContent = l; ol.appendChild(li); }
+    box.appendChild(ol);
+    box.classList.remove('hidden', 'pop'); void box.offsetWidth; box.classList.add('pop');
+    clearTimeout(this.howT); this.howT = setTimeout(() => box.classList.add('hidden'), sec * 1000);
+  }
+  hideHow() { clearTimeout(this.howT); const box = this.howEl || $('howbox'); if (box) box.classList.add('hidden'); }
   scrollToNow() {
     const E = this.stepEl, now = E && E.list.querySelector('.now');
     if (now) E.list.scrollTop = Math.max(0, now.offsetTop - E.list.clientHeight / 2 + now.offsetHeight / 2);
@@ -314,7 +334,7 @@ export class Hud {
   }
 
   // Where the GPS leads: the waypoint you set on the map, else the mission marker.
-  get goal() { return this.game.waypoint || this.game.marker; }
+  get goal() { const g = this.game; return g.waypoint || g.marker || (!g.mission && g.freeOffer) || null; }
 
   update(dt) {
     const g = this.game, D = g.dispatch, P = g.player, E = this.el;
@@ -507,7 +527,7 @@ export class Hud {
     }
     // GPS route.
     if (this.route && this.route.length > 1) {
-      c.strokeStyle = g.waypoint ? '#c86bff' : '#ffc531'; c.lineWidth = 3.5 / k; c.lineJoin = 'round'; c.lineCap = 'round';
+      c.strokeStyle = g.waypoint ? '#c86bff' : g.marker ? '#ffc531' : '#ff8a1f'; c.lineWidth = 3.5 / k; c.lineJoin = 'round'; c.lineCap = 'round';
       c.beginPath(); c.moveTo(P.x, P.z);
       for (const n of this.route) c.lineTo(n.x, n.z);
       c.stroke();
@@ -533,13 +553,15 @@ export class Hud {
     if (D.heli) { c.fillStyle = '#fff'; c.beginPath(); c.arc(D.heli.x, D.heli.z, 5 / k, 0, Math.PI * 2); c.fill(); }
     // Mission marker + waypoint (clamped to the edge if far away).
     c.setTransform(R, 0, 0, R, 0, 0);
-    const pin = (mk, color) => {
+    const pin = (mk, color, letter) => {
       let mx = a * mk.x + cc * mk.z + e, my = b * mk.x + d * mk.z + f;
       const ddx = mx - cx, ddy = my - cy, dl = Math.hypot(ddx, ddy), lim = S / 2 - 8;
       if (dl > lim) { mx = cx + ddx / dl * lim; my = cy + ddy / dl * lim; }
       c.fillStyle = color; c.strokeStyle = '#000'; c.lineWidth = 1.5;
-      c.beginPath(); c.arc(mx, my, 6, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.beginPath(); c.arc(mx, my, letter ? 7.5 : 6, 0, Math.PI * 2); c.fill(); c.stroke();
+      if (letter) { c.fillStyle = '#fff'; c.font = 'bold 10px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(letter, mx, my + 0.5); c.textBaseline = 'alphabetic'; }
     };
+    if (g.freeOffer && !g.mission) pin(g.freeOffer, '#ff8a1f', 'M');   // v10.3: the next mission
     if (g.marker) pin(g.marker, '#ffc531');
     if (g.waypoint) pin(g.waypoint, '#c86bff');
     const pfx = Math.sin(P.yaw), pfz = Math.cos(P.yaw);
@@ -580,7 +602,7 @@ export class Hud {
       c.beginPath(); c.arc(D.circle.x, D.circle.z, D.circle.r, 0, Math.PI * 2); c.fill(); c.stroke();
     }
     if (this.route && this.route.length > 1) {
-      c.strokeStyle = g.waypoint ? '#c86bff' : '#ffc531'; c.lineWidth = 3 / L.sc;
+      c.strokeStyle = g.waypoint ? '#c86bff' : g.marker ? '#ffc531' : '#ff8a1f'; c.lineWidth = 3 / L.sc;
       c.beginPath(); c.moveTo(P.x, P.z); for (const n of this.route) c.lineTo(n.x, n.z); c.stroke();
     }
     for (const p of g.policeCars) { if (p.inactive) continue; c.fillStyle = p.pursuing ? '#ff3b3b' : '#4d7dff'; c.beginPath(); c.arc(p.x, p.z, 4 / L.sc, 0, Math.PI * 2); c.fill(); }
@@ -590,6 +612,15 @@ export class Hud {
     const dot = (x, z, col, r) => { c.fillStyle = col; c.strokeStyle = '#000'; c.lineWidth = 2; c.beginPath(); c.arc(L.ox - x * L.sc, L.oy - z * L.sc, r, 0, Math.PI * 2); c.fill(); c.stroke(); };
     if (g.marker) dot(g.marker.x, g.marker.z, '#ffc531', 8);
     if (g.waypoint) dot(g.waypoint.x, g.waypoint.z, '#c86bff', 8);
+    if (g.freeOffer && !g.mission) {   // v10.3: the next mission (orange M) with its name
+      const o = g.freeOffer, X = L.ox - o.x * L.sc, Y = L.oy - o.z * L.sc;
+      dot(o.x, o.z, '#ff8a1f', 11);
+      c.fillStyle = '#fff'; c.font = 'bold 13px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('M', X, Y + 1);
+      c.font = 'bold 12px sans-serif'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.85)';
+      const t = `MISSION ${o.def.id} · ${o.def.title.toUpperCase()}`;
+      c.strokeText(t, X, Y + 22); c.fillStyle = '#ffb36b'; c.fillText(t, X, Y + 22);
+      c.textBaseline = 'alphabetic';
+    }
     // Player arrow (world forward (sin yaw, cos yaw) -> screen (-sin, -cos)).
     const px = L.ox - P.x * L.sc, py = L.oy - P.z * L.sc, ux = -Math.sin(P.yaw), uy = -Math.cos(P.yaw);
     c.fillStyle = '#fff'; c.strokeStyle = '#000'; c.lineWidth = 1.5;
@@ -645,6 +676,7 @@ export class Hud {
     };
     if (g.marker) mark(g.marker, '#ffc531');
     if (g.waypoint) mark(g.waypoint, '#c86bff');
+    if (g.freeOffer && !g.mission && !g.marker) mark(g.freeOffer, '#ff8a1f');   // v10.3: the next mission
     c.fillStyle = '#ffc531';
     c.beginPath(); c.moveTo(W / 2 - 4, 0); c.lineTo(W / 2 + 4, 0); c.lineTo(W / 2, 5); c.fill();
   }

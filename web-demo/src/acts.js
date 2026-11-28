@@ -595,7 +595,7 @@ function rideStep(o, site, label) {
 function crewStep(o) {
   const ms = meetStep({ ...o, name: 'crewMate', text: null, lines: [['VIKRAM', `${title(o.who)}! Salim sent me.`], [o.who, 'I know. Chalo, where is the fight?']],
     onTalk: (g, m, p) => joinCrew(g, p, o.who) });
-  return { ...ms, kind: 'meet', label: `Get ${title(o.who)} to join your crew` };
+  return { ...ms, kind: 'meet', how: 'crew', label: `Get ${title(o.who)} to join your crew` };
 }
 
 function joinCrew(g, p, who) {
@@ -896,7 +896,8 @@ function buildSteps(def, A, core, m, H) {
   if (from <= 1) {
     const [at, , rig, lines, vik] = A.meet;
     out.push(actStep(1, def));
-    out.push({ kind: 'act', start: (g) => g.placePlayer(6.6, 19.5, -PI / 2), update: () => true });   // Vikram's place, next to the chai stall
+    // Vikram's place, next to the chai stall - or (v10.3 free world) right where he started the mission in the city.
+    out.push({ kind: 'act', start: (g, m) => { const h = m.here; if (h) g.placePlayer(h.x, h.z, h.yaw); else g.placePlayer(6.6, 19.5, -PI / 2); }, update: () => true });
     // v9.5: EVERY mission starts with goons at the meeting (more of them in later chapters).
     const trouble = 2 + (def.id > 30 ? 1 : 0) + (def.id > 60 ? 1 : 0);
     out.push(meetStep({ at, who, rig, trouble, lines: [['VIKRAM', `${who.includes('DADI') ? 'Namaste Dadi.' : who === 'RAVI' ? 'Ravi bhai!' : 'Namaste.'}`], ...lines.map((l) => [who, l]), ['VIKRAM', vik]] }));
@@ -930,6 +931,22 @@ function buildSteps(def, A, core, m, H) {
   out.push(heatStep(A.heat));
   out.push(stashStep(A, H, def.id));
   return out;
+}
+
+// v10.3 free world: where a story mission starts in the city - an orange M a short walk from the first meeting.
+export function missionSpot(g, id) {
+  const A = ACTS[id];
+  const s = (A && SPOTS[A.meet[0]]) || SPOTS.chai;
+  let p = null;
+  for (const r of [14, 11, 17, 8, 20]) {
+    for (let k = 0; k < 12 && !p; k++) {
+      const a = (k / 12) * PI * 2, x = s[0] + Math.cos(a) * r, z = s[1] + Math.sin(a) * r;
+      if (g.nav.spawnOk(g.nav.idx(x, z)) && !onRoad(x, z) && !g.world.insideBlock(x, z)) p = { x, z };
+    }
+    if (p) break;
+  }
+  if (!p) p = freeOffRoad(g, s[0], s[1]);
+  return { x: p.x, z: p.z, label: s[2], who: A ? title(A.meet[1]) : '' };
 }
 
 // Turn every mission into a three-act mission.
