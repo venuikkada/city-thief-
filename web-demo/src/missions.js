@@ -2,6 +2,7 @@
 // (go here, steal that, race, chase, fight, sneak, defuse...). Every mission has a goal, a timer or a
 // fail rule, and rewards: cash, 1-3 stars, bonuses, XP. Progress is saved on the phone (works offline).
 import * as THREE from 'three';
+import { localTask, localStep } from './i18n.js';
 import { WAREHOUSE, spawnRavi, AmbientPerson } from './ambient.js';
 import { MissionCar } from './mcars.js';
 import { CharacterRig } from './characters.js';
@@ -108,11 +109,12 @@ function allyFight(g, m, ally, dt) {
 const place = (x, z, yaw) => ({ start: (g) => g.placePlayer(x, z, yaw), update: () => true });
 const act = (fn) => ({ start: (g, m) => fn(g, m), update: () => true });
 const say = (lines, waitDone = false) => ({ start: (g) => g.say(lines), update: (g) => !waitDone || (g.hud.subT <= 0 && !g.hud.subQueue.length) });
-function wait(sec, text) { let t = 0; return { start: (g, m) => { t = sec; if (text) m.objective(text); }, update: (g, m, dt) => (t -= dt) <= 0 }; }
-const waitFor = (text, fn) => ({ start: (g, m) => text && m.objective(text), update: (g, m, dt) => fn(g, m, dt) });
+function wait(sec, text) { let t = 0; return { label: text, start: (g, m) => { t = sec; if (text) m.objective(text); }, update: (g, m, dt) => (t -= dt) <= 0 }; }
+const waitFor = (text, fn) => ({ label: text, start: (g, m) => text && m.objective(text), update: (g, m, dt) => fn(g, m, dt) });
 
 function goTo(x, z, r, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => { m.objective(text); m.marker(x, z, r); },
     update: (g, m) => {
       const P = g.player;
@@ -128,6 +130,7 @@ function goTo(x, z, r, text, o = {}) {
 
 function getIn(name, text) {
   return {
+    label: text,
     start: (g, m) => { m.objective(text); const c = name && m.vars[name]; if (c) m.marker(c.x, c.z, 3); },
     update: (g, m) => {
       const c = name && m.vars[name];
@@ -140,12 +143,14 @@ function getIn(name, text) {
 }
 
 const loseCops = (text) => ({
+  label: text,
   start: (g, m) => { m.objective(text); m.music = 2; },
   update: (g, m) => { if (g.dispatch.stars === 0) { m.music = 1; return true; } return false; },
 });
 
 function killGroup(group, text) {
   return {
+    label: text,
     start: (g, m) => { m.music = 3; },
     update: (g, m) => {
       const left = alive(g, group), n = m.vars[group + 'N'] || 0;
@@ -159,6 +164,7 @@ function killGroup(group, text) {
 // Pick up mission items (cash bags, plans, gold): walk or drive over them.
 function collect(name, points, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => {
       m.vars[name] = 0;
       m.vars[name + 'Items'] = points.map(([x, z]) => m.track(g.pickups.spawn(o.type || 'bag', x, z, {
@@ -185,6 +191,7 @@ function collect(name, points, text, o = {}) {
 function destroy(name, text, o = {}) {
   let far = 0;
   return {
+    label: text,
     start: (g, m) => { m.objective(text); m.music = 2; },
     update: (g, m, dt) => {
       const c = m.vars[name];
@@ -204,6 +211,7 @@ function destroy(name, text, o = {}) {
 function tail(name, minD, maxD, text) {
   let close = 0, far = 0;
   return {
+    label: text,
     start: (g, m) => m.objective(text),
     update: (g, m, dt) => {
       const c = m.vars[name], T = g.dispatch.target;
@@ -226,6 +234,7 @@ function tail(name, minD, maxD, text) {
 function hold(x, z, r, sec, text, o = {}) {
   let t = 0, away = 0;
   return {
+    label: text,
     start: (g, m) => { t = 0; away = 0; m.objective(text); m.marker(x, z, r); },
     update: (g, m, dt) => {
       const P = g.player, inZone = near(g, x, z, r) && (o.car ? P.inCar : !P.inCar);
@@ -248,6 +257,7 @@ function defuse(points, sec, text, o = {}) {
   const done = points.map(() => false);
   let cur = -1, t = 0;
   return {
+    label: text,
     start: (g, m) => m.objective(text),
     update: (g, m, dt) => {
       const T = g.dispatch.target;
@@ -296,6 +306,7 @@ function countdown() {
 function race(cps, text) {
   let pi = 0;
   return {
+    label: text,
     start: (g, m) => { pi = 0; m.objective(text); m.marker(cps[0].x, cps[0].z, 9, true); m.music = 2; },
     update: (g, m) => {
       const T = g.dispatch.target, cp = cps[pi];
@@ -324,6 +335,7 @@ const ord = (n) => n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th')
 function driftChallenge(target, sec) {
   let t = 0;
   return {
+    label: `Score ${target.toLocaleString('en-IN')} drift points`,
     start: (g, m) => { t = sec; m.stats.drift = 0; m.objective(`Score ${target.toLocaleString('en-IN')} drift points: hold DRIFT in the turns`); m.music = 2; },
     update: (g, m, dt) => {
       t -= dt;
@@ -343,6 +355,7 @@ function driftChallenge(target, sec) {
 function speedBomb(name, minKmh, sec, events) {
   let t = 0, low = 0, beepT = 0, ev = 0, armed = false, armT = 0;
   return {
+    label: `Keep above ${minKmh} km/h or the bomb explodes`,
     start: (g, m) => { t = sec; low = 0; ev = 0; armed = false; armT = 0; m.objective(`Speed up! The bomb arms at ${minKmh + 5} km/h`); m.music = 2; },
     update: (g, m, dt) => {
       const van = m.vars[name];
@@ -371,6 +384,7 @@ function speedBomb(name, minKmh, sec, events) {
 // A boss fight: boss bar on screen; optional phase change when his health is low.
 function bossFight(name, text) {
   return {
+    label: text,
     start: (g, m) => { m.objective(text); m.music = 3; },
     update: (g, m) => {
       const b = m.vars[name];
@@ -1166,17 +1180,52 @@ export class MissionRunner {
 
   objective(text) {
     if (text === this.objectiveText) return;
-    this.objectiveText = text; this.game.hud.setObjective(text);
-    // The first objective of a step is a new TASK (TASK 1, TASK 2, ... on the HUD).
-    if (!this.taskOpen && text && !this.done) { this.taskOpen = true; this.taskNo++; this.game.hud.setTask(this.taskNo); }
-    if (this.game.voice) this.game.voice.objective(text);   // Vikram says what to do next
+    this.objectiveText = text; this.game.hud.setObjective(localTask(text));   // v10.1: in the player's language
+    // The first objective of a step: STEP n/N on the HUD (the very first one also shows the whole plan).
+    if (!this.taskOpen && text && !this.done) {
+      this.taskOpen = true; this.taskNo++; this.game.hud.setTask(this.stepChip());
+      if (this.taskNo === 1) this.planShowT = 3.8;   // the whole plan, once the mission title card has gone
+    }
+    this.showSteps();
+    // Vikram says what to do next - "Step 3. I have to ..." when a new step starts.
+    if (this.game.voice && text && !this.done) {
+      const n = this.stepInfo().n;
+      this.game.voice.objective(text, n !== this.spokenStep ? n : 0);
+      this.spokenStep = n;
+    }
   }
   // Close the current task (tick + bonus); the next objective starts a new one.
   newTask() {
     if (!this.taskOpen || this.done) return;
-    this.taskOpen = false; this.game.hud.taskDone(this.taskNo);
-    if (this.game.rewards) this.game.rewards.event(`TASK ${this.taskNo} DONE`, 100, 5);
+    this.taskOpen = false; this.game.hud.taskDone(`${this.stepChip()} ✓`);
+    if (this.game.rewards) this.game.rewards.event('TASK DONE', 100, 5);
   }
+
+  // ---------- v10.1: the mission, one step after another ----------
+  // Every step that asks something of the player has a label ("Meet Raju at Raju's chai stall"). The plan
+  // is those labels in order, with the act headers. The HUD shows STEP n/N, what to do now, what comes
+  // NEXT, and the whole list (done / now / to do) behind STEPS.
+  get plan() {
+    if (this.planLen !== this.steps.length) {   // a choice can add steps
+      this.planLen = this.steps.length;
+      const ACT = ['', 'THE PLAN', 'THE JOB', 'THE GETAWAY'];
+      this.planList = [];
+      this.steps.forEach((st, i) => {
+        if (st.actN) this.planList.push({ i, act: st.actN, head: `ACT ${st.actN} · ${ACT[st.actN]}` });
+        else if (st.label) this.planList.push({ i, label: String(st.label).replace(/\s+/g, ' ').trim() });
+      });
+    }
+    return this.planList;
+  }
+  // The step being worked on: the first labelled step from the current one on.
+  stepInfo() {
+    const items = this.plan.filter((p) => p.label);
+    let k = items.findIndex((p) => p.i >= this.si);
+    if (k < 0) k = items.length - 1;
+    return { n: k + 1, N: items.length, cur: items[k] || null, next: items[k + 1] || null, plan: this.plan };
+  }
+  stepChip() { const s = this.stepInfo(); return s.N ? localStep(s.n, s.N) : `TASK ${this.taskNo}`; }
+  showSteps() { this.game.hud.setSteps(this.done ? null : this.stepInfo()); }
   marker(x, z, r, moving = false) { this.game.setMarker(x === null ? null : { x, z, r, moving }); }
   timer(sec) { this.timeLeft = sec; }
   track(e) {
@@ -1226,6 +1275,7 @@ export class MissionRunner {
       const st = this.steps[this.si];
       if (st.start) st.start(g, this);
       if (this.done) return;
+      this.showSteps();
       if (!st.update(g, this, 0)) return;
     }
   }
@@ -1246,6 +1296,7 @@ export class MissionRunner {
       if (this.timeLeft <= 0) { this.fail('Time is up'); return; }
     }
     if (this.def.watch && this.inJob) this.def.watch(g, this, dt);
+    if (this.planShowT > 0 && g.mode === 'play' && (this.planShowT -= dt) <= 0) { this.showSteps(); g.hud.toggleSteps(true, 9); }
     const st = this.steps[this.si];
     if (st && st.update(g, this, dt)) this.next();
   }
@@ -1255,6 +1306,7 @@ export class MissionRunner {
     if (this.done) return;
     this.done = true; this.passed = true;
     const g = this.game, d = this.def;
+    g.hud.setSteps(null);
     if (d.acts && this.jobTime != null) this.elapsed = this.jobTime;   // stars are for how fast the JOB was done
     let stars = d.rate ? d.rate(g, this) : (d.par && d.par[0] ? (this.elapsed <= d.par[0] ? 3 : this.elapsed <= d.par[1] ? 2 : 1) : 3);
     stars = Math.max(1, Math.min(3, stars));
@@ -1269,6 +1321,7 @@ export class MissionRunner {
   fail(reason) {
     if (this.done) return;
     this.done = true;
+    this.game.hud.setSteps(null);
     this.game.missionFailed(this.def, reason);
   }
 

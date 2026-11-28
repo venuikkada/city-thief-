@@ -3,7 +3,7 @@
 // car speed + nitro, context buttons (ENTER / PICK UP), subtitles, messages, hit effects.
 import * as THREE from 'three';
 import { WEAPONS, GUN_ICONS, SIGHTS } from './weapons.js';
-import { t as tr } from './i18n.js';
+import { t as tr, localTask, localNext, localLast, localAct, getLang } from './i18n.js';
 const $ = (id) => document.getElementById(id);
 const _v3 = new THREE.Vector3();
 
@@ -64,6 +64,10 @@ export class Hud {
     $('map-wrap').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); game.openMap(); });
     this.el.bigCanvas.addEventListener('pointerdown', (e) => this.bigMapTap(e));
     $('bigmap-close').addEventListener('pointerdown', (e) => { e.stopPropagation(); game.closeMap(); });
+    // v10.1: STEPS opens the whole mission, step by step (and Vikram says the current step again).
+    $('btn-steps').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.toggleSteps(undefined, 0, true); });
+    $('step-list').addEventListener('pointerdown', (e) => e.stopPropagation());   // (the game's touch controls ignore it; it can scroll)
+    $('step-list').addEventListener('click', (e) => { e.stopPropagation(); this.toggleSteps(false); });   // tap the list: close it
   }
 
   buildMapImage() {
@@ -108,24 +112,70 @@ export class Hud {
     if (c) c.textContent = n;
     if (b) b.classList.toggle('hidden', !(n > 0));
   }
-  // "TASK 3": every mission is one task after another (v9.5). A tick when it is done.
-  setTask(n) {
+  // "STEP 3/9": every mission is one step after another (v9.5 tasks, v10.1 numbered steps). A tick when done.
+  setTask(text) {
     const e = this.el.task || (this.el.task = $('task-no'));
     if (!e) return;
-    e.textContent = `TASK ${n}`; e.className = '';
+    e.textContent = typeof text === 'number' ? `TASK ${text}` : text; e.className = '';
     void e.offsetWidth; e.className = 'pop';
     if (this.game.audio && this.game.audio.chime) this.game.audio.chime(0.35);
   }
-  taskDone(n) {
+  taskDone(text) {
     const e = this.el.task || (this.el.task = $('task-no'));
     if (!e) return;
-    e.textContent = `TASK ${n} ✓`; e.className = '';
+    e.textContent = typeof text === 'number' ? `TASK ${text} ✓` : text; e.className = '';
     void e.offsetWidth; e.className = 'done pop';
+  }
+
+  // v10.1: the mission step by step. info = { n, N, next, plan } from the mission (null = no mission):
+  // NEXT ▸ the step after this one, and the list of all steps (done ✓ / NOW / to do) behind STEPS.
+  setSteps(info) {
+    const E = this.stepEl || (this.stepEl = { next: $('next-step'), list: $('step-list'), btn: $('btn-steps') });
+    if (!info || !info.N) {
+      E.next.classList.add('hidden'); E.btn.classList.add('hidden'); E.list.classList.add('hidden'); E.btn.classList.remove('open');
+      this.el.panel.classList.remove('has-steps', 'steps-open'); this.stepsOpen = false; this.stepsKey = ''; clearTimeout(this.stepsT);
+      return;
+    }
+    E.btn.classList.remove('hidden'); this.el.panel.classList.add('has-steps');
+    const nx = info.next ? localNext(info.next.label) : localLast();
+    if (E.next.textContent !== nx) E.next.textContent = nx;
+    E.next.classList.remove('hidden');
+    const key = `${info.n}/${info.N}/${info.plan.length}/${getLang()}`;
+    if (key === this.stepsKey) return;
+    this.stepsKey = key;
+    E.list.textContent = '';
+    let n = 0;
+    for (const p of info.plan) {
+      const li = document.createElement('li');
+      if (p.head) { li.className = 'head'; li.textContent = p.act ? localAct(p.act) : p.head; E.list.appendChild(li); continue; }
+      n++;
+      li.className = n < info.n ? 'done' : n === info.n ? 'now' : '';
+      const b = document.createElement('b'); b.textContent = n < info.n ? '✓' : String(n);
+      li.appendChild(b); li.appendChild(document.createTextNode(localTask(p.label)));
+      E.list.appendChild(li);
+    }
+    if (this.stepsOpen) this.scrollToNow();
+  }
+  scrollToNow() {
+    const E = this.stepEl, now = E && E.list.querySelector('.now');
+    if (now) E.list.scrollTop = Math.max(0, now.offsetTop - E.list.clientHeight / 2 + now.offsetHeight / 2);
+  }
+  // Open / close the list. sec > 0: close again by itself (the plan at the start of a mission).
+  // ask: Vikram says the current step again (the player tapped STEPS).
+  toggleSteps(open = !this.stepsOpen, sec = 0, ask = false) {
+    const E = this.stepEl || (this.stepEl = { next: $('next-step'), list: $('step-list'), btn: $('btn-steps') });
+    if (E.btn.classList.contains('hidden')) open = false;
+    this.stepsOpen = open;
+    E.list.classList.toggle('hidden', !open); E.btn.classList.toggle('open', open); this.el.panel.classList.toggle('steps-open', open);
+    clearTimeout(this.stepsT);
+    if (open) { this.scrollToNow(); if (sec > 0) this.stepsT = setTimeout(() => this.toggleSteps(false), sec * 1000); }
+    if (open && ask && this.game.mission && this.game.voice) this.game.voice.repeatObjective();
   }
 
   setMission(title, objective) {
     const tn = this.el.task || (this.el.task = $('task-no'));
     if (tn) tn.className = 'hidden';
+    this.setSteps(null);
     this.el.mTitle.textContent = title;
     this.setObjective(objective);
   }

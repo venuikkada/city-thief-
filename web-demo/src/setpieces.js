@@ -85,10 +85,13 @@ function segDist(px, pz, ax, az, bx, bz) {
   const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz || 1, t = clamp(((px - ax) * dx + (pz - az) * dz) / L, 0, 1);
   return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
 }
+// v10.1: "SALIM" -> "Salim", "CAMP LADY" -> "the camp lady" (for the step list).
+const nameOf = (w) => (!w ? 'your friend' : /^(SHOPKEEPER|DOCTOR|CAMP LADY|BOMB MAKER)$/.test(w) ? 'the ' + w.toLowerCase() : w.split(' ').map((x) => x[0] + x.slice(1).toLowerCase()).join(' '));
+
 function sniperStep(o, site, U) {
   let nest = null, phase = 0, alarmT = -1, backup = false, quiet = true, laneT = 0;
   return {
-    kind: 'kill', group: 'snipe',
+    kind: 'kill', group: 'snipe', label: o.label || 'Get the sniper rifle and pick off the lookouts at the job',
     start: (g, m) => {
       phase = 0; alarmT = -1; backup = false; quiet = true;
       // The nest: on a footpath 55-85 m from the job with a clear view of it - and not across the
@@ -150,7 +153,7 @@ function armsStep(o, site, U) {
   let crates = [], t = 0, opened = 0, alertSaid = false;
   const LOOT = [['rifle', 'sight_x4'], ['dmr', 'ammo'], ['smg', 'sight_x2'], ['shotgun', 'sight_dot'], ['rifle', 'ammo']];
   return {
-    kind: 'collect',
+    kind: 'collect', label: o.label || 'Grab the gun crates before the truck leaves',
     start: (g, m) => {
       const P = g.player;
       const c = placeToward(g, U, P.x, P.z, site.x, site.z, 45, 80);
@@ -202,7 +205,7 @@ function holdStep(o, site, U) {
   let prog = 0, wave = 0, spot = null, started = false;
   const NEED = o.sec || 40;
   return {
-    kind: 'hold',
+    kind: 'hold', label: `Hold the line while ${nameOf(o.who)} ${o.doing || 'works'}`,
     start: (g, m) => {
       const P = g.player;
       spot = placeToward(g, U, P.x, P.z, site.x, site.z, 35, 70);
@@ -258,7 +261,7 @@ function holdStep(o, site, U) {
 function tailStep(o, site, U) {
   let closeT = 0, farT = 0, lost = 0, spotted = false, runT = 0, dest = null;
   return {
-    kind: 'tail',
+    kind: 'tail', label: o.text || `Follow ${o.target || 'his car'} without being seen`,
     start: (g, m) => {
       const P = g.player;
       closeT = 0; farT = 0; lost = 0; spotted = false; runT = 0;
@@ -320,7 +323,7 @@ function tailStep(o, site, U) {
 function interceptStep(o, site, U) {
   let t = 0, phase = 0, item = null;
   return {
-    kind: 'wreck',
+    kind: 'wreck', label: `Wreck the courier's car and grab ${o.item || 'what he carries'}`,
     start: (g, m) => {
       const P = g.player;
       t = o.sec || 80; phase = 0; item = null;
@@ -376,7 +379,7 @@ function holdPointsStep(o, site, U, trackers) {
   let pl = null, pts = [], leds = [], quiet = true;
   const group = trackers ? 'trk' : 'pwr';
   return {
-    kind: 'plant',
+    kind: 'plant', label: o.text || (trackers ? 'Plant GPS trackers on their cars' : 'Cut the power at the junction boxes'),
     start: (g, m) => {
       quiet = true; leds = [];
       const base = U.ring(g, site.x, site.z, 12, 38, 3);
@@ -425,7 +428,7 @@ function holdPointsStep(o, site, U, trackers) {
 function rescueStep(o, site, U) {
   let freed = false, spot = null;
   return {
-    kind: 'kill', group: 'rescue',
+    kind: 'kill', group: 'rescue', label: o.text || `Free ${nameOf(o.who)} from the kidnappers`,
     start: (g, m) => {
       const P = g.player;
       freed = false;

@@ -130,6 +130,7 @@ const near = (g, x, z, r) => { const T = g.dispatch.target; return dist(T.x, T.z
 // people: [{ at: [x, z], yaw, rig, gesture, line, key, pay }]. Done when the key person has told you.
 export function askAround(people, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => {
       m.objective(text);
       m.vars.ask = people.map((d) => {
@@ -161,6 +162,7 @@ export function askAround(people, text, o = {}) {
 // Rob the marked people (from behind). Caught = they shout and a witness may call the police.
 export function pickpocket(list, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => {
       m.objective(text);
       m.vars.marks = list.map((d) => {
@@ -202,6 +204,7 @@ export function countRobs(g, m, type, data) {
 export function footChase(name, routeIn, text, o = {}) {
   let far = 0, route = [];
   return {
+    label: text,
     start: (g, m) => {
       route = typeof routeIn === 'function' ? routeIn(g, m) : routeIn;
       m.objective(text);
@@ -255,6 +258,7 @@ export function undisguise() {
 export function photo(targets, text, o = {}) {
   let list = [];
   return {
+    label: text,
     start: (g, m) => { list = targets(g, m).map((t) => ({ ...t, done: false })); m.objective(text); $('btn-photo').classList.remove('hidden'); g.photoMode = true; },
     update: (g, m) => {
       const left = list.filter((t) => !t.done);
@@ -287,6 +291,7 @@ export function passengers(carName, stops, text, o = {}) {
   let si = 0, phase = 'goto', riders = [], waiting = [];
   const carOf = (g, m) => m.vars[carName];
   return {
+    label: text,
     start: (g, m) => { si = 0; phase = 'goto'; riders = []; waiting = []; m.objective(text); spawnStop(g, m); },
     update: (g, m, dt) => {
       const car = carOf(g, m);
@@ -343,6 +348,7 @@ export function passengers(carName, stops, text, o = {}) {
 // Keep a person alive while they walk with you to a place.
 export function escort(name, dest, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => {
       m.objective(text);
       const v = m.vars[name];
@@ -374,6 +380,7 @@ export function escort(name, dest, text, o = {}) {
 export function waves(list, text, spawn, o = {}) {
   let wi = -1, gap = 0;
   return {
+    label: text,
     start: (g, m) => { wi = -1; gap = 0.5; m.objective(text); m.music = 3; m.vars.waveGroup = 'wave'; },
     update: (g, m, dt) => {
       const alive = g.officers.filter((e) => e.group === 'wave' && !e.dead).length;
@@ -399,6 +406,7 @@ export function waves(list, text, spawn, o = {}) {
 // Spy drones circling over an area: shoot them all down.
 export function drones(list, text) {
   return {
+    label: text,
     start: (g, m) => { m.objective(text); m.vars.drones = list.map(([x, z, r, h], i) => m.track(new Drone(g, x, z, r, h, i * 1.7))); },
     update: (g, m, dt) => {
       for (const d of m.vars.drones) d.update(dt);
@@ -416,6 +424,7 @@ export function drones(list, text) {
 export function targets(spots, need, sec, text) {
   let t = 0, hit = 0, live = [], next = 0;
   return {
+    label: text,
     start: (g, m) => { t = sec; hit = 0; live = []; next = 0; m.objective(text); g.onTarget = () => { hit++; g.rewards.addCash(40, 'BULLSEYE', 'cash'); }; },
     update: (g, m, dt) => {
       t -= dt; next -= dt;
@@ -441,6 +450,7 @@ export function plant(points, sec, text, o = {}) {
   const done = points.map(() => false);
   let cur = -1, t = 0;
   return {
+    label: text,
     start: (g, m) => m.objective(text),
     update: (g, m, dt) => {
       const T = g.dispatch.target, P = g.player;
@@ -471,6 +481,7 @@ export function blowUp(points) {
 // Bring a car to a place in good shape.
 export function deliver(carName, x, z, r, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => { m.objective(text); m.marker(x, z, r); },
     update: (g, m) => {
       const c = m.vars[carName];
@@ -490,6 +501,7 @@ export function deliver(carName, x, z, r, text, o = {}) {
 export function stealList(list, to, text, o = {}) {
   let i = 0;
   return {
+    label: text,
     start: (g, m) => {
       i = 0; m.objective(text);
       m.vars.list = list.map((d, k) => { const c = g.spawnParkedCar(d.type, d.color, d.at[0], d.at[1], d.yaw ?? 0); c.missionCar = true; c.listName = d.name; m.track(c); return c; });
@@ -518,6 +530,7 @@ export function stealList(list, to, text, o = {}) {
 export function choose(question, a, b, stepsA, stepsB) {
   let picked = null;
   return {
+    label: 'Choose how to do it',
     start: (g, m) => {
       picked = null;
       g.controls.releaseAll();
@@ -543,6 +556,7 @@ export function choose(question, a, b, stepsA, stepsB) {
 // Timing game on the beat (dance / chant / cricket bat). Done after 'need' good taps.
 export function beat(need, text, o = {}) {
   return {
+    label: text,
     start: (g, m) => {
       g.rhythm = new Rhythm(g, o.bpm || 100);
       $('btn-dance').querySelector('span').textContent = o.button || 'DANCE';

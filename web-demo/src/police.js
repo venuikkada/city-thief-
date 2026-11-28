@@ -6,16 +6,17 @@
 //            back (punch with FIGHT or shoot): beat the cops around you or get away, else BUSTED.
 //   2 stars: cops SHOOT. 3 stars: SWAT team, more cars, ROADBLOCKS ahead of you.
 //   4-5 stars: a HELICOPTER with a searchlight, and SPIKE STRIPS in front of roadblocks.
-// POLICE ON THE WAY (v10)
-//   New wanted stars do not bring the police at once: they need 2 MINUTES to get there (POLICE COMING
-//   m:ss on screen). Nobody chases him meanwhile - finish the job, grab a fast car, buy a NEW SIM
-//   (-1 star) or a NEW SHIRT (1-2 stars: they lose him). Just running away does not lose them: they
-//   know who he is and come to where he is. A cop he attacks fights back at once (with the cops next to
-//   him); scripted shoot-outs (the police are already there) start at once; CALL COPS is at once too.
-//   When they arrive the 2-minute grace starts (they cannot kill or arrest him yet).
+// POLICE TIMING (v10.1)
+//   The FIRST time he is wanted in a mission (or in free roam) the police come at once to catch him.
+//   After that they take 4 MINUTES to come again (POLICE COMING m:ss on screen) - nobody chases him
+//   meanwhile: finish the job, grab a fast car, buy a NEW SIM (-1 star) or a NEW SHIRT (1-2 stars: they
+//   lose him). Just running away does not lose them: they know who he is and come to where he is. A cop
+//   he attacks fights back at once (with the cops next to him); scripted shoot-outs (the police are
+//   already there) and CALL COPS are at once. When they arrive the 2-minute grace starts (they cannot
+//   kill or arrest him yet). Beat the cops who came and the breather is 4 minutes too.
 // BREATHER (v9.4)
 //   Beat the cops who came for him (kill one, none left near him) and the police regroup: no new units
-//   for 2-3 minutes (BACKUP IN m:ss on screen), then a bigger BACKUP comes (+1 star). In a story mission
+//   for 4 minutes (BACKUP IN m:ss on screen), then a bigger BACKUP comes (+1 star). In a story mission
 //   the stars stay meanwhile (unless the job is to lose the police): finish the job before the backup.
 // ESCAPING
 //   The red circle on the map is where the police are searching (it follows you while they see you).
@@ -37,7 +38,7 @@ import { dist, rotateTowards, yawOf, pushOutOfBox, moveTowards, clamp, pick } fr
 const UNITS_FOR_STARS = [2, 2, 3, 4, 5, 6];
 export const ARREST_TIME = 60;    // seconds to fight your way out when a cop grabs you
 export const GRACE_TIME = 120;    // v9.7: the first 2 minutes of a chase the police cannot kill or arrest him
-export const RESPONSE_TIME = 120; // v10: new wanted stars - the police need 2 minutes to get there
+export const RESPONSE_TIME = 240; // v10.1: after the first chase, new wanted stars - the police need 4 minutes
 const HEAL_PER_COP = 20;          // health back for every cop Vikram takes down (gangsters: half)
 
 // Can a police unit at (ex, ez) facing (fx, fz) see the player?
@@ -66,6 +67,7 @@ export class Dispatch {
     this.lullOn = false; this.lullT = 0; this.lastCopKill = -999; this.lullEnd = -999;   // the breather after he beats them
     this.chaseStart = -999;   // when the police arrived (the 2-minute grace)
     this.respondT = 0;        // v10: > 0 = the police are on the way (seconds left), nobody chases yet
+    this.responses = 0;       // v10.1: how many times the police came in this mission / free roam (the first: at once)
     this.trackT = 0;          // v10: just arrived - for a few seconds they know exactly where he is
     this.reportTimer = -1;
     this.reinforceT = 0;
@@ -90,7 +92,7 @@ export class Dispatch {
   get loseTime() { return 14 + this.stars * 4; }         // unseen anywhere (hiding)
   get target() { const g = this.game; return g.player.inCar && g.driving.car ? g.driving.car : g.player; }
 
-  // Raise (never lower) the wanted level. now = the police come at once (CALL COPS), not in 2 minutes.
+  // Raise (never lower) the wanted level. now = the police come at once (CALL COPS), not in 4 minutes.
   setStars(n, x, z, now = false) {
     n = Math.max(0, Math.min(5, n));
     const P = this.game.player;
@@ -102,8 +104,9 @@ export class Dispatch {
     this.sinceSeen = 0; this.outsideT = 0;
     if (was === 0) {
       this.chaseStart = this.game.time;
-      this.respondT = now ? 0 : RESPONSE_TIME;   // v10: they need 2 minutes to get there
-      if (!this.respondT) for (const c of this.game.policeCars) c.beginPursuit();
+      // v10.1: the first time the police come at once; after that they need 4 minutes.
+      this.respondT = now || this.responses === 0 ? 0 : RESPONSE_TIME;
+      if (!this.respondT) { this.responses++; for (const c of this.game.policeCars) c.beginPursuit(); this.sendNear(20); }
     }
     if (!(this.respondT > 0)) {
       if (n >= 3 && was < 3) this.onMessage('SWAT TEAM ON THE WAY');
@@ -127,13 +130,22 @@ export class Dispatch {
   // (SWAT / the helicopter at 3+ / 4+ stars), and the 2-minute grace starts now.
   arrive() {
     const g = this.game, T = this.target;
-    this.respondT = 0; this.chaseStart = g.time; this.trackT = 15;   // the control room guides them to him for 15 s
+    this.respondT = 0; this.chaseStart = g.time; this.responses++;
     this.report(T.x, T.z); this.circle.r = this.radius; this.outsideT = 0;
     for (const c of g.policeCars) if (!c.wrecked && !c.parked && !c.roadblock && !c.playerControlled) c.beginPursuit();
-    this.reinforceT = 0;
+    this.reinforceT = 0; this.sendNear(15);
     if (this.stars >= 4) this.onMessage('SWAT AND A POLICE HELICOPTER!');
     else if (this.stars >= 3) this.onMessage('SWAT TEAM IS HERE!');
     this.onArrive();
+  }
+
+  // The police really come for him: a car close by joins the chase (if none is near), and for a few
+  // seconds the control room guides them to where he is (he cannot just walk off before they arrive).
+  sendNear(sec) {
+    const g = this.game, T = this.target;
+    this.trackT = Math.max(this.trackT, sec);
+    this.report(T.x, T.z);
+    if (!g.policeCars.some((c) => !c.wrecked && !c.parked && !c.roadblock && !c.playerControlled && Math.hypot(c.x - T.x, c.z - T.z) < 80)) g.spawnPoliceCar(true, true);
   }
 
   // He attacked a cop while the police are still on the way: the cops right there fight back at once
@@ -227,7 +239,7 @@ export class Dispatch {
   }
 
   // He beat the cops who came for him (killed one in the last minute, no cop left near him): the police
-  // regroup. No new units for 2-3 minutes, then a bigger BACKUP. Scripted shoot-outs keep their pressure.
+  // regroup. No new units for 4 minutes, then a bigger BACKUP. Scripted shoot-outs keep their pressure.
   checkCopsDown() {
     const g = this.game, P = g.player;
     if (this.lullOn || this.arrestT > 0 || g.time - this.lastCopKill > 60 || g.time - this.lullEnd < 45) return;
@@ -237,7 +249,7 @@ export class Dispatch {
   }
   startLull() {
     const g = this.game;
-    this.lullOn = true; this.lullT = 120 + Math.random() * 60;
+    this.lullOn = true; this.lullT = 240;   // v10.1: the police come back after 4 minutes
     for (const c of g.policeCars) if (!c.wrecked && !c.parked && !c.roadblock && !c.playerControlled) c.endPursuit();
     for (const o of g.officers) if (!o.dead && !o.gang && !o.group && !o.forceHostile) o.standDown();
     if (this.raid) { this.raid.end(); this.raid = null; }

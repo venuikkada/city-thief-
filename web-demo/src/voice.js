@@ -8,7 +8,7 @@
 //   - Meeting people: Vikram greets them, they answer in their own voice.
 // In the Android app the phone's own TTS engine is used through a small bridge (window.AndroidTTS).
 import { pick } from './util.js';
-import { getLang, langTag, sayObjective, sayReminder, sayGreeting, spoken } from './i18n.js';
+import { getLang, langTag, sayObjective, sayReminder, sayGreeting, spoken, stepWord, localTask, remindText } from './i18n.js';
 
 // Who sounds how. sex: m / f, pitch and rate tweak the same voice so characters sound different.
 const CAST = {
@@ -40,6 +40,8 @@ const FEMALE_NAMES = /heera|neerja|veena|lekha|kalpana|swara|aditi|raveena|shrut
 const GREET_M = ['Namaste ji.', 'Bhai, one minute.', 'Excuse me, boss.', 'Hello uncle, how are you?', 'Arre bhai, suniye.', 'Sir ji, quick question.'];
 const GREET_F = ['Namaste ji.', 'Didi, one minute.', 'Excuse me, madam.', 'Hello aunty, how are you?', 'Suniye ji, one question.'];
 const SAY_OBJ = ['Okay. First, I have to {x}.', 'Right. Now I need to {x}.', 'Chalo, let me {x}.', 'Next, I must {x}.', 'Okay Vikram, {x}.'];
+// v10.1: a new numbered step ("Step 3. Now I need to ...").
+const SAY_STEP = ['I have to {x}.', 'Now I need to {x}.', 'Next, I must {x}.', 'Chalo, {x}.'];
 const SAY_REMIND = ['Arre, focus Vikram. I still have to {x}.', 'No time to waste. I need to {x}.', 'Ravi is counting on me. First I have to {x}.',
   'Chalo chalo, I have to {x}.', 'What am I doing? I must {x} first.'];
 
@@ -237,11 +239,23 @@ export class Voice {
 
   // ---------- Vikram talks about what to do ----------
   // The objective changed: say it (once per new goal, not for counters like "3 / 8").
-  objective(text) {
+  // step: the number of a new mission step (0 = same step) - said first: "Step 3. Now I need to ...".
+  objective(text, step = 0) {
     const k = keyOf(text);
     this.idleT = 0;   // the text changed (a counter went up): that is progress
+    if (step) this.pendingStep = step;
     if (!k || k === this.lastObjKey) return;
-    this.lastObjKey = k; this.pendingObj = text; this.objDelay = 0.9; this.idleT = 0; this.reminders = 0;
+    this.lastObjKey = k; this.idleT = 0; this.reminders = 0;
+    if (getLang() !== 'en') return;   // v10.1: other languages - the mission box shows it as text, no voice
+    this.pendingObj = text; this.objDelay = 0.9;
+  }
+  // The player tapped STEPS: say the current step again, at once.
+  repeatObjective() {
+    const m = this.game.mission;
+    if (!m || m.done || !m.objectiveText) return;
+    if (getLang() !== 'en') { this.game.hud.toast(localTask(m.objectiveText)); return; }   // other languages: text only
+    if (!this.enabled) return;
+    this.lastObjKey = ''; this.pendingObj = m.objectiveText; this.objDelay = 0; this.pendingStep = m.stepInfo ? m.stepInfo().n : 0;
   }
   // Some progress happened (kills, pickups...): no reminder needed for a while.
   progress() { this.idleT = 0; }
@@ -257,11 +271,12 @@ export class Voice {
     if (this.pendingObj) {
       this.objDelay -= dt;
       if (this.objDelay <= 0 && !g.hud.subQueue.length && g.hud.subT <= 0 && !this.speaking) {
-        const x = objectiveToSpeech(this.pendingObj);
-        this.pendingObj = null;
+        const x = objectiveToSpeech(this.pendingObj), n = this.pendingStep || 0;
+        this.pendingObj = null; this.pendingStep = 0;
         if (x && m && !m.done) {
-          const en = pick(SAY_OBJ).replace('{x}', x);
-          this.say('VIKRAM', getLang() === 'en' ? en : sayObjective(x), { prio: 2, lang: getLang(), en });
+          // A new step: "Step 3." first, so the player hears the mission one step after another.
+          const en = n ? `Step ${n}. ${(n === 1 ? 'First, I have to {x}.' : pick(SAY_STEP)).replace('{x}', x)}` : pick(SAY_OBJ).replace('{x}', x);
+          this.say('VIKRAM', getLang() === 'en' ? en : (n ? stepWord(n) + ' ' : '') + sayObjective(x), { prio: 2, lang: getLang(), en });
           this.lastSpokeObj = g.time;
         }
       }
@@ -275,9 +290,10 @@ export class Voice {
     if (this.idleT > 24 + this.reminders * 12 && this.reminders < 3 && !g.hud.subQueue.length && g.hud.subT <= 0 && !this.speaking) {
       const x = objectiveToSpeech(m.objectiveText);
       if (x) {
-        const en = pick(SAY_REMIND).replace('{x}', x), loc = getLang() === 'en' ? null : sayReminder(x);
-        this.say('VIKRAM', loc || en, { prio: 2, lang: getLang(), en });
-        g.hud.toast(loc || m.objectiveText);   // the player reads it in their own language too
+        // v10.1: English - Vikram says it (and the text). Other languages - only text, in that language.
+        const en = pick(SAY_REMIND).replace('{x}', x);
+        if (getLang() === 'en') this.say('VIKRAM', en, { prio: 2, lang: 'en', en });
+        g.hud.toast(getLang() === 'en' ? m.objectiveText : remindText(m.objectiveText));
       }
       this.idleT = 0; this.reminders++;
     }

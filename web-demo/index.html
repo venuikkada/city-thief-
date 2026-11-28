@@ -78,7 +78,11 @@
       <div id="mission-title">FREE ROAM</div>
       <div id="mission-clock" class="hidden"></div>
       <div id="objective-text">Explore Navapur. Steal cars, call the cops, find the SMG.</div>
+      <div id="next-step" class="hidden"></div>
       <div id="timer" class="hidden">2:30</div>
+      <!-- v10.1: every mission step, one after another (tap STEPS or press J) -->
+      <button id="btn-steps" class="hidden" aria-label="All mission steps">&#9776; STEPS</button>
+      <ol id="step-list" class="hidden"></ol>
     </div>
     <div id="money">&#8377; 0</div>
 
@@ -333,6 +337,6 @@
     <div id="load-text">Loading Navapur...</div>
   </div>
 
-  <script type="module" src="src/main.js?v=10.0"></script>
+  <script type="module" src="src/main.js?v=10.1"></script>
 </body>
 </html>

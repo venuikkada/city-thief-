@@ -101,6 +101,19 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
   left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
   (trim, clean, level, slice footsteps, seamless loops).
+- **v10.1: every mission step by step, police timing, the mission box in your language:**
+  - **One step after another:** every mission shows STEP n/N, what to do NOW and what comes NEXT. The whole plan
+    (done ✓ / now / to do, by act: THE PLAN, THE JOB, THE GETAWAY) opens by itself a few seconds after the mission
+    starts, and any time with the STEPS button (PC: J). On phones it opens as a card in the middle, so it never
+    covers the FIRE / AIM buttons. In English Vikram says each new step ("Step 3. Now I need to ...").
+  - **Police timing:** the FIRST time Vikram is wanted in a mission (or in free roam) the police come at once to
+    catch him - a car close by joins the chase and for 20 s the control room guides them to him, so he cannot
+    just walk off before they arrive. After that they take 4 MINUTES to come again (POLICE COMING IN 4:00); beat
+    the cops who came and the breather is 4 minutes too. The 2-minute shield (no kill / no arrest) stays.
+  - **Your language:** with Hindi, Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi, Bengali or Odia chosen,
+    the mission box (what to do now, NEXT, the step list, the act names) is in that language, with names in that
+    script ("రవి: వెళ్ళి అతనితో మాట్లాడాలి."). Reminders are text only in that language (no voice). Menus and story
+    dialogue stay English. Each of the 379 different step texts maps to a task sentence (30 kinds in 9 languages).
 - **v10.0: the police take 2 minutes to come:** new wanted stars no longer bring the police at once. The screen
   shows POLICE COMING IN 2:00 and counts down; nobody chases Vikram meanwhile (no police cars, roadblocks,
   helicopter or raids, and cops who happen to be around do nothing). Use the time: finish the job, grab a fast car,
@@ -242,7 +255,7 @@ The **Unity project stays the real game** - the demo is for feedback and promoti
   click INSTALL APP (works offline after the first visit thanks to `sw.js`, made by `tools/make-sw.py`).
 - **PC controls:** W A S D move / drive, mouse look, left click fire, right click aim, Shift sprint / nitro, Space jump /
   handbrake, E car, R reload, 1 / 2 or mouse wheel or Q gun slots, C crouch, Y talk, U rob (rob the till in a shop),
-  I buy, O push, H hire / horn, K photo, T takedown, M map, Esc pause.
+  I buy, O push, H hire / horn, K photo, T takedown, M map, J mission steps, Esc pause.
 - Run locally: `cd web-demo && python3 -m http.server 8000`, then open http://localhost:8000
 - Quality: auto (phones = medium, 4 GB phones = low, computers = high). Force with `?low`, `?medium`, `?high`. Add `?fps` to see the frame rate.
 - Code: `web-demo/src/`; third-party asset credits: `web-demo/assets/CREDITS.txt` (people: Microsoft Rocketbox, MIT).

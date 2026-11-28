@@ -182,9 +182,11 @@ class Game {
 
     this.dispatch.onStars = (n, was) => {
       if (!(n > 0 && was === 0)) return;
-      if (this.dispatch.responding) {   // v10: the police need 2 minutes to get there
-        this.hud.showBig('POLICE COMING IN 2:00', '#ffb020', 2.4);
-        this.hud.toast('The police need 2 minutes to get here - finish the job, grab a car, or buy a new SIM / shirt!');
+      const D = this.dispatch;
+      if (D.responding) {   // v10.1: after the first chase the police need 4 minutes to get there
+        const t = Math.ceil(D.respondT), mm = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+        this.hud.showBig(`POLICE COMING IN ${mm}`, '#ffb020', 2.4);
+        this.hud.toast(`The police come back in ${Math.round(t / 60)} minutes - finish the job, grab a car, or buy a new SIM / shirt!`);
       } else this.hud.showBig('COPS ARE COMING!', '#ff4438', 2);
     };
     this.dispatch.onArrive = () => {
@@ -194,7 +196,7 @@ class Game {
     };
     this.dispatch.onEscaped = () => this.hud.showBig('YOU LOST THE POLICE', '#4dff66', 2.5);
     this.dispatch.onMessage = (t) => this.hud.toast(t);
-    // He beat the cops who came for him: 2-3 minutes without police, then a bigger backup (v9.4).
+    // He beat the cops who came for him: 4 minutes without police (v10.1), then a bigger backup (v9.4).
     this.dispatch.onLull = (on, quiet) => {
       if (on) {
         this.hud.showBig('POLICE DOWN! BACKUP COMING', '#ffb020', 2.4);
@@ -357,8 +359,9 @@ class Game {
     }
   }
 
-  spawnPoliceCar(toChase) {
-    const spots = this.freeSpots(toChase ? 70 : 45, toChase ? 160 : 170, true);
+  spawnPoliceCar(toChase, near = false) {
+    let spots = near ? this.freeSpots(40, 90, true) : [];   // near: the first car of a police response
+    if (!spots.length) spots = this.freeSpots(toChase ? 70 : 45, toChase ? 160 : 170, true);
     if (!spots.length) return null;
     const p = new PoliceCar(this);
     p.init(spots[0]);
@@ -595,7 +598,7 @@ class Game {
     P.armor = this.rewards.has('armour') ? 60 : 0;
     P.health = P.maxHealth;
     this.pins = []; this.raceGo = true; this.raceHold = false; this.takedownTarget = null; this.punchTarget = null; this.driving.nitro = 1;
-    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; D.chaseStart = -999; D.respondT = 0; D.trackT = 0; }
+    if (this.dispatch) { const D = this.dispatch; D.arrestT = 0; D.freeT = 0; D.lullOn = false; D.lullT = 0; D.lastCopKill = -999; D.lullEnd = -999; D.chaseStart = -999; D.respondT = 0; D.trackT = 0; D.responses = 0; }
     this.setMarker(null);
     this.hud.clearSubs();
     this.stats = { kills: 0, shots: 0 };
@@ -1017,6 +1020,7 @@ class Game {
     // X: throw colour in the Holi mission, otherwise put the gun away.
     if (input.holsterPressed && this.holi && this.colorBombs > 0) { this.throwColor(); input.holsterPressed = false; }
     if (input.callCopsPressed && !this.mission) this.dispatch.setStars(Math.max(1, this.dispatch.stars), undefined, undefined, true);   // you asked for them: at once
+    if (input.stepsPressed && this.mission) this.hud.toggleSteps(undefined, 0, true);   // J: all mission steps (v10.1)
     if (input.mapPressed) { this.openMap(); return; }
     if (input.camPressed && P.inCar) this.carCamFar = !this.carCamFar;
 
@@ -1286,7 +1290,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v10.0)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v10.1)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

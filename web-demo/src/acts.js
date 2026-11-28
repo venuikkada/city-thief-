@@ -292,6 +292,8 @@ const ACTS = {
 
 // ---------- Helpers ----------
 const title = (who) => who.split(' ').map((w) => w[0] + w.slice(1).toLowerCase()).join(' ');
+// v10.1: where a meeting / a stop is, for the step list ("Meet Raju at Raju's chai stall").
+const placeName = (o) => (o.place ? o.place.label : o.at && SPOTS[o.at] ? SPOTS[o.at][2] : '');
 const near = (g, x, z, r) => { const T = g.dispatch.target; return dist(T.x, T.z, x, z) < r; };
 // A walkable spot near (x, z).
 function free(g, x, z) {
@@ -341,7 +343,7 @@ const TROUBLE_LINES = ['Vikram! Help! These goons want money!', 'Bachao! Kaali\'
 function meetStep(o) {
   let talked = false, asked = false, label = '', trouble = 0;   // trouble: 0 none yet, 1 fighting, 2 saved
   return {
-    kind: 'meet',
+    kind: 'meet', label: o.label || o.text || `Meet ${title(o.who)}${placeName(o) ? ' at ' + placeName(o) : ''}`,
     start: (g, m) => {
       let s = o.place || (o.at ? spot(g, o.at) : null);
       if (!s) {   // someone a short walk from the first contact
@@ -409,7 +411,7 @@ function meetStep(o) {
 function gearStep(o, A) {
   let done = false;
   return {
-    kind: 'gear',
+    kind: 'gear', label: o.price ? `Buy ${o.item} at the market (₹${o.price})` : `Collect ${o.item} at the market`,
     start: (g, m) => {
       done = false;
       // The market stall nearest to the meeting place (not right next to it).
@@ -458,7 +460,7 @@ function scoutStep(o, site, H) {
   let cams = [];
   const ph = K.photo(() => cams.map((c) => ({ x: c.x, y: 3.7, z: c.z })), o.what === 'corners' ? 'Photograph the tricky corners' : 'Photograph the CCTV cameras near the job', { range: 50 });
   return {
-    kind: 'photo',
+    kind: 'photo', label: o.what === 'corners' ? 'Photograph the tricky corners near the job' : 'Photograph the CCTV cameras near the job',
     start: (g, m) => {
       const T = H.THREE;
       cams = ring(g, site.x, site.z, 14, 42, o.n || 3, (x, z) => !g.world.insideBlock(x, z));
@@ -481,7 +483,7 @@ function scoutStep(o, site, H) {
 // Gang lookouts near the job: take them out (quietly from behind = TAKEDOWN, or shoot them).
 function lookoutStep(o, site) {
   return {
-    kind: 'kill', group: 'look',
+    kind: 'kill', group: 'look', label: 'Take out the lookouts near the job',
     start: (g, m) => {
       const pts = ring(g, site.x, site.z, 12, 38, o.n || 2);
       const list = pts.map((p) => {
@@ -517,7 +519,7 @@ function cashStep(o) {
     pp.start(g, m);
   };
   return {
-    kind: 'rob',
+    kind: 'rob', label: 'Pickpocket the rich shoppers for cash',
     start: (g, m) => { m.actEvent = (G, M, type, data) => K.countRobs(G, M, type, data); spawn(g, m); },
     update: (g, m, dt) => {
       if (pp.update(g, m, dt)) return true;
@@ -537,7 +539,7 @@ function cashStep(o) {
 function snitchStep(o) {
   let fc = null, phase = 0;
   return {
-    kind: 'chase',
+    kind: 'chase', label: `Catch ${title(o.who)} and make him talk`,
     start: (g, m) => {
       phase = 0;
       const c = m.vars.contact || g.player;
@@ -567,7 +569,7 @@ function snitchStep(o) {
 // Steal a particular car (it waits at the kerb) and drive it to the job.
 function rideStep(o, site, label) {
   return {
-    kind: 'steal',
+    kind: 'steal', label: `Steal ${o.name} and drive it to ${label}`,
     start: (g, m) => {
       const c0 = m.vars.contact || g.player;
       const spots = g.world.parkingSpots().map((s) => ({ ...s, d: dist(s.x, s.z, c0.x, c0.z) }))
@@ -593,7 +595,7 @@ function rideStep(o, site, label) {
 function crewStep(o) {
   const ms = meetStep({ ...o, name: 'crewMate', text: null, lines: [['VIKRAM', `${title(o.who)}! Salim sent me.`], [o.who, 'I know. Chalo, where is the fight?']],
     onTalk: (g, m, p) => joinCrew(g, p, o.who) });
-  return { ...ms, kind: 'meet' };
+  return { ...ms, kind: 'meet', label: `Get ${title(o.who)} to join your crew` };
 }
 
 function joinCrew(g, p, who) {
@@ -608,7 +610,7 @@ function joinCrew(g, p, who) {
 function intelStep(o, H) {
   let col = null;
   return {
-    kind: 'collect',
+    kind: 'collect', label: `Grab the ${o.what} in the yard`,
     start: (g, m) => {
       const c = o.near ? spot(g, o.near) : (m.vars.contact || g.player);
       // The nearest block with a yard (not the bazaar or a park).
@@ -638,7 +640,7 @@ function intelStep(o, H) {
 function tuneStep(o) {
   let t = 0;
   return {
-    kind: 'hold',
+    kind: 'hold', label: `${o.label[0] + o.label.slice(1).toLowerCase()}${placeName(o) ? ' at ' + placeName(o) : ''}`,
     start: (g, m) => { t = 0; const s = spot(g, o.at); m.vars.tuneAt = s; m.objective(`Go to ${s.label}: ${o.label.toLowerCase()}`); m.marker(s.x, s.z, 4); },
     update: (g, m, dt) => {
       const s = m.vars.tuneAt;
@@ -679,7 +681,7 @@ function siteStep(site, label, amb, H) {
     m.music = 3;
   };
   return {
-    kind: 'go',
+    kind: 'go', label: `Go to the job: ${label}`,
     start: (g, m) => { const T = g.dispatch.target; d0 = dist(T.x, T.z, site.x, site.z); sprung = false; cleared = true; steerT = 0; m.objective(`Go to the job: ${label}`); m.marker(site.x, site.z, 6); },
     update: (g, m, dt) => {
       const P = g.player, T = g.dispatch.target, d = dist(T.x, T.z, site.x, site.z);
@@ -712,7 +714,7 @@ function siteStep(site, label, amb, H) {
 const HEAT_RADIO = ['All units, all units! Robbery reported in Navapur!', 'Control room here. Suspect Vikram seen. Catch him!', 'Every jeep to the scene. He must not escape!'];
 function heatStep(base) {
   return {
-    kind: 'lose',
+    kind: 'lose', label: 'Lose the police',
     start: (g, m) => {
       const n = Math.max(base || 0, (m.vars.extra && m.vars.extra.heat) || 0);
       if (g.dispatch.stars < n) { g.dispatch.setStars(n); g.say([['POLICE RADIO', pick(HEAT_RADIO)]]); }
@@ -736,7 +738,7 @@ function stashStep(A, H, id) {
   const [who, rig, line] = A.end;
   const A0 = A;
   return {
-    kind: 'stash',
+    kind: 'stash', label: A.loot && A.loot !== 'nothing' ? `Take ${A.loot} to the safehouse and meet ${title(A.end[0])}` : `Lie low at the safehouse with ${title(A.end[0])}`,
     start: (g, m) => {
       phase = 0; backupDone = false; A = A0;
       const X = m.vars.extra || {};

@@ -200,6 +200,7 @@ export function moreMissions(H) {
         act((g, m) => { const t = K.person(g, m, 56, 6.5, -PI / 2, 'm_delivery'); t.calm = true; m.vars.tiffin = t; t.route = [[8.5, 6.5], [6.5, -8.5], [-6.5, -12], [-6.5, -40], [-6.5, -68.5], [-30, -68.5], [-36, -68.5]]; t.ri = 0; }),
         say([['RAVI (phone)', 'There he is, the tiffin man. Follow him - but if he sees you, the trail goes cold.']]),
         {
+          label: 'Follow the tiffin man without being seen',
           start: (g, m) => m.objective('Follow the tiffin man (keep 8-30 m away)'),
           update: (g, m, dt) => {
             const t = m.vars.tiffin, P = g.player;
@@ -546,6 +547,7 @@ export function moreMissions(H) {
           t.maxHealth = 260; t.noExplode = true;
         }),
         {
+          label: 'Ram the truck until it stops',
           start: (g, m) => { m.objective('Damage the truck until it stops (ram it)'); m.music = 2; },
           update: (g, m) => {
             const t = m.vars.truck;
@@ -585,6 +587,7 @@ export function moreMissions(H) {
       steps: () => [
         act((g, m) => { const c = parkedCar(g, m, 'suv', 0x4a4d52, -150, 2.25, PI / 2, 'car'); c.health = 400; c.maxHealth = 400; g.placePlayer(-150, 5.2, PI / 2); g.driving.enter(c); g.camera3p.snapBehind(); m.vars.wrecked = 0; }),
         {
+          label: 'Wreck 8 gang cars',
           start: (g, m) => { m.objective('Wreck 8 gang cars'); m.music = 3; m.vars.spawnT = 0; },
           update: (g, m, dt) => {
             m.vars.spawnT -= dt;
@@ -638,6 +641,7 @@ export function moreMissions(H) {
           for (const t of m.vars.trucks.slice(1)) { const path = g.network.findPath(t.target, lead.target); if (path) t.upcoming = [...path.slice(1), ...lead.upcoming]; }
         }),
         {
+          label: 'Escort the relief trucks to the camp',
           start: (g, m) => { m.objective('Escort the relief trucks to the camp'); m.music = 2; m.vars.attT = 8; },
           update: (g, m, dt) => {
             const tr = m.vars.trucks;
@@ -750,6 +754,7 @@ export function moreMissions(H) {
         }),
         say([['RAVI', 'Ganpati Bappa Morya! Watch the crowd, bhai - Rana\'s men will come from the side streets.']]),
         {
+          label: 'Protect the idol truck all the way to the sea',
           start: (g, m) => { m.objective('Protect the idol truck all the way to the sea'); m.music = 2; m.vars.waveT = 10; },
           update: (g, m, dt) => {
             const t = m.vars.idol;
@@ -994,6 +999,7 @@ export function moreMissions(H) {
           s.boatRun = 0;
         }),
         {
+          label: "Chase Sunny's boat and wreck it",
           start: (g, m) => { m.objective('Chase Sunny\'s boat and wreck it (ram / shoot)'); m.music = 3; },
           update: (g, m, dt) => {
             const s = m.vars.sunny;
