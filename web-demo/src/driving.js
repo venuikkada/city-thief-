@@ -261,7 +261,7 @@ export class Driving {
     if (this.crashCooldown > 0) this.crashCooldown -= dt;
     if (this.ramCooldown > 0) this.ramCooldown -= dt;
     g.audio.engineLevel(Math.abs(vF) / s.top, Math.max(throttle, this.boosting ? 1.4 : 0));
-    if (input.horn) g.audio.horn(1);
+    if (input.horn) g.audio.horn(1, true);   // your own horn (not limited like the traffic's)
   }
 
   // Kerbs, ramps, jumps, landing; water at the beach. Boats float on the flood.

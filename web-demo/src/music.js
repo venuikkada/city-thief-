@@ -32,7 +32,7 @@ export class Music {
     const A = this.audio;
     if (this.started || !A.enabled) return;
     const ctx = this.ctx = A.ctx;
-    this.out = ctx.createGain(); this.out.gain.value = this.enabled ? 0.55 : 0;
+    this.out = ctx.createGain(); this.out.gain.value = this.vol();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.ratio.value = 3.5;
     this.bus = ctx.createGain();
@@ -53,9 +53,12 @@ export class Music {
     this.applyLevel();
   }
 
+  // v9.9: just walking around the music stays soft in the background (like GTA / PUBG on foot);
+  // missions, chases and fights play it full.
+  vol() { return this.enabled ? 0.55 * (this.level === 0 ? 0.5 : 1) : 0; }
   setEnabled(on) {
     this.enabled = on;
-    if (this.out) this.out.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.2);
+    if (this.out) this.out.gain.setTargetAtTime(this.vol(), this.ctx.currentTime, 0.2);
   }
 
   // 0..3, changes at the next bar so the beat never stumbles.
@@ -66,6 +69,7 @@ export class Music {
   applyLevel() {
     if (!this.started) return;
     this.drone.gain.setTargetAtTime([0.05, 0.045, 0.03, 0.025][this.level], this.ctx.currentTime, 0.8);
+    this.out.gain.setTargetAtTime(this.vol(), this.ctx.currentTime, 1.2);
   }
 
   schedule() {

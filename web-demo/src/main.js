@@ -167,7 +167,7 @@ class Game {
     this.bombs = new Bombs(this);                                       // sutli bombs
     this.director = new Director(this, missionCar);                     // the city makes crazy things happen (v9.6)
     this.loot = new Loot(this); this.loot.placeCity();                  // guns and scopes lying around, like PUBG (v9.7)
-    this.ambience = new Ambience(this);     // horns, crowds, birds, crickets, sea, police radio, shop fans
+    this.ambience = new Ambience(this);     // far-away city hum, passing cars, birds, crickets, sea, police radio, shop fans
 
     const n = COUNTS[quality];
     this.spawnTraffic(n.cars, n.police);
@@ -1275,7 +1275,7 @@ $('btn-skip').addEventListener('click', () => { if (game.intro) game.intro.skip(
 const SITE_URL = 'https://worldly-mediumturquoise-anteater-68.hostingersite.com';
 const PLAY_URL = /^https?:$/.test(location.protocol) && !/appassets|localhost/.test(location.host) ? location.origin : SITE_URL;
 const waLink = (text) => 'https://wa.me/?text=' + encodeURIComponent(text);
-$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.8)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
+$('btn-feedback').href = waLink(`CITY THIEF feedback (v9.9)\nRating (1-5): \nWhat I liked: \nWhat to fix: \nMy phone / PC: \nPlay: ${PLAY_URL}`);
 $('btn-share').href = waLink(`Play CITY THIEF - a free 3D Indian crime game by Venu Brushwood. 76 missions, police chases, walk into any shop. No download needed: ${PLAY_URL}`);
 
 // ---------- App: install, full screen, offline (v8) ----------

@@ -168,8 +168,11 @@ go('L_heli', lambda: make_loop('heli', 187678, 0.3, 4.0, xfade=0.3, kbps=64))
 go('L_screech', lambda: make_loop('screech', 104026, 0.35, 0.9, xfade=0.2, kbps=64))
 go('L_fuse', lambda: make_loop('fuse', 372186, 0.8, 2.0, xfade=0.3, kbps=56))
 go('L_fire', lambda: make_loop('fire', 249418, 2.0, 6.0, xfade=0.6, kbps=56))
-go('L_street', lambda: make_loop('amb_street', 319360, 0.5, 12.0, xfade=1.2, kbps=64, rms=-20))
-go('L_market', lambda: make_loop('amb_market', 263635, 10.0, 14.0, xfade=1.5, kbps=64, rms=-20))
+# v9.9: a calm, far-away city wash (no horns in it) and soft open air, like GTA / PUBG - the old
+# Mumbai traffic loop had horns every second and was too noisy.
+go('L_city', lambda: make_loop('amb_city', 208502, 55.5, 12.0, xfade=1.5, kbps=56, rms=-20))
+go('L_calm', lambda: make_loop('amb_calm', 481964, 16.5, 12.0, xfade=1.5, kbps=48, rms=-22, hp=50))
+# (v9.9: the street-market crowd loop is gone too - players heard it as noise: voices and honking.)
 go('L_birds', lambda: make_loop('amb_birds', 327445, 5.0, 12.0, xfade=1.2, kbps=56, rms=-22))
 go('L_crickets', lambda: make_loop('amb_crickets', 129678, 1.0, 9.0, xfade=1.0, kbps=56, rms=-22))
 go('L_sea', lambda: make_loop('amb_sea', 530699, 2.0, 14.0, xfade=1.5, kbps=56, rms=-20))

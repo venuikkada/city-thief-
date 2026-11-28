@@ -101,7 +101,16 @@ Cost: Unity Personal is free until your game earns about $200k (about ₹1.7 cro
   Hindu temple bells, police radio. A street-echo reverb, a little random pitch (no two shots the same) and
   left / right panning. The old made-in-code sounds still play until the files load. How the files were made: `tools/sfx/`
   (trim, clean, level, slice footsteps, seamless loops).
-- **v9.7: guns like PUBG, a 2-minute police grace, prettier streets, a set piece in every mission:**
+- **v9.9: a clean mix like GTA / PUBG (v9.8 had too much horn and crowd noise):** in a minute on a busy road you now
+  hear about 2 horns instead of 32, and the background is about 11 dB quieter. The honking Mumbai-traffic loop and
+  the street-market crowd loop are gone; under everything there is now soft open air and a far-away city wash
+  (no horns in it) that grows near busy roads. The two nearest moving cars hum as they pass (left / right, near /
+  far; autos buzz high, trucks rumble low). A car you stand in front of honks once every 4-8 s (not non-stop);
+  all traffic horns together at most once every 2.5 s (your own horn always answers the button). Crows, dogs,
+  temple bells and police radio are rarer and softer. Gunshots, explosions and people talking push the background
+  down for a moment (ducking), so the action is always clear; footsteps are a bit louder and close shots have a
+  little more low punch. Just walking around, the music plays at half volume (full in missions, chases, fights).
+, a 2-minute police grace, prettier streets, a set piece in every mission:**
   - **Empty hands first:** Vikram starts with bare FISTS (FIRE = PUNCH) and his pistol in the holster. With empty
     hands he runs about 18% faster. Guns lie around the city (yellow light; 70 loot spots by the shop doors, fresh
     loot 3 minutes after you take it) and fallen cops / gangsters drop theirs: walk up and PICK UP (the button shows

@@ -431,8 +431,10 @@ export class Car {
       else if (ob.obstacle === this || this.blocked > 25) { this.ignoreCars = 1.5; this.blocked = 0; }
     }
     if (this.bypassT > 0) this.bypassT -= dt;
-    // Someone standing in front of the car: honk (Indian traffic!).
-    if (this.obstacle === this.game.player && this.blocked > 1) {
+    // Someone standing in front of the car: a honk now and then (Indian traffic!) - not non-stop.
+    if (this.hornT > 0) this.hornT -= dt;
+    if (this.obstacle === this.game.player && this.blocked > 1.5 && !(this.hornT > 0)) {
+      this.hornT = 4 + Math.random() * 4;
       const cam = this.game.camera.position;
       this.game.audio.horn(1 - dist(this.x, this.z, cam.x, cam.z) / 50);
     }

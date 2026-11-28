@@ -1,11 +1,13 @@
 // Game sound.
 // v9.8: REAL RECORDINGS - gunshots of real guns (9mm pistol, AR-15, AK-47, 20-gauge shotgun, a big
 // hunting rifle), footsteps on stone, tiles, sand and water, punches, reloads, explosions, car crashes,
-// tyres, horns, a police siren, a helicopter, Mumbai traffic, an Indian street market, temple bells,
+// tyres, horns, a police siren, a helicopter, a calm far-away city hum, temple bells,
 // crows... (all CC0 from freesound.org - see assets/sfx/CREDITS.txt). They play through a small mixer:
 // an echo off the street walls for shots and explosions, a little random pitch so no two sounds are
 // exactly the same, left / right from where things happen. Until the files have loaded (or if one is
 // missing) the old sounds made in code still play.
+// v9.9: a CLEAN mix like GTA / PUBG - gunshots and blasts push the background down for a moment
+// (duck), car horns are rare, footsteps and guns are up front.
 import { SFX_LIST } from './sfxlist.js';
 
 const GUN_SAMPLE = { pistol: 'gun_pistol', gold: 'gun_gold', smg: 'gun_smg', rifle: 'gun_rifle', dmr: 'gun_dmr', sniper: 'gun_sniper', shotgun: 'gun_shotgun' };
@@ -80,17 +82,28 @@ export class GameAudio {
   }
 
   // A recording that loops (engine, siren, rain...): returns { src, g } with the volume at 0.
-  loop(name, dest) {
+  // key: a second copy of the same recording (e.g. the engine for passing traffic).
+  loop(name, dest, key = name) {
     const list = this.buf[name];
-    if (!list || !list.length || this.loops[name]) return this.loops[name] || null;
+    if (!list || !list.length || this.loops[key]) return this.loops[key] || null;
     const ctx = this.ctx, lp = SFX_LIST[name][1], src = ctx.createBufferSource();
     src.buffer = list[0]; src.loop = true;
     if (lp) { src.loopStart = lp[0]; src.loopEnd = lp[1]; }
     const g = ctx.createGain(); g.gain.value = 0;
     src.connect(g).connect(dest || this.master);
     src.start(0, lp ? lp[0] + Math.random() * (lp[1] - lp[0]) : 0);
-    return (this.loops[name] = { src, g });
+    return (this.loops[key] = { src, g });
   }
+  // Push the background (street, birds, sea...) down for a moment, so gunshots and blasts stay clear.
+  // amount 0..1, hold in seconds (ambience.js does the fading).
+  duck(amount, hold) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!(t < this.duckEnd)) this.duckAmt = 0;
+    this.duckAmt = Math.max(this.duckAmt, amount);
+    this.duckEnd = Math.max(this.duckEnd || 0, t + hold);
+  }
+  duckLevel(t) { return t < (this.duckEnd || 0) ? this.duckAmt : 0; }
   startLoops() {
     // Car engine (rev = speed of the recording), siren, helicopter, tyres: ready, volume 0.
     const e = this.loop('engine');
@@ -206,6 +219,8 @@ export class GameAudio {
       const v = this.play(name, { vol: (GUN_VOL[type] || 0.8) * (far ? 0.45 + volume * 0.5 : volume), lp: far ? 1600 + volume * 6000 : null, wet: far ? 0.45 : 0.22, vary: 0.05 });
       if (v) this.lastShot[name] = { v, t: now };
       if (far) this.play('gun_far', { vol: 0.55 * volume + 0.1, wet: 0.35, vary: 0.08 });
+      else this.thump(0.14 * volume * (type === 'smg' ? 0.6 : 1), type === 'shotgun' || type === 'sniper' ? 52 : 64, 0.12);   // a little more punch (felt in headphones)
+      this.duck(far ? 0.2 * volume + 0.05 : 0.45, far ? 0.5 : 0.9);
       return;
     }
     const v = volume;
@@ -299,7 +314,7 @@ export class GameAudio {
   footstep(volume, surface = 'hard', run = false) {
     if (!this.enabled) return;
     const name = surface === 'sand' ? 'step_sand' : surface === 'water' ? 'step_water' : surface === 'tile' ? 'step_tile' : run ? 'step_run' : 'step_hard';
-    if (this.play(name, { vol: Math.min(1, volume * (surface === 'sand' ? 1.5 : 1.25)), vary: 0.1 })) return;
+    if (this.play(name, { vol: Math.min(1, volume * (surface === 'sand' ? 1.7 : 1.45)), vary: 0.1 })) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const src = ctx.createBufferSource(); src.buffer = this.noiseBuf;
     const f = ctx.createBiquadFilter();
@@ -317,6 +332,7 @@ export class GameAudio {
   // Big BOOM: deep thump + rumbling noise.
   explosion(volume = 1) {
     if (!this.enabled) return;
+    this.duck(Math.min(0.7, 0.3 + 0.4 * volume), 2.2);
     if (this.has('expl_big')) {
       this.play(Math.random() < 0.6 ? 'expl_big' : 'expl_bomb', { vol: Math.min(1, 0.95 * volume), vary: 0.1, wet: 0.35 });
       this.play('expl_small', { vol: 0.6 * volume, vary: 0.1 });   // the close, sharp crack on top
@@ -357,13 +373,14 @@ export class GameAudio {
     this.heliGain.gain.setTargetAtTime(level * 0.9, this.ctx.currentTime, 0.3);
   }
 
-  // Short "beep beep" (Indian traffic!). volume 0..1
-  horn(volume) {
+  // A car horn (Indian traffic!). volume 0..1. own = the player's car: it always answers the button.
+  // Other cars honk at most once every 2.5 s all together - the street never turns into a horn concert.
+  horn(volume, own = false) {
     if (!this.enabled || volume <= 0.02) return;
-    const now = this.ctx.currentTime;
-    if (now - this.lastHorn < 0.8) return;
-    this.lastHorn = now;
-    if (this.play('horn', { vol: 0.55 * volume, vary: 0.04 })) return;
+    const now = this.ctx.currentTime, key = own ? 'lastOwnHorn' : 'lastHorn';
+    if (now - (this[key] ?? -99) < (own ? 0.6 : 2.5)) return;
+    this[key] = now;
+    if (this.play('horn', { vol: (own ? 0.5 : 0.38) * volume, vary: 0.04 })) return;
     for (let k = 0; k < 2; k++) {
       const o = this.ctx.createOscillator(); o.type = 'square';
       o.frequency.value = 420 + Math.random() * 60;

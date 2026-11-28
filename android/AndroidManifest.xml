@@ -2,8 +2,8 @@
 <!-- City Thief for Android: the game runs inside the app (offline), full screen, landscape. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.venubrushwood.citythief"
-    android:versionCode="17"
-    android:versionName="9.8">
+    android:versionCode="18"
+    android:versionName="9.9">
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />

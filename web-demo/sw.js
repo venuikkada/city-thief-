@@ -1,5 +1,5 @@
 // City Thief offline cache (made by tools/make-sw.py - do not edit by hand).
-const CACHE = 'citythief-3bddd66c09';
+const CACHE = 'citythief-389d9775f8';
 const FILES = [
   './assets/CREDITS.txt',
   './assets/icons/icon-180.png',
@@ -31,11 +31,11 @@ const FILES = [
   './assets/people/vikram.glb',
   './assets/sfx/CREDITS.txt',
   './assets/sfx/amb_birds.mp3',
+  './assets/sfx/amb_calm.mp3',
+  './assets/sfx/amb_city.mp3',
   './assets/sfx/amb_crickets.mp3',
-  './assets/sfx/amb_market.mp3',
   './assets/sfx/amb_rain.mp3',
   './assets/sfx/amb_sea.mp3',
-  './assets/sfx/amb_street.mp3',
   './assets/sfx/bell.mp3',
   './assets/sfx/body_hit.mp3',
   './assets/sfx/bodyfall_0.mp3',
